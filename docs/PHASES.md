@@ -28,7 +28,7 @@ Track progress in `TODO.md`. One phase per session. `/clear` between phases.
 
 | Gate | Check |
 |---|---|
-| Ownership | `node scripts/check-track-ownership.mjs <track> [worktree]` clean — no forbidden shared file touched, nothing outside the track's folders |
+| Ownership | `npx tsx scripts/check-track-ownership.ts <track> [worktree]` clean — no forbidden shared file touched, nothing outside the track's folders |
 | Build | `pnpm typecheck` + `pnpm lint` + `pnpm test` green |
 | E2E | `pnpm e2e` for the flows this phase touched |
 | Language | No user-facing English/Hebrew string in the diff; all copy from `messages/ar/**` |
@@ -402,7 +402,7 @@ Copy-Item ..\souq-bartaa\.env .env            # .env is untracked — copying is
 
 ### Forbidden shared files — no worktree may touch these, ever
 
-> **This list is enforced by `node scripts/check-track-ownership.mjs <track> [worktree]`.** Every
+> **This list is enforced by `npx tsx scripts/check-track-ownership.ts <track> [worktree]`.** Every
 > track runs it before requesting a merge, and the main session runs it again at each merge step.
 > It checks committed *and* uncommitted paths against both this list and the ownership table
 > above, so a violation surfaces while its author still remembers why they made it — rather than

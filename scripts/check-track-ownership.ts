@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Enforce the folder ownership and the forbidden-shared-files list from docs/PHASES.md.
  *
@@ -14,8 +13,8 @@
  * against, which a CI checkout of a single branch may not have, and a gate that cannot run is
  * worse than one that is invoked explicitly.
  *
- *   node scripts/check-track-ownership.mjs a1 "e:/path/to/sb-a1"
- *   node scripts/check-track-ownership.mjs a2          # defaults to cwd
+ *   npx tsx scripts/check-track-ownership.ts a1 "e:/path/to/sb-a1"
+ *   npx tsx scripts/check-track-ownership.ts a2          # defaults to cwd
  */
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
@@ -95,7 +94,7 @@ const FORBIDDEN = [
   'scripts/**',
 ];
 
-const OWNERSHIP = {
+const OWNERSHIP: Record<string, readonly string[]> = {
   a1: [
     'src/app/admin/**',
     'src/app/api/admin/**',
@@ -157,7 +156,7 @@ const OWNERSHIP = {
  * Carve-outs INSIDE a track's own folder that belong to a later track. Checked before ownership,
  * because `src/app/admin/**` would otherwise happily swallow `src/app/admin/demos`.
  */
-const RESERVED_WITHIN = {
+const RESERVED_WITHIN: Record<string, readonly string[]> = {
   a1: ['src/app/admin/demos/**', 'src/app/admin/lifecycle/**'],
   b3: ['src/server/demo/types.ts', 'src/server/demo/placeholder.ts', 'src/server/demo/packs/**'],
 };
@@ -172,12 +171,14 @@ const RESERVED_WITHIN = {
  * the DIRECTORY and nothing inside it — every real file then reads as a violation. A wall of
  * false positives is worse than no check at all: it is what teaches people to ignore one.
  */
-function toRegExp(pattern) {
+function toRegExp(pattern: string): RegExp {
   const needsEscape = /[.+^${}()|[\]\\]/;
   let out = '';
 
   for (let i = 0; i < pattern.length; i += 1) {
-    const char = pattern[i];
+    // charAt, not [i]: noUncheckedIndexedAccess types the index access as possibly undefined,
+    // and the lookaheads below compare against undefined perfectly happily anyway.
+    const char = pattern.charAt(i);
 
     if (char === '*' && pattern[i + 1] === '*') {
       if (pattern[i + 2] === '/') {
@@ -205,8 +206,8 @@ function toRegExp(pattern) {
  * The matcher IS the check. If it silently stops matching, this script prints "clean" for a
  * branch that rewrote the schema. Six assertions cost nothing and make that failure loud.
  */
-function assertMatcherWorks() {
-  const cases = [
+function assertMatcherWorks(): void {
+  const cases: Array<[string, string, boolean]> = [
     ['src/app/admin/**', 'src/app/admin/_components/nav.tsx', true],
     ['src/app/admin/**', 'src/app/dashboard/page.tsx', false],
     ['tests/**/a1-*.test.ts', 'tests/integration/a1-admin.test.ts', true],
@@ -222,10 +223,11 @@ function assertMatcherWorks() {
   }
 }
 
-const compile = (patterns) => patterns.map(toRegExp);
-const matches = (regexps, file) => regexps.some((re) => re.test(file));
+const compile = (patterns: readonly string[]): RegExp[] => patterns.map(toRegExp);
+const matches = (regexps: readonly RegExp[], file: string): boolean =>
+  regexps.some((re) => re.test(file));
 
-function git(cwd, args) {
+function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' });
 }
 
@@ -235,8 +237,8 @@ function git(cwd, args) {
  * Uncommitted work counts: the point is to catch a violation while the author still remembers
  * why they made it, not after it is buried three commits deep.
  */
-function changedFiles(cwd, base) {
-  const out = new Set();
+function changedFiles(cwd: string, base: string): string[] {
+  const out = new Set<string>();
 
   for (const line of git(cwd, ['diff', '--name-only', `${base}...HEAD`]).split('\n')) {
     if (line.trim()) out.add(line.trim());
@@ -250,13 +252,13 @@ function changedFiles(cwd, base) {
   return [...out].sort();
 }
 
-function main() {
+function main(): void {
   assertMatcherWorks();
 
   const [track, dirArg] = process.argv.slice(2);
 
   if (!track || !OWNERSHIP[track]) {
-    console.error(`usage: node scripts/check-track-ownership.mjs <${Object.keys(OWNERSHIP).join('|')}> [worktree-dir]`);
+    console.error(`usage: npx tsx scripts/check-track-ownership.ts <${Object.keys(OWNERSHIP).join('|')}> [worktree-dir]`);
     process.exit(2);
   }
 
@@ -267,7 +269,7 @@ function main() {
   const owned = compile(OWNERSHIP[track]);
   const reserved = compile(RESERVED_WITHIN[track] ?? []);
 
-  const violations = [];
+  const violations: Array<[string, string]> = [];
 
   const files = changedFiles(cwd, base);
 
