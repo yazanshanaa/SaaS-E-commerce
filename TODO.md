@@ -140,7 +140,7 @@ Recorded in full in `docs/PHASES.md` → **Resolved decisions**. Nothing here bl
 - [x] `can()` gives a demo tenant pro-level limits, `change_requests_per_month = 0`, `templates_allowed` as an array, `color_mode` as a string
 - [x] Creating a non-demo subscription with a null `currentPeriodEnd` is rejected
 - [x] `docs/DECISIONS.md` updated
-- [ ] Merged to `main`
+- [x] Merged to `main` (Phase 1 was built directly on `main`, per the sequential main-session rule)
 
 ---
 
