@@ -25,7 +25,11 @@ blob-report/
 .playwright/
 
 # local runtime data
-storage/
+# Anchored with a leading slash: this is LOCAL_STORAGE_DIR (./storage), the dev disk driver's
+# scratch directory. Unanchored, `storage/` also matched src/server/storage — so the entire
+# StorageAdapter contract went uncommitted while still sitting in the working tree, and Phase 1
+# passed its gate on files no clone would have had.
+/storage/
 .tmp/
 .pgdata/
 .pgdata-e2e/
