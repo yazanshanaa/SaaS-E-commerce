@@ -1,0 +1,267 @@
+{
+  "pack": "food",
+  "label": "مواد غذائية وبقالة",
+  "template": "diwan",
+  "colors": {
+    "primary": "#C2410C",
+    "secondary": "#5F6F3E",
+    "background": "#FAF3E7"
+  },
+  "announcementBar": {
+    "text": "توصيل مجاني للطلبات فوق 150 شيكل"
+  },
+  "tenant": {
+    "name": "سوبر ماركت الوادي",
+    "slugPrefix": "demo-market",
+    "tagline": "طازة كل يوم — من السوق لبيتك",
+    "about": "سوبر ماركت عائلي في سوق برطعة — منتجات بلدية (زيت، زعتر، أجبان)، حلويات شرقية طازة يومياً، وكل احتياجات البيت. عروض أسبوعية وتوصيل مجاني للطلبات فوق 150 شيكل.",
+    "whatsapp": "+972500000000",
+    "phone": "050-000-0000",
+    "address": "برطعة — وسط السوق",
+    "hours": "يومياً 7:00–23:00"
+  },
+  "categories": [
+    {
+      "key": "local",
+      "name": "منتجات بلدية"
+    },
+    {
+      "key": "dairy",
+      "name": "ألبان وأجبان"
+    },
+    {
+      "key": "sweets",
+      "name": "حلويات ومكسرات"
+    },
+    {
+      "key": "grocery",
+      "name": "بقالة"
+    },
+    {
+      "key": "cleaning",
+      "name": "منظفات"
+    }
+  ],
+  "sections": [
+    {
+      "type": "hero",
+      "sort": 1,
+      "config": {
+        "title": "طازة كل يوم",
+        "subtitle": "بلديات، حلويات شرقية، وكل احتياجات البيت — توصيل مجاني فوق 150 شيكل",
+        "cta": "اطلب عبر واتساب"
+      }
+    },
+    {
+      "type": "categories",
+      "sort": 2,
+      "config": {
+        "style": "chips"
+      }
+    },
+    {
+      "type": "products_grid",
+      "sort": 3,
+      "config": {
+        "showBadges": true,
+        "showPrices": true
+      }
+    },
+    {
+      "type": "about",
+      "sort": 4,
+      "config": {
+        "title": "من نحن"
+      }
+    },
+    {
+      "type": "testimonials",
+      "sort": 5,
+      "config": {}
+    },
+    {
+      "type": "contact_whatsapp",
+      "sort": 6,
+      "config": {
+        "note": "الطلبات قبل الساعة 8 مساءً بتوصل بنفس اليوم"
+      }
+    },
+    {
+      "type": "map",
+      "sort": 7,
+      "config": {
+        "query": "برطعة — وسط السوق"
+      }
+    }
+  ],
+  "products": [
+    {
+      "sku": "fd-01",
+      "name": "زيت زيتون بلدي 1 لتر",
+      "description": "عصرة أولى من زيتون المنطقة، حموضة منخفضة.",
+      "price": 45,
+      "currency": "ILS",
+      "category": "local",
+      "available": true,
+      "badge": "الأكثر مبيعاً",
+      "imageAlt": "قنينة زيت زيتون بلدي لتر واحد"
+    },
+    {
+      "sku": "fd-02",
+      "name": "زعتر بلدي مطحون 500 غ",
+      "description": "خلطة بيتية بالسمسم والسماق.",
+      "price": 25,
+      "currency": "ILS",
+      "category": "local",
+      "available": true,
+      "imageAlt": "كيس زعتر بلدي مطحون بالسمسم"
+    },
+    {
+      "sku": "fd-03",
+      "name": "عسل طبيعي 1 كغ",
+      "description": "عسل زهور طبيعي 100% بدون أي إضافات.",
+      "price": 85,
+      "currency": "ILS",
+      "category": "local",
+      "available": true,
+      "imageAlt": "مرطبان عسل زهور طبيعي"
+    },
+    {
+      "sku": "fd-04",
+      "name": "تمر مجدول فاخر 1 كغ",
+      "description": "حبة كبيرة طرية بتعبئة محكمة.",
+      "price": 38,
+      "currency": "ILS",
+      "category": "local",
+      "available": true,
+      "badge": "جديد",
+      "imageAlt": "علبة تمر مجدول فاخر كيلو"
+    },
+    {
+      "sku": "fd-05",
+      "name": "جبنة بلدية مشللة 1 كغ",
+      "description": "جبنة بقري طازة مالحة، مثالية للكنافة والمعجنات.",
+      "price": 42,
+      "currency": "ILS",
+      "category": "dairy",
+      "available": true,
+      "imageAlt": "جبنة بلدية مشللة بيضاء"
+    },
+    {
+      "sku": "fd-06",
+      "name": "لبنة بلدية 500 غ",
+      "description": "لبنة بقري كثيفة بزيت زيتون.",
+      "price": 14,
+      "currency": "ILS",
+      "category": "dairy",
+      "available": true,
+      "imageAlt": "علبة لبنة بلدية بزيت الزيتون"
+    },
+    {
+      "sku": "fd-07",
+      "name": "بيض بلدي طبق 30",
+      "description": "بيض طازة من مزارع المنطقة.",
+      "price": 28,
+      "currency": "ILS",
+      "category": "dairy",
+      "available": true,
+      "imageAlt": "طبق بيض بلدي ثلاثين حبة"
+    },
+    {
+      "sku": "fd-08",
+      "name": "كنافة نابلسية بالكيلو",
+      "description": "طازة يومياً بالجبنة البلدية — استلام سخنة.",
+      "price": 45,
+      "currency": "ILS",
+      "category": "sweets",
+      "available": true,
+      "badge": "الأكثر مبيعاً",
+      "imageAlt": "صينية كنافة نابلسية بالجبنة"
+    },
+    {
+      "sku": "fd-09",
+      "name": "بقلاوة مشكلة 1 كغ",
+      "description": "تشكيلة فستق وجوز بسمنة بلدية.",
+      "price": 68,
+      "currency": "ILS",
+      "category": "sweets",
+      "available": true,
+      "imageAlt": "علبة بقلاوة مشكلة بالفستق والجوز"
+    },
+    {
+      "sku": "fd-10",
+      "name": "مكسرات مشكلة محمصة 500 غ",
+      "description": "تحميص يومي — كاجو، لوز، فستق، وبندق.",
+      "price": 42,
+      "currency": "ILS",
+      "category": "sweets",
+      "available": true,
+      "imageAlt": "كيس مكسرات مشكلة محمصة"
+    },
+    {
+      "sku": "fd-11",
+      "name": "قهوة عربية محمصة 500 غ",
+      "description": "طحنة ناعمة مع هيل وتحميص طازة.",
+      "price": 30,
+      "currency": "ILS",
+      "category": "grocery",
+      "available": true,
+      "imageAlt": "كيس قهوة عربية محمصة مع هيل"
+    },
+    {
+      "sku": "fd-12",
+      "name": "أرز بسمتي 5 كغ",
+      "description": "حبة طويلة درجة أولى.",
+      "price": 44,
+      "currency": "ILS",
+      "category": "grocery",
+      "available": true,
+      "imageAlt": "كيس أرز بسمتي خمسة كيلو"
+    },
+    {
+      "sku": "fd-13",
+      "name": "شاي ورق فاخر 500 غ",
+      "description": "نكهة قوية تكفي لشهر كامل.",
+      "price": 22,
+      "currency": "ILS",
+      "category": "grocery",
+      "available": true,
+      "badge": "عرض",
+      "imageAlt": "علبة شاي ورق فاخر"
+    },
+    {
+      "sku": "fd-14",
+      "name": "مسحوق غسيل 6 كغ",
+      "description": "فعّال مع البقع وبروائح منعشة.",
+      "price": 52,
+      "currency": "ILS",
+      "category": "cleaning",
+      "available": true,
+      "imageAlt": "عبوة مسحوق غسيل ستة كيلو"
+    },
+    {
+      "sku": "fd-15",
+      "name": "سائل جلي 4 لتر",
+      "description": "تركيز عالي يدوم أطول.",
+      "price": 18,
+      "currency": "ILS",
+      "category": "cleaning",
+      "available": true,
+      "imageAlt": "عبوة سائل جلي أربعة لتر"
+    }
+  ],
+  "testimonials": [
+    {
+      "name": "أم يوسف",
+      "text": "البلديات عندهم دايماً طازة، والتوصيل سريع."
+    },
+    {
+      "name": "أبو العبد",
+      "text": "أسعارهم منافسة وعروض نهاية الأسبوع بتوفّر كتير."
+    },
+    {
+      "name": "منى",
+      "text": "الكنافة عندهم أطيب من المحلات المتخصصة، بطلبها كل جمعة."
+    }
+  ]
+}

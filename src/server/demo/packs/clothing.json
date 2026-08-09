@@ -1,0 +1,268 @@
+{
+  "pack": "clothing",
+  "label": "ملابس وأزياء",
+  "template": "neon-souq",
+  "colors": {
+    "primary": "#E11D48",
+    "secondary": "#F4C95D",
+    "background": "#0F0B10"
+  },
+  "announcementBar": {
+    "text": "تخفيضات نهاية الموسم — لغاية 30% على قطع مختارة"
+  },
+  "tenant": {
+    "name": "بوتيك ليان",
+    "slugPrefix": "demo-fashion",
+    "tagline": "أناقتك تبدأ من هون",
+    "about": "بوتيك ليان في قلب سوق برطعة — تشكيلات نسائية ورجالية وأطفال مختارة بعناية من أحدث الموديلات، بأسعار السوق وجودة بتحكي عن حالها. جديدنا بينزل كل أسبوع، والطلب والاستفسار عبر واتساب مع إمكانية التوصيل للمنطقة.",
+    "whatsapp": "+972500000000",
+    "phone": "050-000-0000",
+    "address": "برطعة — شارع السوق الرئيسي",
+    "hours": "السبت–الخميس 10:00–22:00 · الجمعة 14:00–22:00"
+  },
+  "categories": [
+    {
+      "key": "women",
+      "name": "نسائي"
+    },
+    {
+      "key": "men",
+      "name": "رجالي"
+    },
+    {
+      "key": "kids",
+      "name": "أطفال"
+    },
+    {
+      "key": "shoes",
+      "name": "أحذية"
+    },
+    {
+      "key": "accessories",
+      "name": "شنط وإكسسوارات"
+    }
+  ],
+  "sections": [
+    {
+      "type": "hero",
+      "sort": 1,
+      "config": {
+        "title": "تشكيلة الموسم وصلت",
+        "subtitle": "موديلات جديدة كل أسبوع — اطلب عبر واتساب واستلم بنفس اليوم",
+        "cta": "اطلب عبر واتساب"
+      }
+    },
+    {
+      "type": "categories",
+      "sort": 2,
+      "config": {
+        "style": "chips"
+      }
+    },
+    {
+      "type": "products_grid",
+      "sort": 3,
+      "config": {
+        "showBadges": true,
+        "showPrices": true
+      }
+    },
+    {
+      "type": "about",
+      "sort": 4,
+      "config": {
+        "title": "من نحن"
+      }
+    },
+    {
+      "type": "testimonials",
+      "sort": 5,
+      "config": {}
+    },
+    {
+      "type": "contact_whatsapp",
+      "sort": 6,
+      "config": {
+        "note": "رد سريع خلال ساعات الدوام"
+      }
+    },
+    {
+      "type": "map",
+      "sort": 7,
+      "config": {
+        "query": "برطعة — شارع السوق الرئيسي"
+      }
+    }
+  ],
+  "products": [
+    {
+      "sku": "cl-01",
+      "name": "عباية مطرزة كلاسيك",
+      "description": "قماش كريب بارد بتطريز يدوي على الأكمام، قصّة واسعة مريحة.",
+      "price": 189,
+      "currency": "ILS",
+      "category": "women",
+      "available": true,
+      "badge": "الأكثر مبيعاً",
+      "imageAlt": "عباية سوداء بتطريز ذهبي على الأكمام"
+    },
+    {
+      "sku": "cl-02",
+      "name": "فستان سهرة ساتان",
+      "description": "ساتان لامع بقصّة ملكية، متوفر بثلاثة ألوان.",
+      "price": 249,
+      "currency": "ILS",
+      "category": "women",
+      "available": true,
+      "imageAlt": "فستان سهرة طويل من الساتان اللامع"
+    },
+    {
+      "sku": "cl-03",
+      "name": "بلوزة شيفون مطرزة",
+      "description": "شيفون خفيف بتفاصيل مطرزة على الياقة، مناسبة للدوام والمناسبات.",
+      "price": 79,
+      "currency": "ILS",
+      "category": "women",
+      "available": true,
+      "badge": "جديد",
+      "imageAlt": "بلوزة شيفون فاتحة بياقة مطرزة"
+    },
+    {
+      "sku": "cl-04",
+      "name": "طقم رياضي نسائي",
+      "description": "قطن مرن من قطعتين، مريح للمشي والبيت.",
+      "price": 119,
+      "currency": "ILS",
+      "category": "women",
+      "available": true,
+      "imageAlt": "طقم رياضي نسائي من قطعتين"
+    },
+    {
+      "sku": "cl-05",
+      "name": "قميص رجالي قطن",
+      "description": "قطن 100% بقصّة regular، ألوان سادة تناسب كل الإطلالات.",
+      "price": 89,
+      "currency": "ILS",
+      "category": "men",
+      "available": true,
+      "imageAlt": "قميص رجالي قطني سادة"
+    },
+    {
+      "sku": "cl-06",
+      "name": "جينز رجالي سليم",
+      "description": "دنيم متين بقصّة slim fit وغسلة غامقة.",
+      "price": 129,
+      "currency": "ILS",
+      "category": "men",
+      "available": true,
+      "imageAlt": "بنطال جينز رجالي بغسلة غامقة"
+    },
+    {
+      "sku": "cl-07",
+      "name": "هودي شبابي مبطن",
+      "description": "بطانة فرو ناعمة وجيب أمامي، مثالي للخريف والشتاء.",
+      "price": 99,
+      "currency": "ILS",
+      "category": "men",
+      "available": true,
+      "badge": "عرض",
+      "imageAlt": "هودي شبابي مبطن بجيب أمامي"
+    },
+    {
+      "sku": "cl-08",
+      "name": "جاكيت جلد رجالي",
+      "description": "جلد صناعي عالي الجودة بسحّابات معدنية.",
+      "price": 219,
+      "currency": "ILS",
+      "category": "men",
+      "available": true,
+      "imageAlt": "جاكيت جلد رجالي أسود بسحابات"
+    },
+    {
+      "sku": "cl-09",
+      "name": "طقم بناتي فستان وليقنز",
+      "description": "قطن ناعم على الجلد، مقاسات من سنتين حتى 10 سنوات.",
+      "price": 69,
+      "currency": "ILS",
+      "category": "kids",
+      "available": true,
+      "imageAlt": "طقم بناتي فستان مع ليقنز"
+    },
+    {
+      "sku": "cl-10",
+      "name": "بيجاما أطفال قطن",
+      "description": "قطن مريح بألوان مبهجة، متوفرة بكل المقاسات.",
+      "price": 49,
+      "currency": "ILS",
+      "category": "kids",
+      "available": true,
+      "imageAlt": "بيجاما أطفال قطنية ملونة"
+    },
+    {
+      "sku": "cl-11",
+      "name": "سنيكرز رياضي",
+      "description": "خفيف ومريح للاستخدام اليومي، نعل مضاد للانزلاق.",
+      "price": 149,
+      "currency": "ILS",
+      "category": "shoes",
+      "available": true,
+      "badge": "الأكثر مبيعاً",
+      "imageAlt": "حذاء سنيكرز رياضي أبيض"
+    },
+    {
+      "sku": "cl-12",
+      "name": "صندل نسائي جلد",
+      "description": "جلد طبيعي بكعب مريح، شغل يدوي.",
+      "price": 129,
+      "currency": "ILS",
+      "category": "shoes",
+      "available": true,
+      "imageAlt": "صندل نسائي من الجلد الطبيعي"
+    },
+    {
+      "sku": "cl-13",
+      "name": "شنطة يد نسائية",
+      "description": "حجم وسط بقفل معدني وحزام طويل إضافي.",
+      "price": 99,
+      "currency": "ILS",
+      "category": "accessories",
+      "available": true,
+      "imageAlt": "شنطة يد نسائية بقفل معدني"
+    },
+    {
+      "sku": "cl-14",
+      "name": "طقم طرح شيفون 3 قطع",
+      "description": "شيفون كوري بألوان متناسقة قابلة للتنسيق.",
+      "price": 45,
+      "currency": "ILS",
+      "category": "accessories",
+      "available": true,
+      "badge": "جديد",
+      "imageAlt": "ثلاث طرح شيفون بألوان متناسقة"
+    },
+    {
+      "sku": "cl-15",
+      "name": "ساعة رجالية كلاسيك",
+      "description": "مينا معدني وسوار ستانلس، مع ضمان سنة.",
+      "price": 139,
+      "currency": "ILS",
+      "category": "accessories",
+      "available": true,
+      "imageAlt": "ساعة يد رجالية بسوار معدني"
+    }
+  ],
+  "testimonials": [
+    {
+      "name": "أم محمد",
+      "text": "كل إشي بلبسه من عندهم — الجودة والأسعار ما في أحسن."
+    },
+    {
+      "name": "أحمد",
+      "text": "خدمة سريعة على الواتساب وتوصيل بنفس اليوم لبرطعة والمنطقة."
+    },
+    {
+      "name": "سلمى",
+      "text": "التشكيلة بتتجدد دايماً وفي مقاسات لكل الأجسام."
+    }
+  ]
+}

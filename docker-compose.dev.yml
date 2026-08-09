@@ -1,0 +1,104 @@
+# Souq Bartaa — development stack.
+#
+# Production compose (caddy, n8n, umami, uptime-kuma) lands in Phase 7; this file is the
+# minimum a developer needs: postgres, redis, mailpit, and the two app containers.
+#
+#   docker compose -f docker-compose.dev.yml up -d postgres redis mailpit
+#   pnpm db:migrate && pnpm db:seed
+#   pnpm dev            # web
+#   pnpm worker         # worker (separate process, exactly like the container)
+#
+# Mailpit UI: http://localhost:8025 — every dev email lands there, nothing leaves the machine.
+
+name: souq-bartaa-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: souq_bartaa
+      # Arabic collation matters for ORDER BY on product names.
+      POSTGRES_INITDB_ARGS: '--locale-provider=icu --icu-locale=ar --encoding=UTF8'
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Creates app_web / app_system / app_migrate on first boot. Roles are cluster-level
+      # objects, so they cannot live in a migration that must stay replayable.
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d souq_bartaa']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - '1025:1025' # SMTP
+      - '8025:8025' # web UI
+    environment:
+      MP_MAX_MESSAGES: 5000
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+
+  web:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql://app_web:app_web@postgres:5432/souq_bartaa?schema=public
+      DATABASE_URL_SYSTEM: postgresql://app_system:app_system@postgres:5432/souq_bartaa?schema=public
+      DATABASE_URL_MIGRATE: postgresql://app_migrate:app_migrate@postgres:5432/souq_bartaa?schema=public
+      REDIS_URL: redis://redis:6379
+      SMTP_HOST: mailpit
+      SMTP_PORT: '1025'
+    ports:
+      - '3000:3000'
+    profiles: ['full']
+
+  # A SEPARATE container on purpose: a queue backlog must never be able to starve the web
+  # server's event loop, and the worker is the only process that may run system-scope sweeps.
+  worker:
+    build:
+      context: .
+      target: worker
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql://app_web:app_web@postgres:5432/souq_bartaa?schema=public
+      DATABASE_URL_SYSTEM: postgresql://app_system:app_system@postgres:5432/souq_bartaa?schema=public
+      REDIS_URL: redis://redis:6379
+      SMTP_HOST: mailpit
+      SMTP_PORT: '1025'
+    profiles: ['full']
+
+volumes:
+  postgres_data:
+  redis_data:

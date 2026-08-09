@@ -1,0 +1,8 @@
+node_modules
+.next
+dist
+coverage
+pnpm-lock.yaml
+prisma/migrations
+src/server/demo/packs
+docs/BUILD-KIT.md

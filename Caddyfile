@@ -1,0 +1,56 @@
+# Souq Bartaa — reverse proxy.
+#
+# Phase 1 ships the shape; Phase 4 fills in the domain lifecycle (docs/DOMAINS.md).
+# Listed as a forbidden shared file in docs/PHASES.md, so it has to exist now — a parallel
+# track discovering it is missing would have to create it, which is exactly the collision
+# the forbidden list prevents.
+#
+# Two certificate strategies, deliberately different:
+#   - platform hostnames ({slug}.$DOMAIN, admin, app) use ONE wildcard certificate obtained
+#     through the Cloudflare DNS challenge (caddy-dns/cloudflare). Platform DNS lives on
+#     Cloudflare for exactly this reason.
+#   - merchant custom domains use on-demand TLS, gated by /internal/domain-ask so a stranger
+#     pointing a CNAME at us cannot make us mint certificates and burn the Let's Encrypt quota.
+#
+# Consequence for invariant 9: platform hostnames arrive through the Cloudflare proxy
+# (CF-Connecting-IP is meaningful), merchant custom domains hit this server directly
+# (only the socket IP is trustworthy). getClientIp() branches on precisely that.
+
+{
+	email {$ACME_EMAIL}
+
+	on_demand_tls {
+		ask http://web:3000/internal/domain-ask
+		interval 2m
+		burst 5
+	}
+}
+
+# --- platform hostnames: one wildcard cert via DNS challenge -------------------
+*.{$DOMAIN}, {$DOMAIN} {
+	tls {
+		dns cloudflare {$CLOUDFLARE_API_TOKEN}
+		resolvers 1.1.1.1
+	}
+
+	encode zstd gzip
+
+	reverse_proxy web:3000 {
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+	}
+}
+
+# --- merchant custom domains: on-demand TLS, refused unless verified -----------
+:443 {
+	tls {
+		on_demand
+	}
+
+	encode zstd gzip
+
+	reverse_proxy web:3000 {
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+	}
+}

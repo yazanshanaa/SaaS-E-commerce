@@ -1,0 +1,45 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# env — never committed (.env.example is the tracked surface)
+.env
+.env.*
+!.env.example
+
+# next
+.next/
+out/
+next-env.d.ts
+
+# build output
+dist/
+build/
+*.tsbuildinfo
+
+# tests
+coverage/
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# local runtime data
+storage/
+.tmp/
+.pgdata/
+.pgdata-e2e/
+seed-assets/**/*.jpg
+seed-assets/**/*.png
+seed-assets/**/*.webp
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# editors / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

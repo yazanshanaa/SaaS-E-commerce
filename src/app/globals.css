@@ -1,0 +1,152 @@
+/*
+ * Phase 1 base styles.
+ *
+ * Deliberately small: the three templates ship their OWN complete token sets (A2), and the
+ * admin and dashboard surfaces build their look on top of these primitives. What lives here is
+ * only what every surface shares — the RTL reset, the type stack, and the tokens A1/A2/B2 all
+ * reference so three worktrees do not each invent a spacing scale.
+ *
+ * The font stack names Arabic-capable faces first and never Inter, Poppins or Roboto
+ * (CLAUDE.md design rules). Templates self-host their subset Arabic fonts; this stack is the
+ * fallback while they load and the default for the private surfaces.
+ */
+
+:root {
+  color-scheme: light;
+
+  --sb-bg: #faf7f1;
+  --sb-surface: #ffffff;
+  --sb-surface-muted: #f2ece2;
+  --sb-border: #e3d9c8;
+  --sb-text: #241c14;
+  --sb-text-muted: #6b5d4d;
+  --sb-primary: #a63d0b;
+  --sb-primary-contrast: #ffffff;
+  --sb-accent: #4f6338;
+  --sb-danger: #9c1c2c;
+
+  --sb-radius-sm: 6px;
+  --sb-radius: 10px;
+  --sb-radius-lg: 18px;
+
+  --sb-space-1: 4px;
+  --sb-space-2: 8px;
+  --sb-space-3: 12px;
+  --sb-space-4: 16px;
+  --sb-space-6: 24px;
+  --sb-space-8: 32px;
+  --sb-space-12: 48px;
+
+  --sb-font: 'Zain', 'IBM Plex Sans Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif;
+  --sb-text-sm: 0.9375rem;
+  --sb-text-base: 1.0625rem;
+  --sb-text-lg: 1.25rem;
+  --sb-text-xl: 1.6rem;
+  --sb-text-2xl: 2.1rem;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--sb-bg);
+  color: var(--sb-text);
+  font-family: var(--sb-font);
+  font-size: var(--sb-text-base);
+  line-height: 1.75;
+  /* Arabic diacritics and long ascenders need the extra leading; 1.5 clips them. */
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.35;
+  margin: 0 0 var(--sb-space-4);
+  font-weight: 700;
+}
+
+p {
+  margin: 0 0 var(--sb-space-4);
+}
+
+a {
+  color: var(--sb-primary);
+  text-underline-offset: 3px;
+}
+
+/* RTL-first: logical properties throughout, so nothing needs mirroring later. */
+.sb-page {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sb-space-8) var(--sb-space-4);
+}
+
+.sb-card {
+  width: 100%;
+  max-width: 34rem;
+  background: var(--sb-surface);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius-lg);
+  padding: var(--sb-space-8);
+  text-align: start;
+}
+
+.sb-title {
+  font-size: var(--sb-text-xl);
+  margin-block-end: var(--sb-space-3);
+}
+
+.sb-muted {
+  color: var(--sb-text-muted);
+}
+
+.sb-badge {
+  display: inline-block;
+  padding-inline: var(--sb-space-3);
+  padding-block: var(--sb-space-1);
+  border-radius: 999px;
+  background: var(--sb-surface-muted);
+  color: var(--sb-text-muted);
+  font-size: var(--sb-text-sm);
+  margin-block-end: var(--sb-space-4);
+}
+
+.sb-button {
+  display: inline-block;
+  background: var(--sb-primary);
+  color: var(--sb-primary-contrast);
+  border: 0;
+  border-radius: var(--sb-radius);
+  padding: var(--sb-space-3) var(--sb-space-6);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.sb-button:focus-visible,
+a:focus-visible,
+button:focus-visible {
+  outline: 3px solid var(--sb-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,267 @@
+{
+  "pack": "industrial",
+  "label": "عدد ومواد صناعية",
+  "template": "warsheh",
+  "colors": {
+    "primary": "#F59E0B",
+    "secondary": "#8A93A3",
+    "background": "#171B21"
+  },
+  "announcementBar": {
+    "text": "أسعار جملة للمقاولين — اطلب عرض سعر على الواتساب"
+  },
+  "tenant": {
+    "name": "مؤسسة البناء الحديث",
+    "slugPrefix": "demo-industrial",
+    "tagline": "كل شي للورشة والبناء — بمكان واحد",
+    "about": "من أكبر محلات العدد ومواد البناء في منطقة برطعة. بنوفّر عدد كهربائية ويدوية من ماركات معتمدة، مواد بناء ودهانات، ومعدات سلامة — مع توصيل للورش والمشاريع في المنطقة وأسعار جملة للمقاولين.",
+    "whatsapp": "+972500000000",
+    "phone": "050-000-0000",
+    "address": "برطعة — المنطقة الصناعية، مدخل البلدة",
+    "hours": "السبت–الخميس 7:30–18:00 · الجمعة مغلق"
+  },
+  "categories": [
+    {
+      "key": "power-tools",
+      "name": "عدد كهربائية"
+    },
+    {
+      "key": "hand-tools",
+      "name": "عدد يدوية"
+    },
+    {
+      "key": "materials",
+      "name": "مواد بناء"
+    },
+    {
+      "key": "paints",
+      "name": "دهانات وعوازل"
+    },
+    {
+      "key": "safety",
+      "name": "معدات سلامة"
+    }
+  ],
+  "sections": [
+    {
+      "type": "hero",
+      "sort": 1,
+      "config": {
+        "title": "عدّة الشغل الصح",
+        "subtitle": "عدد أصلية ومواد بناء بأسعار جملة — توصيل للورش والمشاريع",
+        "cta": "اطلب عرض سعر"
+      }
+    },
+    {
+      "type": "categories",
+      "sort": 2,
+      "config": {
+        "style": "chips"
+      }
+    },
+    {
+      "type": "products_grid",
+      "sort": 3,
+      "config": {
+        "showBadges": true,
+        "showPrices": true
+      }
+    },
+    {
+      "type": "about",
+      "sort": 4,
+      "config": {
+        "title": "من نحن"
+      }
+    },
+    {
+      "type": "testimonials",
+      "sort": 5,
+      "config": {}
+    },
+    {
+      "type": "contact_whatsapp",
+      "sort": 6,
+      "config": {
+        "note": "أسعار خاصة للمقاولين وطلبات الجملة"
+      }
+    },
+    {
+      "type": "map",
+      "sort": 7,
+      "config": {
+        "query": "برطعة — المنطقة الصناعية، مدخل البلدة"
+      }
+    }
+  ],
+  "products": [
+    {
+      "sku": "in-01",
+      "name": "دريل شحن 18V مع بطاريتين",
+      "description": "شنيور شحن قوي مع بطاريتين ليثيوم وشنطة، مناسب للاستخدام المكثف.",
+      "price": 349,
+      "currency": "ILS",
+      "category": "power-tools",
+      "available": true,
+      "badge": "الأكثر مبيعاً",
+      "imageAlt": "دريل شحن لاسلكي مع بطاريتين وشنطة"
+    },
+    {
+      "sku": "in-02",
+      "name": "صاروخ جلخ 4.5 إنش",
+      "description": "موتور 850 واط مع واقٍ معدني ومقبض جانبي.",
+      "price": 179,
+      "currency": "ILS",
+      "category": "power-tools",
+      "available": true,
+      "imageAlt": "صاروخ جلخ كهربائي بمقبض جانبي"
+    },
+    {
+      "sku": "in-03",
+      "name": "منشار ديسك 7 إنش",
+      "description": "قص دقيق للخشب والألمنيوم مع ليزر توجيه.",
+      "price": 429,
+      "currency": "ILS",
+      "category": "power-tools",
+      "available": true,
+      "imageAlt": "منشار ديسك كهربائي بليزر توجيه"
+    },
+    {
+      "sku": "in-04",
+      "name": "دريل مطرقي SDS",
+      "description": "لثقب الباطون بسهولة، ثلاثة أوضاع عمل.",
+      "price": 389,
+      "currency": "ILS",
+      "category": "power-tools",
+      "available": true,
+      "badge": "جديد",
+      "imageAlt": "دريل مطرقي لثقب الخرسانة"
+    },
+    {
+      "sku": "in-05",
+      "name": "طقم مفكات 32 قطعة",
+      "description": "رؤوس كروم فناديوم مع مقبض مغناطيسي.",
+      "price": 59,
+      "currency": "ILS",
+      "category": "hand-tools",
+      "available": true,
+      "imageAlt": "طقم مفكات متعدد الرؤوس في علبة"
+    },
+    {
+      "sku": "in-06",
+      "name": "طقم مفاتيح رنج 8–24 مم",
+      "description": "ستانلس مقاوم للصدأ مع شنطة تنظيم.",
+      "price": 89,
+      "currency": "ILS",
+      "category": "hand-tools",
+      "available": true,
+      "imageAlt": "طقم مفاتيح رنج معدنية بمقاسات متعددة"
+    },
+    {
+      "sku": "in-07",
+      "name": "متر ليزر 40 متر",
+      "description": "قياس دقيق بضغطة زر مع شاشة مضيئة.",
+      "price": 139,
+      "currency": "ILS",
+      "category": "hand-tools",
+      "available": true,
+      "badge": "عرض",
+      "imageAlt": "جهاز قياس مسافات بالليزر"
+    },
+    {
+      "sku": "in-08",
+      "name": "ميزان ماء مغناطيسي 60 سم",
+      "description": "ألمنيوم متين بثلاث عيون قياس.",
+      "price": 35,
+      "currency": "ILS",
+      "category": "hand-tools",
+      "available": true,
+      "imageAlt": "ميزان ماء ألمنيوم بثلاث فقاعات"
+    },
+    {
+      "sku": "in-09",
+      "name": "لاصق بلاط رمادي 25 كغ",
+      "description": "قوة تثبيت عالية للبلاط والبورسلان، للداخل والخارج.",
+      "price": 35,
+      "currency": "ILS",
+      "category": "materials",
+      "available": true,
+      "imageAlt": "كيس لاصق بلاط رمادي 25 كيلو"
+    },
+    {
+      "sku": "in-10",
+      "name": "إسمنت أبيض 25 كغ",
+      "description": "درجة نصاعة عالية للتشطيبات والترويب.",
+      "price": 32,
+      "currency": "ILS",
+      "category": "materials",
+      "available": true,
+      "imageAlt": "كيس إسمنت أبيض للتشطيبات"
+    },
+    {
+      "sku": "in-11",
+      "name": "معجونة تشطيب 15 كغ",
+      "description": "سطح ناعم جاهز للدهان وسهلة الفرد.",
+      "price": 42,
+      "currency": "ILS",
+      "category": "materials",
+      "available": true,
+      "imageAlt": "عبوة معجونة تشطيب للجدران"
+    },
+    {
+      "sku": "in-12",
+      "name": "دهان أكريليك داخلي 18 لتر",
+      "description": "تغطية ممتازة وقابل للغسيل، أبيض وقابل للتلوين.",
+      "price": 165,
+      "currency": "ILS",
+      "category": "paints",
+      "available": true,
+      "badge": "الأكثر مبيعاً",
+      "imageAlt": "جالون دهان أكريليك داخلي أبيض"
+    },
+    {
+      "sku": "in-13",
+      "name": "عازل أسطح أكريليك 20 كغ",
+      "description": "حماية من الرطوبة وأشعة الشمس، سهل التطبيق بالرول.",
+      "price": 185,
+      "currency": "ILS",
+      "category": "paints",
+      "available": true,
+      "imageAlt": "عبوة عازل أسطح أكريليك أبيض"
+    },
+    {
+      "sku": "in-14",
+      "name": "خوذة سلامة معتمدة",
+      "description": "بلاستيك ABS مقاوم للصدمات مع تعديل مقاس.",
+      "price": 25,
+      "currency": "ILS",
+      "category": "safety",
+      "available": true,
+      "imageAlt": "خوذة سلامة صفراء للورش"
+    },
+    {
+      "sku": "in-15",
+      "name": "حذاء سلامة برأس فولاذ",
+      "description": "جلد مقاوم للزيوت مع نعل مضاد للثقب.",
+      "price": 119,
+      "currency": "ILS",
+      "category": "safety",
+      "available": true,
+      "imageAlt": "حذاء سلامة جلدي برأس فولاذي"
+    }
+  ],
+  "testimonials": [
+    {
+      "name": "مقاول — أبو خالد",
+      "text": "بشتري كل مواد مشاريعي من عندهم، السعر جملة والتوصيل على الورشة."
+    },
+    {
+      "name": "ورشة ألمنيوم",
+      "text": "العدد أصلية وبضمان، وأي قطعة بتخرب بيوقفوا معك."
+    },
+    {
+      "name": "معلم دهان",
+      "text": "الدهانات عندهم تغطيتها ممتازة والألوان مضبوطة."
+    }
+  ]
+}

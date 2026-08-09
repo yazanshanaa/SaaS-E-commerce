@@ -1,0 +1,1558 @@
+// =============================================================================
+// Souq Bartaa — THE schema.
+//
+// Every table through Phase 5 lands here (docs/PHASES.md, rule 3): no later phase may add a
+// migration. Tables that nothing writes in V1 (Order / OrderItem / TenantCounter) are present
+// and empty on purpose — Phase 5 asserts it needs no migration, and that promise is kept here.
+//
+// Reading rules:
+//   - Tenant-owned tables carry `tenantId` and an index whose FIRST column is tenantId.
+//     Row-level security is applied to every one of them in migration 0001.
+//   - Global tables are enumerated and justified in prisma/GLOBAL_TABLES.md. Adding one
+//     without a line there is a review failure.
+//   - Money is ALWAYS an Int in agorot. There is no float anywhere near a price.
+//   - Column names are snake_case in Postgres so the RLS policies read as plain SQL;
+//     the Prisma field names stay camelCase.
+//
+// The datasource points at DATABASE_URL_MIGRATE because the CLI is the only consumer of this
+// url — the application builds its clients with an explicit datasourceUrl per DB role
+// (src/server/db/client.ts), so app_web can never accidentally run as the schema owner.
+// =============================================================================
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL_MIGRATE")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+// =============================================================================
+// Enums
+// =============================================================================
+
+/// super_admin lives HERE and never as a tenant membership (docs/PHASES.md item 3).
+/// A platform owner is not a member of any merchant's organisation.
+enum PlatformRole {
+  user
+  super_admin
+
+  @@map("platform_role")
+}
+
+/// Q2/Q6: no trial, no grace, no archived. Two states, and a purge that removes the row.
+enum SubscriptionStatus {
+  active
+  suspended
+
+  @@map("subscription_status")
+}
+
+enum BillingPeriod {
+  monthly
+  yearly
+
+  @@map("billing_period")
+}
+
+/// Both halves of the reminder timeline are declared now so B1's purge warnings need no
+/// migration: T-7/T-3/T-0 count down to currentPeriodEnd, R-7/R-3 to retentionUntil.
+enum ReminderStage {
+  pre_expiry_t7
+  pre_expiry_t3
+  pre_expiry_t0
+  retention_r7
+  retention_r3
+
+  @@map("reminder_stage")
+}
+
+enum PaymentKind {
+  subscription
+  order
+  setup_fee
+  change_request_addon
+
+  @@map("payment_kind")
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  failed
+  refunded
+
+  @@map("payment_status")
+}
+
+enum PaymentMethod {
+  cash
+  bank_transfer
+  card
+  gateway
+  other
+
+  @@map("payment_method")
+}
+
+enum ChangeRequestStatus {
+  open
+  applied
+  rejected
+
+  @@map("change_request_status")
+}
+
+/// The six managed capabilities of access axis (b). Products are deliberately NOT one of
+/// them — routing price edits through change requests would burn a basic plan's two monthly
+/// requests in the first week.
+enum CapabilityKey {
+  social_links
+  map_location
+  announcement_bar
+  announcements_board
+  colors
+  sections_layout
+
+  @@map("capability_key")
+}
+
+enum EditableBy {
+  admin
+  merchant
+
+  @@map("editable_by")
+}
+
+enum DomainKind {
+  platform_subdomain
+  custom
+
+  @@map("domain_kind")
+}
+
+enum DomainStatus {
+  pending
+  verified
+  active
+  failed
+
+  @@map("domain_status")
+}
+
+enum MediaStatus {
+  pending
+  processing
+  ready
+  failed
+
+  @@map("media_status")
+}
+
+enum MediaVariantKind {
+  thumb
+  card
+  full
+
+  @@map("media_variant_kind")
+}
+
+enum ImageFormat {
+  webp
+  avif
+  jpeg
+  png
+
+  @@map("image_format")
+}
+
+enum SectionType {
+  hero
+  products_grid
+  categories
+  about
+  gallery
+  testimonials
+  announcements
+  contact_whatsapp
+  map
+  custom_html
+
+  @@map("section_type")
+}
+
+enum DemoRequestStatus {
+  pending
+  approved
+  rejected
+
+  @@map("demo_request_status")
+}
+
+enum PushMessageStatus {
+  draft
+  queued
+  sending
+  sent
+  failed
+
+  @@map("push_message_status")
+}
+
+enum OrderStatus {
+  pending
+  paid
+  fulfilled
+  cancelled
+  refunded
+
+  @@map("order_status")
+}
+
+enum ConsentKind {
+  analytics
+  push
+
+  @@map("consent_kind")
+}
+
+enum DsrKind {
+  access
+  correction
+  deletion
+
+  @@map("dsr_kind")
+}
+
+enum DsrStatus {
+  received
+  in_progress
+  completed
+  rejected
+
+  @@map("dsr_status")
+}
+
+/// A data-subject request can come from someone with no account at all — a prospect who
+/// filled in the public demo form is the case Phase 6 calls out by name.
+enum DsrSubjectKind {
+  merchant
+  staff
+  visitor
+  demo_prospect
+
+  @@map("dsr_subject_kind")
+}
+
+enum NotificationAudience {
+  merchant
+  super_admin
+
+  @@map("notification_audience")
+}
+
+enum NotificationLevel {
+  info
+  warning
+  critical
+
+  @@map("notification_level")
+}
+
+enum WebhookDeliveryStatus {
+  pending
+  delivered
+  failed
+  dead
+
+  @@map("webhook_delivery_status")
+}
+
+/// The SERVING state — what proxy.ts needs to know before any tenant context exists.
+///
+/// It is deliberately a small read model on the Tenant row rather than a join to the
+/// Subscription: hostname resolution runs with no tenant context, and a pre-context SELECT
+/// policy on `subscriptions` would expose `export_download_token` — a bearer credential to a
+/// merchant's entire catalogue — to any unauthenticated request. A slug, a name and "is this
+/// site open" are public by construction; a download token is not.
+///
+/// `purging` is a fail-closed gate rather than a lifecycle state: withTenantTxn throws for a
+/// tenant in it, so a job dequeued a moment before the purge cannot write objects into a
+/// prefix we just swept. The billing service is the only writer (invariant 5).
+enum TenantState {
+  active
+  suspended
+  purging
+
+  @@map("tenant_state")
+}
+
+// =============================================================================
+// better-auth — identity (GLOBAL) and membership (TENANT-OWNED)
+// =============================================================================
+
+model User {
+  id            String       @id @default(cuid())
+  name          String
+  email         String       @unique
+  emailVerified Boolean      @default(false) @map("email_verified")
+  image         String?
+  /// The ONLY place super_admin exists.
+  platformRole  PlatformRole @default(user) @map("platform_role")
+
+  /// A demo tenant's owner is created with loginDisabled = true and no credential account:
+  /// it cannot authenticate by any route, but it makes the tenant ownable and impersonable
+  /// for the sales tour (Q17).
+  loginDisabled Boolean   @default(false) @map("login_disabled")
+  twoFactorEnabled Boolean @default(false) @map("two_factor_enabled")
+
+  // better-auth admin plugin
+  banned     Boolean?
+  banReason  String?   @map("ban_reason")
+  banExpires DateTime? @map("ban_expires")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  sessions       Session[]
+  accounts       Account[]
+  twoFactors     TwoFactor[]
+  memberships    Member[]
+  invitationsSent Invitation[] @relation("InvitationInviter")
+
+  @@index([platformRole])
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  userId    String   @map("user_id")
+
+  /// better-auth organization plugin: the tenant this session is currently acting in.
+  activeTenantId String? @map("active_tenant_id")
+  /// better-auth admin plugin: set while a super admin is impersonating a merchant.
+  impersonatedBy String? @map("impersonated_by")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  userId                String    @map("user_id")
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
+  scope                 String?
+  /// argon2id. Never a plaintext or reversible value (invariant 7).
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([identifier])
+  @@index([expiresAt])
+  @@map("verifications")
+}
+
+/// Mandatory for the super admin (docs/PHASES.md item 3); available to merchant owners.
+model TwoFactor {
+  id          String @id @default(cuid())
+  secret      String
+  backupCodes String @map("backup_codes")
+  userId      String @map("user_id")
+
+  verified                Boolean   @default(true)
+  /// Lockout counters, so a stolen password plus a brute-forced TOTP is not a viable path.
+  failedVerificationCount Int       @default(0) @map("failed_verification_count")
+  lockedUntil             DateTime? @map("locked_until")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("two_factors")
+}
+
+/// THE single membership source (docs/PHASES.md item 3). Tenant-owned, fully policed:
+/// `role` is 'owner' | 'staff', enforced by a CHECK constraint in migration 0001 because
+/// better-auth writes it as a plain string.
+model Member {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  userId    String   @map("user_id")
+  role      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([tenantId, userId])
+  @@index([userId])
+  @@map("members")
+}
+
+model Invitation {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  email     String
+  role      String
+  status    String   @default("pending")
+  expiresAt DateTime @map("expires_at")
+  inviterId String   @map("inviter_id")
+  /// better-auth's organization plugin writes this. Teams are not a V1 concept; the column
+  /// exists so the plugin's own schema stays satisfied without a later migration.
+  teamId    String?  @map("team_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  inviter User   @relation("InvitationInviter", fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, email])
+  @@index([email])
+  @@map("invitations")
+}
+
+// =============================================================================
+// Plans and the two access axes (GLOBAL)
+// =============================================================================
+
+model Plan {
+  id                String  @id @default(cuid())
+  key               String  @unique
+  name              String
+  description       String?
+  priceMonthlyAgorot Int    @map("price_monthly_agorot")
+  priceYearlyAgorot  Int    @map("price_yearly_agorot")
+  /// Charged once on a monthly account, waived on annual (Q3).
+  setupFeeAgorot     Int    @default(0) @map("setup_fee_agorot")
+  /// The `demo` plan is hidden: never offered, never priced, and the ONLY plan on which a
+  /// null currentPeriodEnd is legal (enforced by trigger in migration 0001).
+  hidden             Boolean @default(false)
+  active             Boolean @default(true)
+  sortOrder          Int     @default(0) @map("sort_order")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  features      PlanFeature[]
+  capabilities  PlanCapability[]
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+/// Axis (a) defaults. `value` is typed JSON: boolean | number | null | string | string[].
+/// `null` is a real value (change_requests_per_month = null means unlimited), which is why
+/// this is a Json column and not three nullable typed columns.
+model PlanFeature {
+  id         String @id @default(cuid())
+  planId     String @map("plan_id")
+  featureKey String @map("feature_key")
+  value      Json
+
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, featureKey])
+  @@index([planId])
+  @@map("plan_features")
+}
+
+/// Axis (b) defaults: who may edit each managed capability, and whether it renders at all.
+model PlanCapability {
+  id            String        @id @default(cuid())
+  planId        String        @map("plan_id")
+  capabilityKey CapabilityKey @map("capability_key")
+  editableBy    EditableBy    @map("editable_by")
+  visible       Boolean       @default(true)
+
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, capabilityKey])
+  @@index([planId])
+  @@map("plan_capabilities")
+}
+
+/// The three launch templates (A2 owns their implementation; the registry key lives here so
+/// templates_allowed can be validated against real rows).
+model Template {
+  key         String  @id
+  name        String
+  description String?
+  fontKey     String  @map("font_key")
+  previewPath String? @map("preview_path")
+  active      Boolean @default(true)
+  sortOrder   Int     @default(0) @map("sort_order")
+
+  @@map("templates")
+}
+
+// =============================================================================
+// Tenant — the isolation root
+// =============================================================================
+
+model Tenant {
+  id   String @id @default(cuid())
+  name String
+  slug String @unique
+
+  /// THE canonical demo predicate (docs/PHASES.md rule 5). proxy.ts resolves it into the
+  /// request context; A2 renders the watermark, the noindex and the rejection page from it.
+  /// currentPeriodEnd = null is a CONSEQUENCE of this flag, never an independent definition.
+  isDemo Boolean @default(false) @map("is_demo")
+
+  state TenantState @default(active)
+
+  /// Owned by the media jobs (A3). BigInt because 10GB in bytes overflows a 32-bit int.
+  storageBytesUsed BigInt @default(0) @map("storage_bytes_used")
+
+  // better-auth organization plugin fields
+  logo     String?
+  metadata String?
+
+  createdById String?  @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  subscription        Subscription?
+  site                Site?
+  members             Member[]
+  invitations         Invitation[]
+  entitlements        Entitlement[]
+  capabilityOverrides CapabilityOverride[]
+  socialLinks         SocialLink[]
+  pages               Page[]
+  sections            Section[]
+  announcements       Announcement[]
+  testimonials        Testimonial[]
+  categories          Category[]
+  products            Product[]
+  productImages       ProductImage[]
+  media               Media[]
+  mediaVariants       MediaVariant[]
+  domains             Domain[]
+  demoLinks           DemoLink[]
+  payments            Payment[]
+  gatewayConfigs      GatewayConfig[]
+  consents            Consent[]
+  notifications       Notification[]
+  events              Event[]
+  auditLogs           AuditLog[]
+  changeRequests      ChangeRequest[]
+  pushSubscriptions   PushSubscription[]
+  pushMessages        PushMessage[]
+  orders              Order[]
+  orderItems          OrderItem[]
+  counters            TenantCounter[]
+  themeSettings       ThemeSettings?
+  reminders           SubscriptionReminder[]
+
+  @@index([isDemo])
+  @@index([state])
+  @@index([createdAt])
+  @@map("tenants")
+}
+
+// =============================================================================
+// Subscription and its lifecycle
+// =============================================================================
+
+model Subscription {
+  id       String @id @default(cuid())
+  tenantId String @unique @map("tenant_id")
+  planId   String @map("plan_id")
+
+  status        SubscriptionStatus @default(active)
+  billingPeriod BillingPeriod      @default(monthly) @map("billing_period")
+
+  startedAt DateTime @default(now()) @map("started_at")
+  /// NULL is legal ONLY on the hidden demo plan. A real paying account with a null period end
+  /// would silently never be swept, never reminded, never suspended and never purged — so a
+  /// trigger in migration 0001 rejects it, on top of the billing-service guard.
+  currentPeriodEnd DateTime? @map("current_period_end")
+
+  suspendedAt         DateTime? @map("suspended_at")
+  retentionUntil      DateTime? @map("retention_until")
+  retentionExtensions Int       @default(0) @map("retention_extensions")
+
+  // --- The Q18 suspension export ------------------------------------------------
+  // Deliberately on this TENANT-OWNED row: it dies with the tenant in the purge cascade, so
+  // neither a pointer to the merchant's data nor a working credential for it can outlive the
+  // deletion. Clearing exportDownloadToken revokes the link instantly — which is precisely
+  // what a presigned URL could never offer.
+  exportKey               String?   @map("export_key")
+  exportGeneratedAt       DateTime? @map("export_generated_at")
+  exportDownloadToken     String?   @unique @map("export_download_token")
+  exportFirstDownloadedAt DateTime? @map("export_first_downloaded_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant    Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan      Plan                   @relation(fields: [planId], references: [id])
+  reminders SubscriptionReminder[]
+  payments  Payment[]
+
+  @@index([tenantId])
+  @@index([status, currentPeriodEnd])
+  @@index([status, retentionUntil])
+  @@map("subscriptions")
+}
+
+/// Idempotency for every reminder the platform will ever send. The composite primary key IS
+/// the guarantee: a repeated sweep cannot send the same stage twice.
+model SubscriptionReminder {
+  subscriptionId String        @map("subscription_id")
+  stage          ReminderStage
+  tenantId       String        @map("tenant_id")
+  sentAt         DateTime      @default(now()) @map("sent_at")
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([subscriptionId, stage])
+  @@index([tenantId, stage])
+  @@map("subscription_reminders")
+}
+
+// =============================================================================
+// Per-tenant overrides on both access axes
+// =============================================================================
+
+model Entitlement {
+  id         String @id @default(cuid())
+  tenantId   String @map("tenant_id")
+  featureKey String @map("feature_key")
+  value      Json
+  note       String?
+
+  createdById String?  @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, featureKey])
+  @@index([tenantId, featureKey])
+  @@map("entitlements")
+}
+
+model CapabilityOverride {
+  id            String        @id @default(cuid())
+  tenantId      String        @map("tenant_id")
+  capabilityKey CapabilityKey @map("capability_key")
+  /// Both nullable: an override may flip only one of the two toggles A1 shows side by side.
+  editableBy    EditableBy?   @map("editable_by")
+  visible       Boolean?
+
+  createdById String?  @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, capabilityKey])
+  @@index([tenantId, capabilityKey])
+  @@map("capability_overrides")
+}
+
+// =============================================================================
+// Site content
+// =============================================================================
+
+model Site {
+  /// Q11: one site per tenant, confirmed 1:1.
+  id       String @id @default(cuid())
+  tenantId String @unique @map("tenant_id")
+
+  templateKey String @map("template_key")
+
+  name    String
+  tagline String?
+  about   String?
+
+  address  String?
+  phone    String?
+  whatsapp String?
+  hours    String?
+  email    String?
+
+  /// The map section prefers coordinates and falls back to the free-text query — the demo
+  /// packs ship address text only, so without the fallback every demo renders a dead map.
+  mapLat   Float?  @map("map_lat")
+  mapLng   Float?  @map("map_lng")
+  mapQuery String? @map("map_query")
+
+  logoMediaId    String? @map("logo_media_id")
+  faviconMediaId String? @map("favicon_media_id")
+  ogImageMediaId String? @map("og_image_media_id")
+
+  /// Site-level announcement bar (capability `announcement_bar`), scheduled like the board.
+  announcementBarEnabled  Boolean   @default(false) @map("announcement_bar_enabled")
+  announcementBarText     String?   @map("announcement_bar_text")
+  announcementBarLink     String?   @map("announcement_bar_link")
+  announcementBarStartsAt DateTime? @map("announcement_bar_starts_at")
+  announcementBarEndsAt   DateTime? @map("announcement_bar_ends_at")
+
+  /// One Umami websiteId per tenant, provisioned by A1 at account creation.
+  umamiWebsiteId String? @map("umami_website_id")
+
+  pwaEnabled     Boolean @default(false) @map("pwa_enabled")
+  /// Flips on the returns/cancellation policy and the permanent "إلغاء معاملة" footer link.
+  sellingEnabled Boolean @default(false) @map("selling_enabled")
+
+  /// seo_tools gates these EDITABLE fields only. Baseline metadata ships on every plan.
+  metaTitle       String? @map("meta_title")
+  metaDescription String? @map("meta_description")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("sites")
+}
+
+/// Tenant colour customisation writes TOKENS ONLY, and only through the WCAG AA contrast
+/// guard in src/shared/site-contract.
+model ThemeSettings {
+  id       String @id @default(cuid())
+  tenantId String @unique @map("tenant_id")
+
+  /// 'preset' | 'custom' — mirrors the color_mode feature value, which lives on axis (a).
+  colorMode String @default("preset") @map("color_mode")
+  /// Which of the 5 vetted sets, when colorMode = preset.
+  presetKey String? @map("preset_key")
+
+  primary    String
+  secondary  String
+  background String
+  surface    String?
+  text       String?
+
+  /// Anything a template exposes beyond the five core colours (radii, spacing scale).
+  tokens Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("theme_settings")
+}
+
+model SocialLink {
+  id       String  @id @default(cuid())
+  tenantId String  @map("tenant_id")
+  platform String
+  url      String
+  sort     Int     @default(0)
+  enabled  Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, platform])
+  @@index([tenantId, sort])
+  @@map("social_links")
+}
+
+model Page {
+  id       String  @id @default(cuid())
+  tenantId String  @map("tenant_id")
+  slug     String
+  title    String
+  /// Legal pages are generated in Phase 6 and must not be deletable by the merchant.
+  isSystem Boolean @default(false) @map("is_system")
+  published Boolean @default(true)
+  sort     Int     @default(0)
+
+  metaTitle       String? @map("meta_title")
+  metaDescription String? @map("meta_description")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sections Section[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, sort])
+  @@map("pages")
+}
+
+model Section {
+  id       String      @id @default(cuid())
+  tenantId String      @map("tenant_id")
+  pageId   String      @map("page_id")
+  type     SectionType
+  sort     Int         @default(0)
+  enabled  Boolean     @default(true)
+  /// Validated against the per-type zod schema in src/shared/site-contract.
+  config   Json        @default("{}")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  page   Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, pageId, sort])
+  @@index([pageId])
+  @@map("sections")
+}
+
+/// The announcements BOARD (capability `announcements_board`). Scheduling with a start AND an
+/// end exists on every plan; متجر buys the editable_by flip, not the feature.
+model Announcement {
+  id       String  @id @default(cuid())
+  tenantId String  @map("tenant_id")
+  title    String
+  body     String?
+  imageMediaId String? @map("image_media_id")
+  link     String?
+  startsAt DateTime? @map("starts_at")
+  endsAt   DateTime? @map("ends_at")
+  sort     Int     @default(0)
+  published Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, sort])
+  @@index([tenantId, startsAt, endsAt])
+  @@map("announcements")
+}
+
+model Testimonial {
+  id       String  @id @default(cuid())
+  tenantId String  @map("tenant_id")
+  name     String
+  text     String
+  rating   Int?
+  sort     Int     @default(0)
+  published Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, sort])
+  @@map("testimonials")
+}
+
+model Category {
+  id       String  @id @default(cuid())
+  tenantId String  @map("tenant_id")
+  /// Demo packs link products via categories[].key — this is that key.
+  key      String
+  name     String
+  sort     Int     @default(0)
+  published Boolean @default(true)
+  imageMediaId String? @map("image_media_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, sort])
+  @@map("categories")
+}
+
+model Product {
+  id         String  @id @default(cuid())
+  tenantId   String  @map("tenant_id")
+  categoryId String? @map("category_id")
+
+  sku         String?
+  slug        String
+  name        String
+  description String?
+  /// Agorot. ₪69.00 is 6900. No float ever touches a price.
+  priceAgorot Int     @map("price_agorot")
+  currency    String  @default("ILS")
+  available   Boolean @default(true)
+  badge       String?
+  sort        Int     @default(0)
+  published   Boolean @default(true)
+
+  /// Q12: variants are out of V1, but the column ships EMPTY now so adding sizes and colours
+  /// later is a fill, not a migration.
+  variants Json?
+
+  seoTitle       String? @map("seo_title")
+  seoDescription String? @map("seo_description")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category   Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  images     ProductImage[]
+  orderItems OrderItem[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, sort])
+  @@index([tenantId, categoryId])
+  @@map("products")
+}
+
+model ProductImage {
+  id        String  @id @default(cuid())
+  tenantId  String  @map("tenant_id")
+  productId String  @map("product_id")
+  mediaId   String  @map("media_id")
+  /// Arabic alt text is REQUIRED on product images (invariant 4). Not nullable on purpose.
+  alt       String
+  sort      Int     @default(0)
+  isPrimary Boolean @default(false) @map("is_primary")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  media   Media   @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, mediaId])
+  @@index([tenantId, productId, sort])
+  @@map("product_images")
+}
+
+// =============================================================================
+// Media (A3 owns the pipeline; the rows live here)
+// =============================================================================
+
+model Media {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+
+  /// Object key under tenants/{tenantId}/media/. The _exports/ prefix deliberately has NO
+  /// Media row — which is why A3's orphan cleanup must skip it.
+  key          String
+  originalName String?     @map("original_name")
+  mimeType     String      @map("mime_type")
+  sizeBytes    Int         @map("size_bytes")
+  width        Int?
+  height       Int?
+  checksum     String?
+  status       MediaStatus @default(pending)
+  altText      String?     @map("alt_text")
+  failureReason String?    @map("failure_reason")
+
+  createdById String?  @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  variants      MediaVariant[]
+  productImages ProductImage[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@map("media")
+}
+
+model MediaVariant {
+  id       String           @id @default(cuid())
+  tenantId String           @map("tenant_id")
+  mediaId  String           @map("media_id")
+  kind     MediaVariantKind
+  format   ImageFormat
+  width    Int
+  height   Int
+  sizeBytes Int             @map("size_bytes")
+  key      String
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  media  Media  @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@unique([mediaId, kind, format])
+  @@index([tenantId, mediaId])
+  @@map("media_variants")
+}
+
+// =============================================================================
+// Hostnames and demo access
+// =============================================================================
+
+model Domain {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+
+  /// Globally unique: two tenants cannot claim the same hostname, and proxy.ts resolves a
+  /// request by this column before any tenant context exists (hence its narrow app_web
+  /// SELECT policy in migration 0001).
+  hostname String @unique
+
+  kind      DomainKind   @default(custom)
+  status    DomainStatus @default(pending)
+  isPrimary Boolean      @default(false) @map("is_primary")
+
+  verificationToken String?   @map("verification_token")
+  verifiedAt        DateTime? @map("verified_at")
+  activatedAt       DateTime? @map("activated_at")
+  lastCheckedAt     DateTime? @map("last_checked_at")
+  failureReason     String?   @map("failure_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([status])
+  @@map("domains")
+}
+
+/// Q8: magic-link only. A demo hostname without a valid token gets the Arabic rejection page.
+/// No expiry by default (Q2) — the admin controls the lifetime.
+model DemoLink {
+  id       String    @id @default(cuid())
+  tenantId String    @map("tenant_id")
+  token    String    @unique
+  expiresAt DateTime? @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  lastUsedAt DateTime? @map("last_used_at")
+  useCount  Int       @default(0) @map("use_count")
+
+  createdById String?  @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, revokedAt])
+  @@map("demo_links")
+}
+
+// =============================================================================
+// Money
+// =============================================================================
+
+model Payment {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+
+  subscriptionId String? @map("subscription_id")
+
+  kind   PaymentKind
+  status PaymentStatus @default(paid)
+  /// Agorot, always.
+  amountAgorot Int    @map("amount_agorot")
+  currency     String @default("ILS")
+
+  method PaymentMethod?
+  note   String?
+  attachmentMediaId String? @map("attachment_media_id")
+
+  /// An over-quota change request is paid for with a change_request_addon payment; this link
+  /// is what lets revenue reporting separate setup fees and add-ons from recurring revenue.
+  changeRequestId String? @unique @map("change_request_id")
+
+  /// Phase 5 fills these. The columns exist now so payments need no migration then.
+  orderId     String? @map("order_id")
+  providerRef String? @map("provider_ref")
+  rawPayload  Json?   @map("raw_payload")
+
+  paidAt       DateTime? @map("paid_at")
+  recordedById String?   @map("recorded_by_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscription  Subscription?  @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  changeRequest ChangeRequest? @relation(fields: [changeRequestId], references: [id], onDelete: SetNull)
+  order         Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, kind, paidAt])
+  @@index([tenantId, createdAt])
+  @@index([subscriptionId])
+  @@map("payments")
+}
+
+/// Phase 5. Per-tenant provider keys, encrypted at rest with ENCRYPTION_KEY.
+model GatewayConfig {
+  id       String  @id @default(cuid())
+  tenantId String  @map("tenant_id")
+  provider String
+  enabled  Boolean @default(false)
+
+  /// AES-256-GCM. Never a plaintext key, never logged.
+  credentialsCipher String? @map("credentials_cipher")
+  credentialsIv     String? @map("credentials_iv")
+  credentialsTag    String? @map("credentials_tag")
+  config            Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, provider])
+  @@index([tenantId])
+  @@map("gateway_configs")
+}
+
+// =============================================================================
+// The metered "اطلب تعديل" entity (A1 + B2 both build against it)
+// =============================================================================
+
+model ChangeRequest {
+  id            String              @id @default(cuid())
+  tenantId      String              @map("tenant_id")
+  capabilityKey CapabilityKey       @map("capability_key")
+  /// The prefilled payload the merchant submitted — applied verbatim on approval.
+  payload       Json
+  status        ChangeRequestStatus @default(open)
+  note          String?
+  decisionNote  String?             @map("decision_note")
+
+  createdById String    @map("created_by_id")
+  decidedById String?   @map("decided_by_id")
+  decidedAt   DateTime? @map("decided_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Back-relation. The FK itself lives on Payment.changeRequestId (see docs/DECISIONS.md).
+  payment Payment?
+
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("change_requests")
+}
+
+// =============================================================================
+// Visitor-facing data (deliberately tiny in V1 — Q5)
+// =============================================================================
+
+/// The consent record that gates ALL tracking. No analytics request may precede it.
+model Consent {
+  id       String      @id @default(cuid())
+  tenantId String      @map("tenant_id")
+  kind     ConsentKind
+  granted  Boolean
+
+  /// A rotating per-visitor hash, never a raw identifier.
+  visitorHash String  @map("visitor_hash")
+  ipHash      String? @map("ip_hash")
+  userAgent   String? @map("user_agent")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, kind, createdAt])
+  @@index([tenantId, visitorHash])
+  @@map("consents")
+}
+
+/// Phase 4. A push endpoint is a persistent per-device identifier, so consentAt is not
+/// decoration — Phase 6's privacy copy has to be able to point at it.
+model PushSubscription {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+
+  endpoint String
+  p256dh   String
+  auth     String
+
+  userAgent String?  @map("user_agent")
+  consentAt DateTime @map("consent_at")
+
+  createdAt  DateTime @default(now()) @map("created_at")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// Scoped to the tenant, NOT platform-wide. A global unique on endpoint would fail against
+  /// rows RLS hides — and a unique-violation on an invisible row leaks its existence.
+  @@unique([tenantId, endpoint])
+  @@index([tenantId, createdAt])
+  @@map("push_subscriptions")
+}
+
+/// Phase 4's send history. Declared now so Phase 4 needs no migration.
+model PushMessage {
+  id       String            @id @default(cuid())
+  tenantId String            @map("tenant_id")
+  title    String
+  body     String
+  targetUrl String?          @map("target_url")
+  status   PushMessageStatus @default(draft)
+
+  createdById String    @map("created_by_id")
+  sentAt      DateTime? @map("sent_at")
+
+  deliveredCount Int @default(0) @map("delivered_count")
+  failedCount    Int @default(0) @map("failed_count")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
+  @@map("push_messages")
+}
+
+// =============================================================================
+// Orders — present, unwritten in V1 (Q5). Phase 5 asserts no migration is needed.
+// =============================================================================
+
+model Order {
+  id       String      @id @default(cuid())
+  tenantId String      @map("tenant_id")
+  /// From TenantCounter inside the same transaction — never max()+1.
+  number   Int
+  status   OrderStatus @default(pending)
+
+  customerName  String? @map("customer_name")
+  customerPhone String? @map("customer_phone")
+  customerNote  String? @map("customer_note")
+
+  totalAgorot Int    @map("total_agorot")
+  currency    String @default("ILS")
+
+  placedAt  DateTime  @default(now()) @map("placed_at")
+  paidAt    DateTime? @map("paid_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items    OrderItem[]
+  payments Payment[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status, placedAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  tenantId  String  @map("tenant_id")
+  orderId   String  @map("order_id")
+  productId String? @map("product_id")
+
+  nameSnapshot    String @map("name_snapshot")
+  priceAgorot     Int    @map("price_agorot")
+  quantity        Int    @default(1)
+  subtotalAgorot  Int    @map("subtotal_agorot")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, orderId])
+  @@map("order_items")
+}
+
+/// Gap-free per-tenant sequences (order numbers). A row lock inside the order transaction is
+/// the only correct source; max()+1 races.
+model TenantCounter {
+  tenantId String @map("tenant_id")
+  key      String
+  value    Int    @default(0)
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, key])
+  @@index([tenantId])
+  @@map("tenant_counters")
+}
+
+// =============================================================================
+// Observability: notifications, the event outbox, audit
+// =============================================================================
+
+model Notification {
+  id       String               @id @default(cuid())
+  tenantId String               @map("tenant_id")
+  audience NotificationAudience
+  level    NotificationLevel    @default(info)
+  /// Message key resolved through the i18n layer — never a stored English sentence.
+  key      String
+  /// Interpolation values for the key (names, dates, counts).
+  data     Json?
+
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, audience, createdAt])
+  @@index([tenantId, readAt])
+  @@map("notifications")
+}
+
+/// The internal outbox. TENANT-OWNED and therefore destroyed by the purge cascade — which is
+/// exactly why emitting an event also materialises its WebhookDelivery rows (global) in the
+/// same transaction. The `purged` event survives in the deliveries, not here.
+model Event {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  type     String
+  /// jsonb. Redacted in application logs, scrubbed from Sentry, never rendered raw in admin
+  /// surfaces, and NEVER carrying a credential that grants standing access to tenant data.
+  payload  Json
+
+  occurredAt DateTime @default(now()) @map("occurred_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, type, occurredAt])
+  @@index([tenantId, occurredAt])
+  @@map("events")
+}
+
+/// Tenant-scoped audit trail (invariant 3). Platform-level super-admin actions that have no
+/// tenant — plan CRUD, demo-request decisions, closing a demo — go to PlatformAuditLog, the
+/// "global side" docs/PHASES.md refers to in B3.
+model AuditLog {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+
+  actorUserId String? @map("actor_user_id")
+  actorRole   String  @map("actor_role")
+  action      String
+  entityType  String  @map("entity_type")
+  entityId    String? @map("entity_id")
+
+  before Json?
+  after  Json?
+
+  /// Always from getClientIp() (invariant 9). Never a raw X-Forwarded-For.
+  ip        String?
+  userAgent String? @map("user_agent")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, action, createdAt])
+  @@index([tenantId, actorUserId])
+  @@map("audit_logs")
+}
+
+// =============================================================================
+// GLOBAL tables — every one justified in prisma/GLOBAL_TABLES.md
+// =============================================================================
+
+/// Platform-level audit: actions with no tenant to hang on, and actions whose whole point is
+/// to survive the tenant (closing a demo, purging).
+model PlatformAuditLog {
+  id String @id @default(cuid())
+
+  actorUserId String? @map("actor_user_id")
+  actorRole   String  @map("actor_role")
+  action      String
+  entityType  String  @map("entity_type")
+  entityId    String? @map("entity_id")
+  /// A plain column, not a foreign key: the tenant it refers to may be gone.
+  tenantRef   String? @map("tenant_ref")
+
+  before Json?
+  after  Json?
+
+  ip        String?
+  userAgent String? @map("user_agent")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([action, createdAt])
+  @@index([tenantRef])
+  @@map("platform_audit_logs")
+}
+
+/// B3's public form. GLOBAL because it exists before any tenant does.
+/// It holds a prospect's phone number and physical address and has no tenant_id, so the
+/// generic RLS template cannot apply: migration 0001 gives app_web INSERT and nothing else.
+model DemoRequest {
+  id String @id @default(cuid())
+
+  businessName    String? @map("business_name")
+  address         String
+  whatsapp        String
+  requestedPrefix String  @map("requested_prefix")
+  packKey         String? @map("pack_key")
+
+  status DemoRequestStatus @default(pending)
+
+  createdTenantId String? @map("created_tenant_id")
+
+  /// HMAC under ENCRYPTION_KEY, never a bare hash: a plain hash of an IPv4 address is
+  /// brute-forceable over the whole address space and de-identifies nothing.
+  ipHash String @map("ip_hash")
+
+  note        String?
+  decidedById String?   @map("decided_by_id")
+  decidedAt   DateTime? @map("decided_at")
+
+  /// Defaults to +30 days (migration 0001). B1's daily sweep deletes rows past this date, so
+  /// a rejected request does not linger — which is what B3's Arabic notice promises.
+  purgeAfter DateTime @map("purge_after")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([status, createdAt])
+  @@index([purgeAfter])
+  @@index([requestedPrefix])
+  @@map("demo_requests")
+}
+
+/// What survives a purge. Deliberately minimal: it records THAT an export was delivered and
+/// whether it was ever downloaded — facts, and the platform's defence if a merchant complains
+/// — but never WHERE it was, and it stores a HASH of the slug rather than the slug and the
+/// trading name. A small merchant's trading name is usually a person's name; keeping it
+/// forever would contradict the very deletion this row exists to prove.
+model TenantTombstone {
+  id       String @id @default(cuid())
+  tenantId String @unique @map("tenant_id")
+
+  /// HMAC of the slug under ENCRYPTION_KEY. Answers "was this slug ever used" and nothing else.
+  slugHash String @map("slug_hash")
+
+  purgedAt   DateTime @default(now()) @map("purged_at")
+  purgedById String?  @map("purged_by_id")
+
+  retentionExtensions Int       @default(0) @map("retention_extensions")
+  exportDeliveredAt   DateTime? @map("export_delivered_at")
+  exportDownloadedAt  DateTime? @map("export_downloaded_at")
+
+  reason String
+
+  @@index([purgedAt])
+  @@index([slugHash])
+  @@map("tenant_tombstones")
+}
+
+/// GLOBAL, not tenant-owned. If it cascaded with the tenant, purging would destroy the record
+/// proving we honoured a data-subject request — the same trap the tombstone exists to avoid,
+/// one table over.
+model DsrRequest {
+  id String @id @default(cuid())
+
+  subjectKind  DsrSubjectKind @map("subject_kind")
+  subjectEmail String?        @map("subject_email")
+  /// HMAC, for a subject who reached us by phone (a demo prospect has no account).
+  subjectPhoneHash String?    @map("subject_phone_hash")
+  /// Plain column: the tenant may no longer exist.
+  tenantRef        String?    @map("tenant_ref")
+
+  kind   DsrKind
+  status DsrStatus @default(received)
+
+  details     String?
+  resolution  String?
+  receivedAt  DateTime  @default(now()) @map("received_at")
+  completedAt DateTime? @map("completed_at")
+  handledById String?   @map("handled_by_id")
+
+  @@index([status, receivedAt])
+  @@index([subjectEmail])
+  @@map("dsr_requests")
+}
+
+/// Platform-level outbound webhook targets (n8n). Not tenant-owned: one endpoint receives
+/// every tenant's events, and a tenant must never be able to add one.
+model WebhookEndpoint {
+  id     String  @id @default(cuid())
+  name   String
+  url    String
+  /// HMAC signing secret for this endpoint. Rotatable without touching deliveries.
+  secret String
+  active Boolean @default(true)
+  /// Empty array = every event type.
+  eventTypes String[] @default([]) @map("event_types")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  deliveries WebhookDelivery[]
+
+  @@map("webhook_endpoints")
+}
+
+/// GLOBAL on purpose. Deliveries are materialised at emit time and must OUTLIVE the tenant:
+/// the `purged` event is emitted moments before the cascade deletes every tenant-owned row,
+/// including the Event that produced it. If deliveries cascaded too, the one event the
+/// platform most needs to deliver would be the one event it could never send.
+model WebhookDelivery {
+  id         String @id @default(cuid())
+  endpointId String @map("endpoint_id")
+
+  /// Plain columns, no foreign keys — the Event row and the Tenant row may both be gone.
+  eventId   String  @map("event_id")
+  eventType String  @map("event_type")
+  tenantRef String? @map("tenant_ref")
+
+  payload Json
+
+  status        WebhookDeliveryStatus @default(pending)
+  attempts      Int                   @default(0)
+  lastAttemptAt DateTime?             @map("last_attempt_at")
+  nextAttemptAt DateTime?             @map("next_attempt_at")
+  responseStatus Int?                 @map("response_status")
+  error         String?
+  deliveredAt   DateTime?             @map("delivered_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([eventId])
+  @@index([tenantRef])
+  @@map("webhook_deliveries")
+}
