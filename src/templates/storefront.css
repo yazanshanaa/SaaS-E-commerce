@@ -1,0 +1,938 @@
+/*
+ * Storefront structure, shared by all three templates.
+ *
+ * Every value here comes from a `--t-*` token, so a template changes its whole personality by
+ * shipping a different token set plus its own overrides file — and a tenant changes its colours
+ * by writing five tokens, never a rule.
+ *
+ * RTL-FIRST, not mirrored: there is no `left` or `right` anywhere below. `inset-inline-start`,
+ * `padding-inline`, `margin-block` and `text-align: start` are the vocabulary, which is why the
+ * same stylesheet would work in an LTR locale without a single override — and why nothing
+ * flipped the wrong way when Arabic went in.
+ */
+
+/* ---------------------------------------------------------------- shell -- */
+
+.sf-root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--t-bg);
+  color: var(--t-text);
+  font-family: var(--t-font);
+  font-size: var(--t-text-base);
+  font-weight: var(--t-weight-body);
+  line-height: var(--t-line-body);
+}
+
+.sf-shell {
+  width: 100%;
+  max-width: var(--t-measure);
+  margin-inline: auto;
+  padding-inline: var(--t-space-lg);
+}
+
+.sf-main {
+  flex: 1 1 auto;
+}
+
+.sf-root h1,
+.sf-root h2,
+.sf-root h3,
+.sf-root h4 {
+  font-weight: var(--t-weight-display);
+  line-height: var(--t-line-tight);
+  letter-spacing: var(--t-tracking-display);
+  margin: 0;
+  /*
+   * Arabic has no uppercase and no small-caps: hierarchy has to come from size, weight and
+   * space. `text-wrap: balance` keeps a two-word Arabic heading from leaving one orphan word
+   * on its own line, which is where long merchant names break a card grid.
+   */
+  text-wrap: balance;
+}
+
+.sf-root p {
+  margin: 0;
+}
+
+/*
+ * `:where()` on purpose — it contributes ZERO specificity.
+ *
+ * Written as `.sf-root a` this rule scores (0,1,1) and silently beats `.sf-btn` at (0,1,0), so
+ * every button label inherited the body text colour and sat on a filled brand background at
+ * whatever contrast happened to result. That is an axe colour-contrast failure produced by a
+ * cascade accident, and it is invisible in review because the rule looks harmless.
+ */
+:where(.sf-root a) {
+  color: inherit;
+}
+
+.sf-root :focus-visible {
+  outline: 3px solid var(--t-primary);
+  outline-offset: 3px;
+}
+
+.sf-vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* -------------------------------------------------- announcement bar -- */
+
+.sf-bar {
+  background: var(--t-primary);
+  color: var(--t-on-primary);
+  font-size: var(--t-text-sm);
+}
+
+.sf-bar__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-md);
+  padding-block: var(--t-space-sm);
+}
+
+.sf-bar__text {
+  flex: 1 1 auto;
+  text-align: center;
+  /* Two lines maximum on a phone; a three-line bar pushes the whole page down. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sf-bar__text a {
+  color: inherit;
+  text-underline-offset: 3px;
+}
+
+.sf-bar__close {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid currentColor;
+  color: inherit;
+  border-radius: var(--t-radius-pill);
+  inline-size: 28px;
+  block-size: 28px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+}
+
+/* ------------------------------------------------------------- header -- */
+
+.sf-header {
+  border-block-end: var(--t-rule-hair);
+  background: var(--t-bg);
+}
+
+.sf-header__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-lg);
+  padding-block: var(--t-space-md);
+  flex-wrap: wrap;
+}
+
+.sf-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-sm);
+  text-decoration: none;
+  min-inline-size: 0;
+}
+
+.sf-brand__logo {
+  display: block;
+  block-size: 44px;
+  inline-size: auto;
+  object-fit: contain;
+}
+
+.sf-brand__text {
+  min-inline-size: 0;
+}
+
+.sf-brand__name {
+  font-size: var(--t-text-lg);
+  font-weight: var(--t-weight-display);
+  line-height: 1.2;
+}
+
+.sf-brand__tag {
+  font-size: var(--t-text-xs);
+  color: var(--t-text-muted);
+  display: block;
+  /* A long tagline must not push the nav onto a third row on a 360px screen. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-inline-size: 22ch;
+}
+
+.sf-nav {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-md);
+  flex-wrap: wrap;
+}
+
+.sf-nav a {
+  text-decoration: none;
+  font-size: var(--t-text-sm);
+  padding-block: var(--t-space-xs);
+  border-block-end: 2px solid transparent;
+}
+
+.sf-nav a:hover,
+.sf-nav a[aria-current='page'] {
+  border-block-end-color: var(--t-primary);
+}
+
+/* ------------------------------------------------------------ blocks -- */
+
+.sf-block {
+  padding-block: var(--t-block);
+}
+
+.sf-block + .sf-block {
+  padding-block-start: 0;
+}
+
+.sf-block__head {
+  margin-block-end: var(--t-space-xl);
+}
+
+.sf-block__title {
+  font-size: var(--t-text-2xl);
+}
+
+.sf-block__lead {
+  color: var(--t-text-muted);
+  margin-block-start: var(--t-space-sm);
+  max-inline-size: 60ch;
+}
+
+.sf-prose {
+  max-inline-size: 68ch;
+  color: var(--t-text);
+}
+
+.sf-prose p + p,
+.sf-prose ul,
+.sf-prose ol,
+.sf-prose table {
+  margin-block-start: var(--t-space-md);
+}
+
+.sf-prose a {
+  color: var(--t-link);
+  text-underline-offset: 3px;
+}
+
+.sf-note {
+  color: var(--t-text-muted);
+  border: var(--t-rule-hair);
+  border-radius: var(--t-radius-md);
+  padding: var(--t-space-lg);
+  background: var(--t-surface);
+}
+
+/* ------------------------------------------------------------ buttons -- */
+
+.sf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--t-space-sm);
+  font: inherit;
+  font-weight: var(--t-weight-display);
+  font-size: var(--t-text-sm);
+  text-decoration: none;
+  cursor: pointer;
+  border: 2px solid transparent;
+  border-radius: var(--t-radius-md);
+  padding-inline: var(--t-space-lg);
+  padding-block: var(--t-space-sm);
+  /* 44px minimum touch target: this is a phone-first storefront in a market. */
+  min-block-size: 44px;
+  background: var(--t-primary);
+  color: var(--t-on-primary);
+}
+
+.sf-btn--ghost {
+  background: transparent;
+  color: var(--t-text);
+  border-color: var(--t-border);
+}
+
+.sf-btn--quiet {
+  background: transparent;
+  color: var(--t-text);
+  border-color: transparent;
+  padding-inline: var(--t-space-sm);
+}
+
+.sf-btn[aria-disabled='true'],
+.sf-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.sf-btn__icon {
+  inline-size: 1.15em;
+  block-size: 1.15em;
+  flex: 0 0 auto;
+}
+
+.sf-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--t-space-sm);
+  align-items: center;
+}
+
+/* -------------------------------------------------------------- media -- */
+
+.sf-media {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  background: var(--t-surface-alt);
+  border-radius: var(--t-radius-md);
+  /* Reserved before a byte arrives — this is the CLS budget, spent once, here. */
+  aspect-ratio: var(--sf-ratio, 4 / 3);
+}
+
+.sf-media img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+/*
+ * The deliberate no-image state.
+ *
+ * A tenant with no media is the NORMAL first day of an account, so this has to look like a
+ * decision rather than a broken image: the template's own rule pattern, the shop's initial, and
+ * exactly the same reserved box so nothing moves when a real photo replaces it.
+ */
+.sf-ph {
+  display: grid;
+  place-items: center;
+  block-size: 100%;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      var(--t-surface-alt) 0 10px,
+      var(--t-surface) 10px 20px
+    );
+  color: var(--t-text-muted);
+}
+
+.sf-ph__mark {
+  font-size: var(--t-text-2xl);
+  font-weight: var(--t-weight-display);
+  opacity: 0.55;
+}
+
+/* --------------------------------------------------------------- hero -- */
+
+.sf-hero {
+  padding-block: var(--t-block);
+}
+
+.sf-hero__title {
+  font-size: var(--t-text-display);
+}
+
+.sf-hero__text {
+  color: var(--t-text-muted);
+  font-size: var(--t-text-lg);
+  max-inline-size: 52ch;
+  margin-block-start: var(--t-space-md);
+}
+
+.sf-hero__actions {
+  margin-block-start: var(--t-space-xl);
+}
+
+.sf-hero--split .sf-hero__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: var(--t-space-2xl);
+  align-items: center;
+}
+
+.sf-hero--stage .sf-hero__inner {
+  display: grid;
+  gap: var(--t-space-xl);
+}
+
+.sf-hero--ledger .sf-hero__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
+  gap: var(--t-space-xl);
+  align-items: end;
+}
+
+.sf-hero__facts {
+  display: grid;
+  gap: 1px;
+  background: var(--t-border);
+  border: var(--t-rule-hair);
+}
+
+.sf-hero__fact {
+  display: grid;
+  grid-template-columns: 8rem minmax(0, 1fr);
+  gap: var(--t-space-sm);
+  background: var(--t-surface);
+  padding: var(--t-space-sm) var(--t-space-md);
+  font-size: var(--t-text-sm);
+}
+
+.sf-hero__fact dt {
+  color: var(--t-text-muted);
+}
+
+.sf-hero__fact dd {
+  margin: 0;
+}
+
+/* --------------------------------------------------------------- grid -- */
+
+.sf-grid {
+  display: grid;
+  gap: var(--t-space-lg);
+  grid-template-columns: repeat(var(--sf-cols, 3), minmax(0, 1fr));
+}
+
+/* --------------------------------------------------------------- card -- */
+
+.sf-card {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  background: var(--t-surface);
+  border: var(--t-rule-hair);
+  border-radius: var(--t-radius-md);
+  box-shadow: var(--t-elev-card);
+  overflow: hidden;
+}
+
+.sf-card__link {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+
+.sf-card__body {
+  padding: var(--t-space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--t-space-sm);
+  flex: 1 1 auto;
+}
+
+.sf-card__name {
+  font-size: var(--t-text-lg);
+  /*
+   * Three lines, then ellipsis. Arabic product names in these packs run from "زعتر بلدي" to
+   * "طقم أدوات صيانة متعدد الاستخدامات ٤٢ قطعة" — clamping is what keeps a grid row aligned
+   * without truncating the short ones into uselessness.
+   */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.sf-card__desc {
+  color: var(--t-text-muted);
+  font-size: var(--t-text-sm);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sf-card__foot {
+  margin-block-start: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--t-space-sm);
+  flex-wrap: wrap;
+}
+
+.sf-price {
+  font-size: var(--t-text-lg);
+  font-weight: var(--t-weight-display);
+  /* Western digits and ₪, per CLAUDE.md — the direction override keeps "129 ₪" in that order. */
+  unicode-bidi: isolate;
+}
+
+.sf-price--muted {
+  color: var(--t-text-muted);
+  font-size: var(--t-text-sm);
+  font-weight: var(--t-weight-body);
+}
+
+.sf-badge {
+  display: inline-block;
+  font-size: var(--t-text-xs);
+  font-weight: var(--t-weight-display);
+  padding-inline: var(--t-space-sm);
+  padding-block: 2px;
+  border-radius: var(--t-radius-pill);
+  background: var(--t-secondary);
+  color: var(--t-on-secondary);
+}
+
+.sf-badge--off {
+  background: var(--t-surface-alt);
+  color: var(--t-text-muted);
+  border: var(--t-rule-hair);
+}
+
+.sf-card__spec {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px var(--t-space-sm);
+  font-size: var(--t-text-xs);
+  color: var(--t-text-muted);
+  margin: 0;
+}
+
+.sf-card__spec dt {
+  color: var(--t-text-muted);
+}
+
+.sf-card__spec dd {
+  margin: 0;
+  color: var(--t-text);
+}
+
+/* --------------------------------------------------------- categories -- */
+
+.sf-cats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--t-space-md);
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+}
+
+.sf-cat {
+  display: block;
+  text-decoration: none;
+  border: var(--t-rule-hair);
+  border-radius: var(--t-radius-md);
+  overflow: hidden;
+  background: var(--t-surface);
+}
+
+.sf-cat__label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--t-space-sm);
+  padding: var(--t-space-sm) var(--t-space-md);
+}
+
+.sf-cat__count {
+  color: var(--t-text-muted);
+  font-size: var(--t-text-xs);
+}
+
+.sf-rail {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 var(--t-space-sm);
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(14rem, 1fr);
+  gap: var(--t-space-md);
+  overflow-x: auto;
+  scroll-snap-type: inline mandatory;
+}
+
+.sf-rail > li {
+  scroll-snap-align: start;
+}
+
+.sf-index {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: var(--t-rule-hair);
+}
+
+.sf-index > li + li {
+  border-block-start: var(--t-rule-hair);
+}
+
+.sf-index a {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--t-space-md);
+  padding: var(--t-space-sm) var(--t-space-md);
+  text-decoration: none;
+  background: var(--t-surface);
+}
+
+/* ------------------------------------------------------------- offers -- */
+
+.sf-offers {
+  display: grid;
+  gap: var(--t-space-lg);
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+}
+
+.sf-offer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--t-space-sm);
+  background: var(--t-surface);
+  border: var(--t-rule-hair);
+  border-radius: var(--t-radius-md);
+  padding: var(--t-space-lg);
+}
+
+.sf-offer__title {
+  font-size: var(--t-text-lg);
+}
+
+.sf-offer__body {
+  color: var(--t-text-muted);
+}
+
+.sf-offer .sf-media {
+  margin-block-end: var(--t-space-sm);
+}
+
+/* --------------------------------------------------------- quotes ------ */
+
+.sf-quotes {
+  display: grid;
+  gap: var(--t-space-lg);
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sf-quote {
+  background: var(--t-surface);
+  border: var(--t-rule-hair);
+  border-radius: var(--t-radius-md);
+  padding: var(--t-space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--t-space-sm);
+}
+
+.sf-quote__text {
+  overflow-wrap: anywhere;
+}
+
+.sf-quote__who {
+  font-size: var(--t-text-sm);
+  color: var(--t-text-muted);
+  font-style: normal;
+}
+
+.sf-stars {
+  display: inline-flex;
+  gap: 2px;
+  color: var(--t-secondary);
+}
+
+.sf-stars svg {
+  inline-size: 1em;
+  block-size: 1em;
+}
+
+/* ------------------------------------------------------ contact / map -- */
+
+.sf-contact {
+  display: grid;
+  gap: var(--t-space-xl);
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  align-items: start;
+}
+
+.sf-facts {
+  display: grid;
+  gap: var(--t-space-sm);
+  margin: 0;
+}
+
+.sf-facts div {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: var(--t-space-sm);
+}
+
+.sf-facts dt {
+  color: var(--t-text-muted);
+  font-size: var(--t-text-sm);
+}
+
+.sf-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.sf-facts a {
+  color: var(--t-link);
+  text-underline-offset: 3px;
+}
+
+/* ------------------------------------------------------------ gallery -- */
+
+.sf-gallery {
+  display: grid;
+  gap: var(--t-space-sm);
+  grid-template-columns: repeat(var(--sf-cols, 3), minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* ------------------------------------------------------------- footer -- */
+
+.sf-footer {
+  margin-block-start: var(--t-space-3xl);
+  border-block-start: var(--t-rule-hair);
+  background: var(--t-surface);
+  color: var(--t-text);
+}
+
+.sf-footer__inner {
+  padding-block: var(--t-space-2xl);
+  display: grid;
+  gap: var(--t-space-xl);
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+
+.sf-footer h2 {
+  font-size: var(--t-text-sm);
+  color: var(--t-text-muted);
+  margin-block-end: var(--t-space-sm);
+  font-weight: var(--t-weight-display);
+}
+
+.sf-footer ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--t-space-xs);
+}
+
+.sf-footer a {
+  text-underline-offset: 3px;
+}
+
+.sf-social {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--t-space-sm);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sf-social a {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 44px;
+  block-size: 44px;
+  border: var(--t-rule-hair);
+  border-radius: var(--t-radius-pill);
+  color: var(--t-text);
+}
+
+.sf-social svg {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+.sf-legal {
+  border-block-start: var(--t-rule-hair);
+  padding-block: var(--t-space-md);
+  font-size: var(--t-text-xs);
+  color: var(--t-text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--t-space-sm) var(--t-space-md);
+  align-items: center;
+}
+
+.sf-legal a {
+  color: var(--t-text-muted);
+  text-underline-offset: 3px;
+}
+
+/* ------------------------------------------------- consent + watermark -- */
+
+.sf-consent {
+  position: fixed;
+  inset-block-end: 0;
+  inset-inline: 0;
+  z-index: 60;
+  background: var(--t-surface);
+  border-block-start: var(--t-rule-frame);
+  padding: var(--t-space-lg);
+}
+
+.sf-consent__inner {
+  max-inline-size: var(--t-measure);
+  margin-inline: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--t-space-md);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sf-consent__copy {
+  flex: 1 1 22rem;
+}
+
+.sf-consent__title {
+  font-size: var(--t-text-lg);
+  margin-block-end: var(--t-space-xs);
+}
+
+.sf-consent__body {
+  color: var(--t-text-muted);
+  font-size: var(--t-text-sm);
+}
+
+.sf-watermark {
+  position: fixed;
+  inset-block-end: var(--t-space-md);
+  inset-inline-start: var(--t-space-md);
+  z-index: 55;
+  background: var(--t-surface);
+  color: var(--t-text);
+  border: 2px solid var(--t-primary);
+  border-radius: var(--t-radius-pill);
+  padding-inline: var(--t-space-md);
+  padding-block: var(--t-space-xs);
+  font-size: var(--t-text-xs);
+  font-weight: var(--t-weight-display);
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------ order control -- */
+
+.sf-order {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--t-space-sm);
+}
+
+.sf-order__hint {
+  flex-basis: 100%;
+  color: var(--t-text-muted);
+  font-size: var(--t-text-xs);
+}
+
+.sf-stepper {
+  display: inline-flex;
+  align-items: stretch;
+  border: 2px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+  overflow: hidden;
+}
+
+.sf-stepper__btn {
+  font: inherit;
+  font-size: var(--t-text-lg);
+  line-height: 1;
+  background: var(--t-surface);
+  color: var(--t-text);
+  border: 0;
+  cursor: pointer;
+  inline-size: 44px;
+  min-block-size: 44px;
+}
+
+.sf-stepper__btn:disabled {
+  color: var(--t-text-muted);
+  cursor: not-allowed;
+}
+
+.sf-stepper__value {
+  min-inline-size: 3rem;
+  display: grid;
+  place-items: center;
+  background: var(--t-surface);
+  font-weight: var(--t-weight-display);
+  border-inline: 2px solid var(--t-border);
+}
+
+.sf-consent__link {
+  color: var(--t-link);
+  text-underline-offset: 3px;
+}
+
+/* --------------------------------------------------------- responsive -- */
+
+@media (max-width: 60rem) {
+  .sf-hero--split .sf-hero__inner,
+  .sf-hero--ledger .sf-hero__inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sf-grid {
+    grid-template-columns: repeat(min(var(--sf-cols, 3), 2), minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 40rem) {
+  .sf-shell {
+    padding-inline: var(--t-space-md);
+  }
+
+  .sf-grid,
+  .sf-gallery {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sf-hero__facts .sf-hero__fact,
+  .sf-facts div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .sf-brand__tag {
+    display: none;
+  }
+}
+
+@media (max-width: 26rem) {
+  .sf-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

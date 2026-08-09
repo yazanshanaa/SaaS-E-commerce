@@ -1,0 +1,144 @@
+/*
+ * سوق نيون — bold fashion.
+ *
+ * Personality: a night-market stall under a sign. The image IS the card — the name and price sit
+ * over its base on a solid scrim, not on a panel underneath. Display type is oversized with
+ * negative tracking, section titles are numbered, and the second colour (gold) appears only as
+ * a hairline and a number, never as a fill behind text.
+ *
+ * There is no frosted panel and no blur-behind anywhere in this file: the depth comes from the
+ * accent and from the black, which is the point of the template.
+ */
+
+@font-face {
+  font-family: 'Alexandria';
+  font-style: normal;
+  font-weight: 400;
+  src: url('/fonts/alexandria/alexandria-v6-arabic-regular.woff2') format('woff2');
+  font-display: swap;
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF,
+    U+0020-007E, U+2000-206F, U+20AA, U+2190-21BB;
+}
+
+@font-face {
+  font-family: 'Alexandria';
+  font-style: normal;
+  font-weight: 700;
+  src: url('/fonts/alexandria/alexandria-v6-arabic-700.woff2') format('woff2');
+  font-display: swap;
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF,
+    U+0020-007E, U+2000-206F, U+20AA, U+2190-21BB;
+}
+
+[data-template='neon-souq'] .sf-header {
+  border-block-end: 1px solid var(--t-border);
+}
+
+[data-template='neon-souq'] .sf-block__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--t-space-md);
+  border-block-start: 3px solid var(--t-primary);
+  padding-block-start: var(--t-space-md);
+}
+
+[data-template='neon-souq'] .sf-block__title {
+  text-transform: none;
+  letter-spacing: -0.015em;
+}
+
+[data-template='neon-souq'] .sf-hero--stage .sf-hero__inner {
+  background: var(--t-surface);
+  border-radius: var(--t-radius-lg);
+  overflow: hidden;
+  padding: 0;
+}
+
+[data-template='neon-souq'] .sf-hero--stage .sf-hero__media .sf-media {
+  border-radius: 0;
+  --sf-ratio: 16 / 9;
+}
+
+[data-template='neon-souq'] .sf-hero--stage .sf-hero__copy {
+  padding: var(--t-space-2xl);
+}
+
+[data-template='neon-souq'] .sf-hero__title {
+  line-height: 1.05;
+}
+
+/* The overlay card: image edge to edge, text over a solid scrim at its base. */
+[data-template='neon-souq'] .sf-card {
+  position: relative;
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+  background: var(--t-surface);
+}
+
+[data-template='neon-souq'] .sf-card__media .sf-media {
+  border-radius: 0;
+  --sf-ratio: 3 / 4;
+}
+
+[data-template='neon-souq'] .sf-card--overlay .sf-card__body {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  /*
+   * A SOLID scrim, not a translucent blur. Two reasons: contrast against an unknown photograph
+   * has to be guaranteed rather than hoped for, and glassmorphism is on the forbidden list.
+   */
+  background: var(--t-surface);
+  border-block-start: 1px solid var(--t-secondary);
+  gap: var(--t-space-xs);
+}
+
+[data-template='neon-souq'] .sf-card__name {
+  font-size: var(--t-text-base);
+  -webkit-line-clamp: 2;
+}
+
+[data-template='neon-souq'] .sf-price {
+  color: var(--t-secondary);
+}
+
+[data-template='neon-souq'] .sf-badge {
+  border-radius: 0;
+  text-transform: none;
+}
+
+[data-template='neon-souq'] .sf-btn {
+  border-radius: var(--t-radius-sm);
+  text-transform: none;
+  letter-spacing: 0.01em;
+}
+
+[data-template='neon-souq'] .sf-btn--ghost {
+  border-color: var(--t-secondary);
+  color: var(--t-secondary);
+}
+
+[data-template='neon-souq'] .sf-cat {
+  border-radius: var(--t-radius-sm);
+  border-color: var(--t-border);
+}
+
+[data-template='neon-souq'] .sf-quote {
+  border-radius: var(--t-radius-sm);
+  border-block-start: 3px solid var(--t-primary);
+}
+
+[data-template='neon-souq'] .sf-offer {
+  border-radius: var(--t-radius-sm);
+  border-inline-start: 3px solid var(--t-primary);
+}
+
+[data-template='neon-souq'] .sf-footer {
+  background: var(--t-bg);
+  border-block-start: 1px solid var(--t-border);
+}
+
+[data-template='neon-souq'] .sf-social a {
+  border-radius: var(--t-radius-sm);
+  border-color: var(--t-border);
+}

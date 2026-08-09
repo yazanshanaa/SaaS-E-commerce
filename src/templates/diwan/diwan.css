@@ -1,0 +1,111 @@
+/*
+ * ديوان — warm general retail.
+ *
+ * Personality: the front room of a family shop. Arched frames, an ornamental double rule under
+ * every section title, warm plates behind prices, and a lot of air. Zain is set large because
+ * the reader is usually a parent holding a phone in a market with one hand.
+ */
+
+@font-face {
+  font-family: 'Zain';
+  font-style: normal;
+  font-weight: 400;
+  /* Arabic subset only — a full family would be five times the bytes for glyphs nobody sees. */
+  src: url('/fonts/zain/zain-v4-arabic-regular.woff2') format('woff2');
+  font-display: swap;
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF,
+    U+0020-007E, U+2000-206F, U+20AA, U+2190-21BB;
+}
+
+@font-face {
+  font-family: 'Zain';
+  font-style: normal;
+  font-weight: 700;
+  src: url('/fonts/zain/zain-v4-arabic-700.woff2') format('woff2');
+  font-display: swap;
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF,
+    U+0020-007E, U+2000-206F, U+20AA, U+2190-21BB;
+}
+
+[data-template='diwan'] .sf-block__head {
+  position: relative;
+  padding-block-end: var(--t-space-md);
+}
+
+/* The ornament: two rules of different lengths, the shorter one in the olive second colour. */
+[data-template='diwan'] .sf-block__head::after,
+[data-template='diwan'] .sf-block__head::before {
+  content: '';
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-start: 0;
+  block-size: 2px;
+  background: var(--t-border);
+  inline-size: 100%;
+}
+
+[data-template='diwan'] .sf-block__head::before {
+  inline-size: 4.5rem;
+  block-size: 4px;
+  background: var(--t-secondary);
+  inset-block-end: -1px;
+  z-index: 1;
+}
+
+[data-template='diwan'] .sf-header {
+  border-block-end: 2px solid var(--t-border);
+}
+
+[data-template='diwan'] .sf-hero__inner {
+  padding-block: var(--t-space-xl);
+}
+
+/* The arch: a tall radius on the leading top corner only, so it reads as a doorway in RTL. */
+[data-template='diwan'] .sf-hero__media .sf-media,
+[data-template='diwan'] .sf-card__media .sf-media {
+  border-start-start-radius: 14rem;
+  border-start-end-radius: 14rem;
+  border-end-start-radius: var(--t-radius-md);
+  border-end-end-radius: var(--t-radius-md);
+  border: 2px solid var(--t-border);
+}
+
+[data-template='diwan'] .sf-card {
+  border: 2px solid var(--t-border);
+  border-radius: var(--t-radius-lg);
+  background: var(--t-surface);
+}
+
+[data-template='diwan'] .sf-card__media {
+  padding: var(--t-space-md) var(--t-space-md) 0;
+}
+
+[data-template='diwan'] .sf-price {
+  background: var(--t-surface-alt);
+  border-radius: var(--t-radius-pill);
+  padding-inline: var(--t-space-md);
+  padding-block: 2px;
+}
+
+[data-template='diwan'] .sf-cat {
+  border: 2px solid var(--t-border);
+  border-radius: var(--t-radius-lg);
+}
+
+[data-template='diwan'] .sf-offer {
+  border: 2px solid var(--t-secondary);
+  border-radius: var(--t-radius-lg);
+}
+
+[data-template='diwan'] .sf-quote {
+  border-radius: var(--t-radius-lg);
+  border-inline-start: 6px solid var(--t-secondary);
+}
+
+[data-template='diwan'] .sf-btn {
+  border-radius: var(--t-radius-pill);
+}
+
+[data-template='diwan'] .sf-footer {
+  background: var(--t-surface-alt);
+}
