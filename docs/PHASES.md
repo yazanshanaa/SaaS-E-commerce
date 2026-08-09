@@ -28,6 +28,7 @@ Track progress in `TODO.md`. One phase per session. `/clear` between phases.
 
 | Gate | Check |
 |---|---|
+| Ownership | `node scripts/check-track-ownership.mjs <track> [worktree]` clean — no forbidden shared file touched, nothing outside the track's folders |
 | Build | `pnpm typecheck` + `pnpm lint` + `pnpm test` green |
 | E2E | `pnpm e2e` for the flows this phase touched |
 | Language | No user-facing English/Hebrew string in the diff; all copy from `messages/ar/**` |
@@ -401,8 +402,17 @@ Copy-Item ..\souq-bartaa\.env .env            # .env is untracked — copying is
 
 ### Forbidden shared files — no worktree may touch these, ever
 
+> **This list is enforced by `node scripts/check-track-ownership.mjs <track> [worktree]`.** Every
+> track runs it before requesting a merge, and the main session runs it again at each merge step.
+> It checks committed *and* uncommitted paths against both this list and the ownership table
+> above, so a violation surfaces while its author still remembers why they made it — rather than
+> at the merge, on someone else's branch, as a conflict nobody has the context to resolve. The
+> worse case is the one that does not conflict: a clean auto-merge quietly reverting a contract
+> two other tracks were coding against. A track's own gate stays green either way, which is
+> exactly why the check cannot be left to the gate.
+
 - `prisma/schema.prisma`, `prisma/migrations/**`, `prisma/GLOBAL_TABLES.md`
-- `proxy.ts`
+- `proxy.ts` — actually `src/proxy.ts`, see `docs/DECISIONS.md`
 - `src/server/db/**` (client extension, `withTenantTxn`)
 - `src/server/auth/**`
 - `src/server/entitlements/**` (`can` / `canEdit` / `remainingChangeRequests`)
@@ -410,16 +420,29 @@ Copy-Item ..\souq-bartaa\.env .env            # .env is untracked — copying is
 - `src/server/billing/**` — one exception: B1 fills in the implementation during Group B
 - `src/server/export/**` — one exception: B1 completes the images-ZIP half during Group B
 - `src/server/http/**` (`getClientIp()`)
-- `src/server/queues.ts`
-- `src/shared/site-contract/**`
+- `src/server/queues.ts`, `src/server/jobs/**` — `jobs/**` is B1's in Group B
+- `src/server/storage/**` — **added after Phase 1.** The `StorageAdapter` interface sits outside
+  A3's folder precisely so `src/server/export` can depend on it, so A3 registering its R2 driver
+  by editing this folder would rewrite a contract Phase 1 already shipped. A3 implements in
+  `src/server/media/storage` and calls `setStorageAdapter()`.
+- `src/shared/site-contract/**`, `src/shared/features.ts`, `src/shared/i18n/**`, `src/env.ts` —
+  the rest of the shared contract surface. `site-contract` was the only one written down; the
+  other three are consumed from every worktree just as literally.
 - `src/server/demo/types.ts`, `src/server/demo/placeholder.ts`, `src/server/demo/packs/**` — **frozen contract and data** ("B3 consumes this shape literally. Change it only from the main session")
 - `package.json`, `pnpm-lock.yaml` — dependencies were all installed in Phase 1
+- `.gitignore`, `tsconfig.json`, `next.config.ts`, `eslint.config.mjs`, `vitest.config.ts`,
+  `playwright.config.ts` — build and gate configuration. A track that loosens a rule to make its
+  own gate pass has disabled that rule for every other track too, silently and permanently.
 - `src/app/layout.tsx`, `src/app/globals.css`
-- `src/app/demo-gate/**`, `src/app/unknown-host/**`, `src/app/not-found.tsx`, `src/app/export/**` — Phase 1 surfaces that belong to no track
-- `tests/e2e/hostname-resolution.spec.ts`, `tests/e2e/auth.spec.ts`, `tests/e2e/support/**`, `tests/unit/language-gate.test.ts`, `tests/unit/guardrails.test.ts` — shared suites. A track adds its OWN spec files; it never edits these. If one of them must change, that is a sync point.
+- `src/app/demo-gate/**`, `src/app/unknown-host/**`, `src/app/not-found.tsx`, `src/app/export/**`, `src/app/api/auth/**`, `src/app/internal/**` — Phase 1 surfaces that belong to no track
+- `tests/e2e/hostname-resolution.spec.ts`, `tests/e2e/auth.spec.ts`, `tests/e2e/support/**`, `tests/unit/language-gate.test.ts`, `tests/unit/guardrails.test.ts`, `tests/setup/**`, `tests/helpers/**` — shared suites and harness. A track adds its OWN spec files, named `<track>-*.test.ts` / `<track>-*.spec.ts`; it never edits these. If one of them must change, that is a sync point.
 - `messages/ar/common.json`
-- `.env.example`, `docker-compose*.yml`, `Dockerfile`, `Caddyfile`
+- `.env.example`, `docker-compose*.yml`, `docker/**`, `Dockerfile`, `Caddyfile`
 - `CLAUDE.md`, `docs/BUILD-KIT.md`, `docs/PHASES.md`, `docs/DECISIONS.md`
+- `TODO.md` — three tracks appending to one checklist is a conflict per track per commit. Each
+  track writes `docs/decisions/<track>.md`; the main session ticks `TODO.md` at merge, from the
+  branches it has just reviewed.
+- `scripts/**`
 
 ### Mandatory sync points
 
