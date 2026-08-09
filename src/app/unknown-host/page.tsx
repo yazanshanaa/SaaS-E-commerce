@@ -12,11 +12,11 @@ export const metadata: Metadata = {
 
 export default function UnknownHostPage() {
   return (
-    <div className="sb-page">
+    <main id="main" className="sb-page">
       <div className="sb-card">
         <h1 className="sb-title">{t('common', 'errors.unknownHost.title')}</h1>
         <p className="sb-muted">{t('common', 'errors.unknownHost.body')}</p>
       </div>
-    </div>
+    </main>
   );
 }

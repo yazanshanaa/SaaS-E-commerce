@@ -374,13 +374,30 @@ Copy-Item ..\souq-bartaa\.env .env            # .env is untracked — copying is
 
 ### Ownership
 
+> **Route-group names resolve to plain segments.** The main session settled surface routing
+> immediately before Group A (see `docs/DECISIONS.md` → *Surface routing*): `proxy.ts` rewrites
+> each hostname into its own subtree, because three route groups would all still resolve to `/`
+> and the App Router refuses that. Read the ownership names below through this map:
+>
+> | Written as | Actual folder | Public URL |
+> |---|---|---|
+> | `src/app/(admin)` | `src/app/admin` | `admin.{DOMAIN}/…` |
+> | `src/app/(dashboard)` | `src/app/dashboard` | `app.{DOMAIN}/…` |
+> | `src/app/(storefront)` | `src/app/site` | `{slug}.{DOMAIN}/…` |
+> | `src/app/(public)` | `src/app/(public)` — unchanged | `app.{DOMAIN}/demo-request` |
+>
+> The prefix is internal: every `href` is written as the public path (`/accounts`, never
+> `/admin/accounts`). Each surface layout renders `data-surface` and exactly one
+> `<main id="main">` — the shared e2e suite asserts on the former, and the root layout's skip
+> link targets the latter.
+
 | Track | Owns | Also | Depends on |
 |---|---|---|---|
-| **A1** Super Admin panel | `src/app/(admin)` **except `(admin)/demos`**, `src/server/admin` | `messages/ar/admin.json`, `docs/decisions/a1.md`, its own TODO section | Phase 1 (consumes `site-contract`, `billing`, `entitlements` read-only) |
-| **A2** Storefront + templates | `src/templates`, `src/app/(storefront)` | `messages/ar/storefront.json`, `docs/decisions/a2.md`, its own TODO section | Phase 1 (`site-contract`) |
+| **A1** Super Admin panel | `src/app/admin` **except `admin/demos`**, `src/server/admin` | `messages/ar/admin.json`, `docs/decisions/a1.md`, its own TODO section | Phase 1 (consumes `site-contract`, `billing`, `entitlements` read-only) |
+| **A2** Storefront + templates | `src/templates`, `src/app/site` | `messages/ar/storefront.json`, `docs/decisions/a2.md`, its own TODO section | Phase 1 (`site-contract`) |
 | **A3** Media pipeline | `src/server/media` (incl. `storage/` and its processors) | `messages/ar/media.json`, `docs/decisions/a3.md`, its own TODO section | Phase 1 (`queues.ts` pre-registers its path) |
 
-> `src/app/(admin)/demos/**` is reserved for **B3**, which owns the whole demo surface — the pack picker, the request inbox and the close action. A1 must not build demo screens: demo creation lives in `src/server/demo`, which does not exist until Group B, so an approve button in A1 would be a dead button that still passes A1's gate.
+> `src/app/admin/demos/**` is reserved for **B3**, which owns the whole demo surface — the pack picker, the request inbox and the close action. A1 must not build demo screens: demo creation lives in `src/server/demo`, which does not exist until Group B, so an approve button in A1 would be a dead button that still passes A1's gate.
 
 ### Forbidden shared files — no worktree may touch these, ever
 
@@ -398,6 +415,8 @@ Copy-Item ..\souq-bartaa\.env .env            # .env is untracked — copying is
 - `src/server/demo/types.ts`, `src/server/demo/placeholder.ts`, `src/server/demo/packs/**` — **frozen contract and data** ("B3 consumes this shape literally. Change it only from the main session")
 - `package.json`, `pnpm-lock.yaml` — dependencies were all installed in Phase 1
 - `src/app/layout.tsx`, `src/app/globals.css`
+- `src/app/demo-gate/**`, `src/app/unknown-host/**`, `src/app/not-found.tsx`, `src/app/export/**` — Phase 1 surfaces that belong to no track
+- `tests/e2e/hostname-resolution.spec.ts`, `tests/e2e/auth.spec.ts`, `tests/e2e/support/**`, `tests/unit/language-gate.test.ts`, `tests/unit/guardrails.test.ts` — shared suites. A track adds its OWN spec files; it never edits these. If one of them must change, that is a sync point.
 - `messages/ar/common.json`
 - `.env.example`, `docker-compose*.yml`, `Dockerfile`, `Caddyfile`
 - `CLAUDE.md`, `docs/BUILD-KIT.md`, `docs/PHASES.md`, `docs/DECISIONS.md`

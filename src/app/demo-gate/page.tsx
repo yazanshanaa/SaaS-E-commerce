@@ -18,7 +18,7 @@ export default function DemoGatePage() {
   const requestUrl = absoluteUrl(platformHost('app'), '/demo-request');
 
   return (
-    <div className="sb-page">
+    <main id="main" className="sb-page">
       <div className="sb-card">
         <span className="sb-badge">{t('common', 'demoWatermark')}</span>
         <h1 className="sb-title">{t('common', 'demoGate.title')}</h1>
@@ -27,6 +27,6 @@ export default function DemoGatePage() {
           {t('common', 'demoGate.cta')}
         </a>
       </div>
-    </div>
+    </main>
   );
 }

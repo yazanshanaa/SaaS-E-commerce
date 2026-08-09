@@ -188,11 +188,29 @@ describe('user-facing source strings', () => {
     return out;
   }
 
+  /**
+   * Both checks below are source-text heuristics, not a JSX parser — so a comment that merely
+   * TALKS about markup ("does not wrap children in `<main>` … renders one `<main id=main>`")
+   * puts a `>` and a `<` around ordinary English prose and reads as a text node.
+   *
+   * Stripping comments first is what keeps the gate honest. The alternative — every author
+   * avoiding angle brackets in prose — trains people to work around the gate, and a gate people
+   * work around eventually gets weakened instead of obeyed. Only block comments and whole-line
+   * `//` comments are removed, so a `//` inside a URL cannot swallow the rest of a real line.
+   */
+  function withoutComments(source: string): string {
+    return source
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .filter((line) => !/^\s*\/\//.test(line))
+      .join('\n');
+  }
+
   it('has no hardcoded Arabic sentence inside a JSX component', () => {
     const offenders: string[] = [];
 
     for (const file of tsxFiles(path.join(repoRoot, 'src', 'app'))) {
-      const source = readFileSync(file, 'utf8');
+      const source = withoutComments(readFileSync(file, 'utf8'));
       // JSX text nodes: >…< with Arabic inside, excluding interpolations.
       for (const match of source.matchAll(/>([^<>{}]*[؀-ۿ][^<>{}]*)</g)) {
         const text = match[1]!.trim();
@@ -207,7 +225,7 @@ describe('user-facing source strings', () => {
     const offenders: string[] = [];
 
     for (const file of tsxFiles(path.join(repoRoot, 'src', 'app'))) {
-      const source = readFileSync(file, 'utf8');
+      const source = withoutComments(readFileSync(file, 'utf8'));
       for (const match of source.matchAll(/>([^<>{}]{8,})</g)) {
         const text = match[1]!.trim();
         if (LATIN_WORD.test(text) && text.split(/\s+/).length > 2) {
@@ -217,5 +235,15 @@ describe('user-facing source strings', () => {
     }
 
     expect(offenders).toEqual([]);
+  });
+
+  it('still catches a hardcoded sentence once comments are stripped', () => {
+    // The stripper must not become an escape hatch: a real literal in real markup is still a
+    // failure, and this is the test that proves the previous two can fail at all.
+    const arabic = '<p>هذا نص مكتوب مباشرة في المكوّن</p>';
+    const english = '<p>this sentence was hardcoded</p>';
+
+    expect([...withoutComments(arabic).matchAll(/>([^<>{}]*[؀-ۿ][^<>{}]*)</g)]).toHaveLength(1);
+    expect([...withoutComments(english).matchAll(/>([^<>{}]{8,})</g)]).toHaveLength(1);
   });
 });

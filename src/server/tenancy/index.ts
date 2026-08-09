@@ -259,6 +259,71 @@ export interface RequestTenant {
   hostname: string;
 }
 
+// -----------------------------------------------------------------------------
+// Surface roots — how three route trees share one Next app
+// -----------------------------------------------------------------------------
+
+/**
+ * The three private surfaces are told apart by HOSTNAME, but the App Router routes by PATH.
+ * Left alone, `admin.{DOMAIN}/`, `app.{DOMAIN}/` and `{slug}.{DOMAIN}/` are all the pathname
+ * `/`, and three tracks each shipping a `page.tsx` for it is not a merge conflict — it is a
+ * build error ("two parallel pages resolve to the same path"). `/products` would collide the
+ * same way between the storefront and the dashboard.
+ *
+ * So proxy.ts rewrites every request into the surface's own subtree. The prefix is INTERNAL:
+ * the visitor's URL bar never shows it, and every `href` in every track is written as the
+ * public path (`/accounts`, not `/admin/accounts`) — the rewrite runs on client navigations
+ * too, because RSC requests pass through the proxy exactly as document requests do.
+ *
+ * Folder ownership from docs/PHASES.md maps onto these one-to-one:
+ *   (admin)      -> src/app/admin       (A1; B1 adds lifecycle/, B3 adds demos/)
+ *   (dashboard)  -> src/app/dashboard   (B2)
+ *   (storefront) -> src/app/site        (A2)
+ *   (public)     -> unprefixed paths on app.* (B3's /demo-request)
+ *
+ * A parenthesised route group could not do this job: groups are erased from the URL, which is
+ * precisely why all three would still land on `/`.
+ */
+export const SURFACE_ROOT = {
+  admin: '/admin',
+  app: '/dashboard',
+  storefront: '/site',
+} as const;
+
+export type PrefixedSurface = keyof typeof SURFACE_ROOT;
+
+/**
+ * Paths that keep their public pathname on every surface.
+ *
+ * These are either hostname-agnostic infrastructure, or routes whose URL is a promise made to
+ * someone outside the platform: `/export/{token}` is in a WhatsApp message a suspended merchant
+ * may open weeks later (Q18), and `/demo-request` is on a business card. Rewriting either into
+ * a surface subtree would break a link we already handed out.
+ */
+const UNPREFIXED_PATHS = [
+  '/api/',
+  '/internal/',
+  '/export/',
+  '/demo-request',
+  '/dev-media/',
+  // proxy.ts's own rewrite targets. NextResponse.rewrite does not re-enter the proxy, so these
+  // are belt and braces rather than load-bearing.
+  '/demo-gate',
+  '/unknown-host',
+] as const;
+
+export function isUnprefixedPath(pathname: string): boolean {
+  return UNPREFIXED_PATHS.some(
+    (prefix) => pathname === prefix.replace(/\/$/, '') || pathname.startsWith(prefix),
+  );
+}
+
+/** `/accounts` on the admin surface -> `/admin/accounts`. `/` -> `/admin`. */
+export function surfacePath(surface: PrefixedSurface, pathname: string): string {
+  if (isUnprefixedPath(pathname)) return pathname;
+  return pathname === '/' ? SURFACE_ROOT[surface] : `${SURFACE_ROOT[surface]}${pathname}`;
+}
+
 /** Read the context the proxy resolved. Server components and route handlers use this. */
 export function readRequestTenant(headers: { get(name: string): string | null }): RequestTenant {
   const surface = (headers.get(TENANT_HEADERS.surface) ?? 'unknown') as Surface;

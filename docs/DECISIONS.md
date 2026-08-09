@@ -128,6 +128,52 @@ deviate from the obvious reading.
   resolves a tenant, and `127.0.0.1` is not one, so a probe against them polls a 404 forever.
   `proxy.ts` passes all of `/internal/*` through untouched.
 
+### Surface routing — decided in the main session immediately before Group A
+
+Phase 1 shipped one surface-aware `src/app/page.tsx` and left the routing decision for later.
+"Later" was the first hour of Group A: A1, A2 and B2 each need a page at `/`, and the storefront
+and the dashboard both want `/products`. Three tracks shipping those is not a merge conflict, it
+is a build error — the App Router refuses two parallel pages resolving to one path — and it
+would have surfaced only at the *merge*, after all three tracks had built on the assumption.
+Resolving it belongs to the main session because it touches `proxy.ts` and the root layout, both
+on the forbidden-shared-files list.
+
+- **`proxy.ts` rewrites every request into a per-surface subtree** (`SURFACE_ROOT` in
+  `src/server/tenancy`): `admin.{DOMAIN}/x → /admin/x`, `app.{DOMAIN}/x → /dashboard/x`,
+  `{slug}.{DOMAIN}/x → /site/x`. The prefix is internal — it never appears in the URL bar, and
+  every `href` a track writes is the public path. Rewrites apply to client navigations too,
+  because RSC requests pass through the proxy exactly as document requests do.
+- **A parenthesised route group cannot do this job.** Groups are erased from the URL, which is
+  precisely why `(admin)/page.tsx`, `(storefront)/page.tsx` and `(dashboard)/page.tsx` would all
+  still resolve to `/`. So the folders are plain segments, and `docs/PHASES.md`'s ownership names
+  map onto them one-to-one: `(admin) → src/app/admin`, `(dashboard) → src/app/dashboard`,
+  `(storefront) → src/app/site`. `(public)` stays as-is: its paths are deliberately unprefixed.
+- **`/export/{token}` and `/demo-request` keep their public paths** (`UNPREFIXED_PATHS`). Both
+  are URLs handed to someone outside the platform — the export link travels by WhatsApp and may
+  be opened weeks later (Q18) — so rewriting them into a surface subtree would break a link the
+  platform already promised. `/api/`, `/internal/` and `/dev-media/` are unprefixed for the
+  ordinary reason that they are hostname-agnostic.
+- **The root layout no longer wraps children in `<main>`.** Each surface renders exactly one
+  `<main id="main">` itself; a wrapper at the root would nest inside every surface's own landmark
+  and cost A2 its axe gate for no benefit. The skip link stays at the root because it must be the
+  first focusable element, and its target is now a contract each surface honours.
+- **The skip link is visible when focused.** It was positioned off-screen with no focus rule,
+  which is a skip link that helps nobody: the keyboard user it exists for could never see where
+  focus had gone.
+- **`.txt` and `.xml` were removed from the proxy matcher's exclusion list, and
+  `public/robots.txt` was deleted.** Four hostname families are served from one app and they do
+  not want the same robots answer — a demo tenant must be fully disallowed (Q8's second layer)
+  while a live storefront wants indexing and a sitemap pointer. One static file at the root could
+  only ever be right for one of them, and the one it was wrong about was the demo.
+- **The shared e2e suite asserts on `data-surface`, not on chrome.** A1, A2 and B2 each replace
+  their surface's screens wholesale; three worktrees editing one spec to keep a badge selector
+  alive would be a merge conflict by design.
+- **The language gate now strips comments before scanning.** Its JSX-text-node check is a source
+  heuristic, so a comment that merely *mentions* markup wrapped ordinary English prose in `>` and
+  `<` and read as a hardcoded string. Every UI track would have hit it; the risk was not the
+  false positive but the fix someone would have reached for — weakening the gate. A test asserting
+  the heuristic still catches a real literal was added alongside.
+
 ### Known gaps at the end of Phase 1
 
 - `pnpm e2e` covers login, password reset and hostname resolution. Storefront, dashboard and

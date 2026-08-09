@@ -9,7 +9,13 @@ import './globals.css';
  * a mirror applied afterwards. Every surface below inherits it, and no track needs to set it.
  *
  * This file is on the forbidden-shared-files list, so it stays deliberately thin — the three
- * route groups own their own chrome.
+ * surface subtrees own their own chrome.
+ *
+ * It deliberately does NOT wrap children in `<main>`. Each surface renders exactly one
+ * `<main id="main">` itself: a wrapper here would nest inside every surface's own landmark, and
+ * a page with two mains is both an axe finding and a worse experience for anyone navigating by
+ * landmark. The skip link stays here because it must be the first focusable element on the
+ * page; its target is the contract every surface honours.
  */
 
 export const metadata: Metadata = {
@@ -32,10 +38,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang={LOCALE} dir={DIRECTION}>
       <body>
-        <a href="#main" className="sb-badge" style={{ position: 'absolute', insetInlineStart: '-9999px' }}>
+        <a href="#main" className="sb-skip-link">
           {t('common', 'a11y.skipToContent')}
         </a>
-        <main id="main">{children}</main>
+        {children}
       </body>
     </html>
   );

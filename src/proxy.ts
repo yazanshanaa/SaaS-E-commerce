@@ -7,6 +7,8 @@ import {
   isDemoTokenValid,
   parseHostname,
   resolveTenantByHostname,
+  surfacePath,
+  type PrefixedSurface,
 } from '@/server/tenancy';
 
 /**
@@ -30,9 +32,14 @@ import {
 // segment config here — which is what makes the Prisma lookups below legal at all.
 export const config = {
   matcher: [
-    // Everything except Next's own assets and the public file directory. The export route and
-    // the auth routes ARE matched — they need tenant context and the allow-list.
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|txt|xml|woff|woff2)$).*)',
+    // Everything except Next's own assets and genuinely static binary files. The export route
+    // and the auth routes ARE matched — they need tenant context and the allow-list.
+    //
+    // `.txt` and `.xml` are deliberately NOT excluded: `/robots.txt` and `/sitemap.xml` are
+    // per-hostname documents (A2), so they have to reach the proxy to be resolved to a tenant
+    // and rewritten into that tenant's subtree. Excluding them would have left every storefront
+    // sharing one robots file — and a demo tenant indexable through it.
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|woff|woff2)$).*)',
   ],
 };
 
@@ -86,6 +93,30 @@ function unknownHost(request: NextRequest, headers: Headers): NextResponse {
   return NextResponse.rewrite(url, { request: { headers }, status: 404 });
 }
 
+/**
+ * Send the request into its surface's subtree.
+ *
+ * This is what lets three route trees live in one App Router: the hostname picks the subtree,
+ * the path stays public. See SURFACE_ROOT in src/server/tenancy for why a route group cannot
+ * do this job.
+ */
+function intoSurface(
+  request: NextRequest,
+  headers: Headers,
+  surface: PrefixedSurface,
+): NextResponse {
+  const { pathname } = request.nextUrl;
+  const target = surfacePath(surface, pathname);
+
+  if (target === pathname) {
+    return NextResponse.next({ request: { headers } });
+  }
+
+  const url = request.nextUrl.clone();
+  url.pathname = target;
+  return NextResponse.rewrite(url, { request: { headers } });
+}
+
 export default async function proxy(request: NextRequest): Promise<NextResponse> {
   const headers = sanitisedHeaders(request);
   const hostHeader = request.headers.get('host');
@@ -104,7 +135,7 @@ export default async function proxy(request: NextRequest): Promise<NextResponse>
   // --- admin.{DOMAIN} -------------------------------------------------------
   if (parsed.surface === 'admin') {
     headers.set(TENANT_HEADERS.surface, 'admin');
-    return NextResponse.next({ request: { headers } });
+    return intoSurface(request, headers, 'admin');
   }
 
   // --- app.{DOMAIN} ---------------------------------------------------------
@@ -116,7 +147,7 @@ export default async function proxy(request: NextRequest): Promise<NextResponse>
     if (isAppPublicPath(pathname)) {
       headers.set('x-souq-public-path', '1');
     }
-    return NextResponse.next({ request: { headers } });
+    return intoSurface(request, headers, 'app');
   }
 
   // --- storefronts: platform subdomains and custom domains ------------------
@@ -143,14 +174,25 @@ export default async function proxy(request: NextRequest): Promise<NextResponse>
     const cookieToken = request.cookies.get(DEMO_TOKEN_COOKIE)?.value;
     const token = queryToken ?? cookieToken;
 
-    if (!(await isDemoTokenValid(tenant.tenantId, token))) {
+    /**
+     * robots.txt is answered even without a token, and that is the safer branch, not a leak.
+     *
+     * Behind the gate, a crawler asking for /robots.txt gets an HTML page with status 200 —
+     * which a crawler reads as "this site published no rules" and is free to proceed on. The
+     * storefront's own robots route already returns `Disallow: /` for a demo, so letting the
+     * request through is what makes the noindex second layer actually exist. The file reveals
+     * nothing DNS did not already: the hostname resolves.
+     *
+     * sitemap.xml deliberately stays behind the gate — it would enumerate the demo's pages.
+     */
+    if (pathname !== '/robots.txt' && !(await isDemoTokenValid(tenant.tenantId, token))) {
       const url = request.nextUrl.clone();
       url.pathname = '/demo-gate';
       url.search = '';
       return NextResponse.rewrite(url, { request: { headers } });
     }
 
-    const response = NextResponse.next({ request: { headers } });
+    const response = intoSurface(request, headers, 'storefront');
 
     // Remember the token so the prospect can browse the demo without carrying ?token= on
     // every link. Scoped to this hostname, http-only, and it dies with the demo.
@@ -166,5 +208,5 @@ export default async function proxy(request: NextRequest): Promise<NextResponse>
     return response;
   }
 
-  return NextResponse.next({ request: { headers } });
+  return intoSurface(request, headers, 'storefront');
 }

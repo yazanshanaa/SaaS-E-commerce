@@ -24,21 +24,52 @@ async function query<T extends object>(sql: string, params: unknown[] = []): Pro
   }
 }
 
+/**
+ * Surface identity is asserted through `data-surface`, not through whatever chrome happens to
+ * be on the page.
+ *
+ * This spec is shared: A1, A2 and B2 each replace their surface's screens entirely, and three
+ * parallel worktrees editing one spec file to keep a badge selector alive would be a merge
+ * conflict by design. `data-surface` is the contract each surface layout honours instead.
+ */
 test.describe('surfaces are told apart by hostname alone', () => {
   test('admin.* serves the platform admin surface', async ({ page }) => {
     await page.goto(`${origin('admin')}/`);
-    await expect(page.locator('.sb-card .sb-badge')).toHaveText('admin');
+    await expect(page.locator('[data-surface="admin"]')).toBeAttached();
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.locator('html')).toHaveAttribute('lang', 'ar');
+    // Exactly one main landmark per page: the root layout deliberately does not add its own.
+    await expect(page.locator('main#main')).toHaveCount(1);
   });
 
   test('app.* serves the merchant dashboard surface, and says accounts are admin-created', async ({
     page,
   }) => {
     await page.goto(`${origin('app')}/`);
-    await expect(page.locator('.sb-card .sb-badge')).toHaveText('app');
+    await expect(page.locator('[data-surface="app"]')).toBeAttached();
     // Q1, stated to the user rather than merely enforced in code.
     await expect(page.getByText('الحسابات بتنفتح من إدارة المنصة فقط')).toBeVisible();
+  });
+
+  test('the internal surface prefix never reaches the URL bar', async ({ page }) => {
+    // proxy.ts rewrites admin.{DOMAIN}/ into /admin — internally. A visitor who can see the
+    // prefix can also guess the other surfaces' trees, and a rewrite that leaked into history
+    // would break every bookmark the moment the prefix changed.
+    await page.goto(`${origin('admin')}/`);
+    expect(new URL(page.url()).pathname).toBe('/');
+  });
+
+  test('one surface cannot be reached by typing another surface prefix', async ({ page }) => {
+    // `/site` on the admin host rewrites to `/admin/site`, which does not exist. The rewrite is
+    // what keeps the trees apart; the session guard in each layout is the second layer.
+    const response = await page.goto(`${origin('admin')}/site`);
+    expect(response?.status()).toBe(404);
+  });
+
+  test('robots.txt is answered per surface, not by one shared static file', async ({ page }) => {
+    const response = await page.goto(`${origin('admin')}/robots.txt`);
+    expect(response?.status()).toBe(200);
+    expect(await response!.text()).toContain('Disallow: /');
   });
 
   test('an unknown hostname is a 404 — never a fallback tenant', async ({ page }) => {
@@ -97,6 +128,22 @@ test.describe('the demo-token branch (Q8)', () => {
 
     await page.goto(`http://${demo!.slug}.${E2E.domain}:${E2E.webPort}/?token=not-a-real-token`);
     await expect(page.getByText('هذه نسخة تجريبية خاصة')).toBeVisible();
+  });
+
+  test("a demo's robots.txt disallows everything", async ({ page }) => {
+    const [demo] = await query<{ slug: string }>(
+      `SELECT slug FROM tenants WHERE is_demo = true LIMIT 1`,
+    );
+
+    // The token is the mechanism and this is the second layer — but it only works because
+    // robots.txt is resolved PER HOSTNAME. A single file at the root would have answered for
+    // every storefront at once, and the demo would have been the one it was wrong about.
+    const response = await page.goto(
+      `http://${demo!.slug}.${E2E.domain}:${E2E.webPort}/robots.txt`,
+    );
+
+    expect(response?.status()).toBe(200);
+    expect(await response!.text()).toContain('Disallow: /');
   });
 });
 

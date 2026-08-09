@@ -83,6 +83,28 @@ a {
   text-underline-offset: 3px;
 }
 
+/*
+ * The skip link. It has to be off-screen until focused and VISIBLE once focused — a skip link
+ * that is permanently off-screen satisfies nothing: the keyboard user it exists for never sees
+ * where their focus went. `inset-inline-start` keeps it correct in RTL without a mirror rule.
+ */
+.sb-skip-link {
+  position: fixed;
+  inset-block-start: var(--sb-space-2);
+  inset-inline-start: -9999px;
+  z-index: 100;
+  background: var(--sb-surface);
+  color: var(--sb-text);
+  border: 2px solid var(--sb-primary);
+  border-radius: var(--sb-radius);
+  padding: var(--sb-space-2) var(--sb-space-4);
+  text-decoration: none;
+}
+
+.sb-skip-link:focus-visible {
+  inset-inline-start: var(--sb-space-2);
+}
+
 /* RTL-first: logical properties throughout, so nothing needs mirroring later. */
 .sb-page {
   min-height: 100dvh;
