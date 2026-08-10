@@ -4,6 +4,7 @@ import {
   DEMO_TOKEN_QUERY_PARAM,
   TENANT_HEADERS,
   TENANT_HEADER_NAMES,
+  effectiveHostHeader,
   isDemoTokenValid,
   parseHostname,
   resolveTenantByHostname,
@@ -119,7 +120,12 @@ function intoSurface(
 
 export default async function proxy(request: NextRequest): Promise<NextResponse> {
   const headers = sanitisedHeaders(request);
-  const hostHeader = request.headers.get('host');
+  // NOT `request.headers.get('host')`. Next follows a server action's redirect() with an internal
+  // request to its own listener, carrying `Host: localhost:{port}` and the real hostname only in
+  // `x-forwarded-host` — so reading Host directly classified every post-action navigation as an
+  // unregistered custom domain and answered the 404 page, on a URL that rendered perfectly when
+  // reloaded. See effectiveHostHeader() for why that header is trusted on a loopback Host alone.
+  const hostHeader = effectiveHostHeader(request.headers);
   const parsed = parseHostname(hostHeader);
   const { pathname } = request.nextUrl;
 

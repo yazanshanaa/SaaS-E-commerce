@@ -31,6 +31,55 @@ export function normaliseHostname(host: string | null | undefined): string {
   return host.split(':')[0]!.trim().toLowerCase();
 }
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]', '0.0.0.0']);
+
+/**
+ * Is this `Host` the server talking to itself?
+ *
+ * Next issues an INTERNAL request to its own listener when it follows a server action's
+ * `redirect()`, and that request carries `Host: localhost:{port}` — the real hostname survives
+ * only in `x-forwarded-host`. Nothing else about it looks unusual, which is what made the
+ * resulting bug so odd: the browser sat on the right URL while the response was the 404 for an
+ * unregistered hostname, and reloading the very same URL rendered the page correctly.
+ *
+ * `::1` is handled explicitly because `normaliseHostname` splits on `:` and would reduce it to
+ * an empty string.
+ */
+export function isLoopbackHost(host: string | null | undefined): boolean {
+  if (!host) return false;
+  const value = host.trim().toLowerCase();
+  if (LOOPBACK_HOSTS.has(value)) return true;
+
+  const bare = value.startsWith('[')
+    ? value.slice(0, value.indexOf(']') + 1)
+    : normaliseHostname(value);
+
+  return LOOPBACK_HOSTS.has(bare);
+}
+
+/**
+ * The hostname the request is really FOR, which is not always the one it arrived on.
+ *
+ * `x-forwarded-host` is trusted in exactly one case: the request arrived on a loopback Host. A
+ * public request never does — Caddy passes the real Host through, and the app listener is not
+ * published outside the compose network — so the only thing that reaches us claiming to be
+ * `localhost` is our own process. Trusting the header unconditionally would be a surface-choosing
+ * vulnerability: a visitor could send `x-forwarded-host: admin.{DOMAIN}` and be routed into the
+ * platform owner's tree. (The session guard on every admin page is what would still refuse them —
+ * but routing must not depend on that being the last line.)
+ */
+export function effectiveHostHeader(headers: {
+  get(name: string): string | null;
+}): string | null {
+  const host = headers.get('host');
+  if (!isLoopbackHost(host)) return host;
+
+  // A chain of proxies appends; the first entry is the original client-facing host.
+  const forwarded = headers.get('x-forwarded-host');
+  const first = forwarded?.split(',')[0]?.trim();
+  return first ? first : host;
+}
+
 const RESERVED_SUBDOMAINS = new Set([
   'www',
   'mail',
