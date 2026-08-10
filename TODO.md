@@ -247,14 +247,26 @@ create, since `isCapabilityVisible()` is fail-closed (raised by A2 at review).
 - [ ] `Consent.ipHash` is written by nothing; dropping it is a schema change — **Phase 6**
 - [ ] Lighthouse gate is flaky at its threshold (7 runs: 86–95, median ~90, no regression — machine
       variance in LCP/SI). Decide best-of-N or median-of-three before CI depends on it — **Phase 7**
-- [ ] `revalidateStorefront()` is not callable from the worker, which is where variants finish — **Group B**
+- [x] `revalidateStorefront()` is not callable from the worker, which is where variants finish —
+      **done in the Group B pre-flight**: `src/server/revalidation` + `/internal/revalidate`
 
 ---
 
 ## Group B (parallel — start only after Group A is merged)
 
-- [ ] Worktrees created: `sb-b1` / `sb-b2` / `sb-b3`
-- [ ] Each worktree bootstrapped (isolated database + Redis db index)
+- [x] Worktrees created: `sb-b1` / `sb-b2` / `sb-b3`
+- [x] Each worktree bootstrapped (isolated database + Redis db index)
+- [x] `group-b-base` tagged on `main`, so the ownership checker's main-history report has a baseline
+
+### Main-session pre-flight, done before any track started — see `docs/DECISIONS.md`
+- [x] `revalidateStorefront()` is callable from the worker — `src/server/revalidation` +
+      `/internal/revalidate`, with the post-commit hook in `createWorker` (the Group A carry-forward)
+- [x] The B1/B3 contradiction in `docs/PHASES.md` resolved: **B1 owns `createDemo` / `closeDemo` /
+      `convertDemo`** (guardrails forbids creating a Tenant or writing subscription state outside
+      `src/server/billing`), **B3 owns the content** through the frozen
+      `src/server/billing/demo-content.ts` seam
+- [x] **B3 therefore starts after B1 merges**, not alongside it — every one of B3's acceptance
+      criteria is end-to-end and none can be proven while `createDemo` throws. B1 ∥ B2, then B3.
 
 ### B1 — Billing lifecycle (owns the implementation in `src/server/billing`, the images-ZIP half of `src/server/export`, `src/server/jobs`, and `src/app/(admin)/lifecycle/**`) — **depends on A3's `deleteByPrefix` + `delete` + `signedUrl`**
 - [ ] All transitions implemented inside `src/server/billing` — nothing inline anywhere else
