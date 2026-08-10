@@ -1,0 +1,132 @@
+/*
+ * ورشة — strict industrial.
+ *
+ * Personality: a builders' merchant counter. Nothing is rounded, everything sits on a visible
+ * 1px grid, and a product card is a specification sheet — image, then a two-column table of
+ * price, availability and SKU. Amber is reserved for things you can act on; steel does all the
+ * structure. Four dense columns, tight block rhythm: the customer is comparing forty items,
+ * not browsing.
+ */
+
+@font-face {
+  font-family: 'IBM Plex Sans Arabic';
+  font-style: normal;
+  font-weight: 400;
+  src: url('/fonts/ibm-plex-sans-arabic/ibm-plex-sans-arabic-v15-arabic-regular.woff2')
+    format('woff2');
+  font-display: swap;
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF,
+    U+0020-007E, U+2000-206F, U+20AA, U+2190-21BB;
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans Arabic';
+  font-style: normal;
+  font-weight: 700;
+  src: url('/fonts/ibm-plex-sans-arabic/ibm-plex-sans-arabic-v15-arabic-700.woff2') format('woff2');
+  font-display: swap;
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF,
+    U+0020-007E, U+2000-206F, U+20AA, U+2190-21BB;
+}
+
+[data-template='warsheh'] .sf-header {
+  border-block-end: 1px solid var(--t-border);
+  background: var(--t-surface);
+}
+
+[data-template='warsheh'] .sf-block__head {
+  border-inline-start: 4px solid var(--t-primary);
+  padding-inline-start: var(--t-space-md);
+  margin-block-end: var(--t-space-lg);
+}
+
+[data-template='warsheh'] .sf-block__title {
+  font-size: var(--t-text-xl);
+}
+
+/* The ledger hero: a banner strip with a specification list and no decorative image at all. */
+[data-template='warsheh'] .sf-hero--ledger {
+  background: var(--t-surface);
+  border-block: 1px solid var(--t-border);
+  padding-block: var(--t-space-2xl);
+}
+
+[data-template='warsheh'] .sf-hero__text {
+  font-size: var(--t-text-base);
+}
+
+[data-template='warsheh'] .sf-card {
+  border: 1px solid var(--t-border);
+  border-radius: 0;
+  background: var(--t-surface);
+  box-shadow: none;
+}
+
+[data-template='warsheh'] .sf-card__media .sf-media {
+  border-radius: 0;
+  border-block-end: 1px solid var(--t-border);
+  --sf-ratio: 1 / 1;
+}
+
+[data-template='warsheh'] .sf-card__body {
+  padding: var(--t-space-sm) var(--t-space-md) var(--t-space-md);
+  gap: var(--t-space-xs);
+}
+
+[data-template='warsheh'] .sf-card__name {
+  font-size: var(--t-text-base);
+  -webkit-line-clamp: 2;
+}
+
+/* The specification table: hairline rules between rows, labels in steel, values in text. */
+[data-template='warsheh'] .sf-card__spec {
+  border-block-start: 1px solid var(--t-border);
+  padding-block-start: var(--t-space-xs);
+  gap: 4px var(--t-space-md);
+}
+
+/*
+  --t-link, not --t-primary. The price is normal-size TEXT, and the raw brand token is only ever
+  checked at 3:1 — the bar for a fill or a border. --t-link is the same colour held to 4.5:1
+  against every surface it can land on. The most important number on the card is not the place to
+  discover that a merchant's accent was chosen for buttons.
+*/
+[data-template='warsheh'] .sf-price {
+  color: var(--t-link);
+  font-size: var(--t-text-lg);
+}
+
+[data-template='warsheh'] .sf-badge {
+  border-radius: 0;
+  /* The BORDER may stay raw — non-text UI passes at 3:1. The label may not. */
+  border: 1px solid var(--t-secondary);
+  background: transparent;
+  color: var(--t-accent);
+}
+
+[data-template='warsheh'] .sf-btn {
+  border-radius: 0;
+}
+
+[data-template='warsheh'] .sf-btn--ghost {
+  border-color: var(--t-secondary);
+}
+
+[data-template='warsheh'] .sf-cat,
+[data-template='warsheh'] .sf-offer,
+[data-template='warsheh'] .sf-quote,
+[data-template='warsheh'] .sf-note {
+  border-radius: 0;
+}
+
+[data-template='warsheh'] .sf-quote {
+  border-inline-start: 3px solid var(--t-secondary);
+}
+
+[data-template='warsheh'] .sf-footer {
+  background: var(--t-surface);
+}
+
+[data-template='warsheh'] .sf-social a {
+  border-radius: 0;
+}
