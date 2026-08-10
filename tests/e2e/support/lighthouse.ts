@@ -43,6 +43,16 @@ export interface LighthouseScores {
     cumulativeLayoutShift: number;
     speedIndexMs: number;
   };
+  /**
+   * Every audit that scored below 1, named.
+   *
+   * Only `performance` is gated, so the other three categories report a bare number that nobody
+   * can act on — and a bare number is how a real regression hides behind a known one. The e2e
+   * stack serves plain HTTP, for instance, which costs best-practices several audits that say
+   * nothing about the storefront. Naming them is what lets a reviewer tell that apart from a
+   * defect in ten seconds instead of re-running Lighthouse by hand.
+   */
+  failures: Array<{ category: string; id: string; title: string }>;
 }
 
 export async function runLighthouse(url: string): Promise<LighthouseScores> {
@@ -84,9 +94,26 @@ export async function runLighthouse(url: string): Promise<LighthouseScores> {
         cumulativeLayoutShift: numeric(audits['cumulative-layout-shift']?.numericValue),
         speedIndexMs: numeric(audits['speed-index']?.numericValue),
       },
+      failures: collectFailures(categories, audits),
     };
   } finally {
-    await chrome.kill();
+    /**
+     * Cleanup must never decide the verdict.
+     *
+     * `kill()` terminates Chrome and THEN removes the temporary profile directory it created,
+     * and on Windows that second step loses a race with the process it just killed: the handles
+     * are still open for a moment, so `rm -rf` raises EPERM. The measurement is already
+     * complete at this point, so letting that surface would fail a gate over a file lock — and
+     * worse, it would discard the scores the run had already produced, which is exactly what it
+     * did the first time this ran. The process is dead either way; a stray directory under the
+     * system temp folder is the OS's problem.
+     */
+    try {
+      await chrome.kill();
+    } catch (error) {
+      // Warned rather than swallowed: silent cleanup failures are how a leak goes unnoticed.
+      console.warn(`lighthouse: could not remove Chrome's temporary profile — ${String(error)}`);
+    }
   }
 }
 
@@ -102,11 +129,41 @@ function numeric(value: number | undefined): number {
   return typeof value === 'number' ? Math.round(value * 1000) / 1000 : Number.NaN;
 }
 
+type Lhr = Awaited<ReturnType<typeof lighthouse>> extends infer R
+  ? R extends { lhr: infer L }
+    ? L
+    : never
+  : never;
+
+/**
+ * Audits that scored below 1, in category order.
+ *
+ * `notApplicable`, `manual` and `informative` are excluded: they carry no score, they do not
+ * move the number, and listing them buries the three lines that do.
+ */
+function collectFailures(
+  categories: Lhr['categories'],
+  audits: Lhr['audits'],
+): LighthouseScores['failures'] {
+  const failures: LighthouseScores['failures'] = [];
+
+  for (const [key, category] of Object.entries(categories)) {
+    for (const ref of category.auditRefs) {
+      const audit = audits[ref.id];
+      if (!audit || typeof audit.score !== 'number' || audit.score >= 1) continue;
+      failures.push({ category: key, id: ref.id, title: audit.title });
+    }
+  }
+
+  return failures;
+}
+
 export function formatScores(url: string, scores: LighthouseScores): string {
   const m = scores.metrics;
   return [
     `Lighthouse (mobile) ${url}`,
     `  performance ${scores.performance} · a11y ${scores.accessibility} · best-practices ${scores.bestPractices} · seo ${scores.seo}`,
     `  FCP ${Math.round(m.firstContentfulPaintMs)}ms · LCP ${Math.round(m.largestContentfulPaintMs)}ms · TBT ${Math.round(m.totalBlockingTimeMs)}ms · CLS ${m.cumulativeLayoutShift} · SI ${Math.round(m.speedIndexMs)}ms`,
+    ...scores.failures.map((failure) => `  - ${failure.category}/${failure.id}: ${failure.title}`),
   ].join('\n');
 }
