@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { Client } from 'pg';
 import { E2E, pgUrl } from './support/env';
+import { formatScores, runLighthouse } from './support/lighthouse';
 
 /**
  * The storefront, end to end, in a real browser against real hostnames.
@@ -900,10 +901,10 @@ test.describe('the consent endpoint refuses forgery and repetition', () => {
 
 /**
  * The A2 acceptance criterion is "Lighthouse mobile perf ≥ 90 on a template with 30 products".
- * Lighthouse itself is NOT run here — it is not installed, and installing it is a dependency
- * change, which is a mandatory sync point (see docs/decisions/a2.md). What IS run is every
- * mechanical proxy the track claims, at the 30-product size the criterion names rather than at
- * the comfortable eight the rest of the suite uses.
+ * The number itself is asserted at the bottom of this file; what follows first is every
+ * mechanical proxy the track claims — the inputs to that number — run at the 30-product size the
+ * criterion names rather than at the comfortable eight the rest of the suite uses. Both matter:
+ * the score says whether the budget is met, the proxies say WHICH input broke when it is not.
  */
 test.describe('the documented performance proxies, on a 30-product catalogue', () => {
   test('the whole catalogue is there, and the home page still ships twelve of it', async ({
@@ -944,5 +945,40 @@ test.describe('the documented performance proxies, on a 30-product catalogue', (
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
     expect(overflow).toBeLessThanOrEqual(1);
+  });
+});
+
+/**
+ * The acceptance criterion itself, as a number.
+ *
+ * It runs its own Chrome (see tests/e2e/support/lighthouse.ts for why it cannot borrow the
+ * Playwright page) on the default MOBILE preset — Slow 4G, 4x CPU slowdown — against the warsheh
+ * storefront seeded above with exactly the 30 products docs/PHASES.md names.
+ *
+ * Tagged so `pnpm lighthouse` can run it alone: it is the slowest test in the suite by an order
+ * of magnitude, because throttled emulation is the point rather than an accident.
+ *
+ * Only `performance` is gated by docs/PHASES.md. Accessibility is asserted properly by axe above
+ * — Lighthouse's own a11y category is a subset and is reported here for information, not as the
+ * a11y gate.
+ */
+test.describe('the Lighthouse number', () => {
+  test('warsheh scores 90+ on mobile with 30 products @lighthouse', async () => {
+    // Throttled emulation of a full page load, twice over (Lighthouse reloads with a cold cache).
+    test.setTimeout(240_000);
+
+    const url = `${origin(HOST_WARSHEH)}/`;
+    const scores = await runLighthouse(url);
+
+    // eslint-disable-next-line no-console -- the measured numbers belong in the run output; a
+    // score of exactly 90 and one of 99 are very different states of health to inherit.
+    console.log(formatScores(url, scores));
+
+    expect(scores.performance, formatScores(url, scores)).toBeGreaterThanOrEqual(90);
+
+    // The two budget numbers CLAUDE.md states outright, asserted against the same throttled run
+    // rather than left to be inferred from the composite score.
+    expect(scores.metrics.largestContentfulPaintMs).toBeLessThan(2500);
+    expect(scores.metrics.cumulativeLayoutShift).toBeLessThan(0.1);
   });
 });
