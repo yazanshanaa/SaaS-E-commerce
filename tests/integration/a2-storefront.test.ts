@@ -282,10 +282,12 @@ describe('the storefront view model', () => {
     expect(data.colors.text).toBeTruthy();
   });
 
-  it('counts products per category from the same read, not a second query', async () => {
+  it('counts products per category over the whole catalogue', async () => {
     const data = await loadTenantData(basic.id, false);
     expect(data.categories).toHaveLength(1);
     expect(data.categories[0]?.productCount).toBe(2);
+    // The factory's uncategorised product is in the total but in no category.
+    expect(data.productTotal).toBe(3);
   });
 
   it('refuses custom HTML for a demo tenant even when the feature is on', async () => {
@@ -298,5 +300,117 @@ describe('the storefront view model', () => {
 
     await setFeature('basic', 'seo_tools', false);
     await invalidateEntitlements(basic.id);
+  });
+});
+
+/**
+ * The bug this fixture exists to catch: counts and category grids used to be derived from the
+ * home page's 60-row slice of the catalogue. متجر allows 200 products and احترافي 1000, so a
+ * shop above sixty is the ordinary case, and a category whose items are all older than the
+ * newest sixty rendered "0 منتج" beside a link to a full listing — plus, for a pinned grid, the
+ * empty state "لسا ما انضافت منتجات على المتجر" over two hundred products.
+ *
+ * A two-product fixture can never see it. This one is deliberately larger than the slice.
+ */
+describe('a catalogue larger than the home page slice', () => {
+  /** Bigger than HOME_PRODUCT_CAP on its own, so nothing older can reach the slice. */
+  const FRESH = 62;
+  const OLD = 12;
+
+  let bulk: SeededTenant;
+
+  beforeAll(async () => {
+    bulk = await createTenant({ planKey: 'store', name: 'ورشة برطعة للعدد والمعدات' });
+    const db = adminDb();
+
+    await db.category.createMany({
+      data: [
+        { tenantId: bulk.id, key: 'fresh', name: 'وصل حديثاً', sort: 0 },
+        { tenantId: bulk.id, key: 'tools', name: 'عدد ومعدات', sort: 1 },
+      ],
+    });
+
+    const categories = await db.category.findMany({
+      where: { tenantId: bulk.id },
+      select: { id: true, key: true },
+    });
+    const idOf = (key: string) => categories.find((row) => row.key === key)!.id;
+
+    const now = Date.now();
+
+    // The whole of `tools` was added first and has not been touched since — which is exactly
+    // how a real shop looks after a year of adding stock to one aisle.
+    await db.product.createMany({
+      data: Array.from({ length: OLD }, (_, index) => ({
+        tenantId: bulk.id,
+        categoryId: idOf('tools'),
+        slug: `tool-${index}`,
+        name: `مفتاح إنجليزي مقاس ${index + 8}`,
+        priceAgorot: 4_500 + index * 100,
+        createdAt: new Date(now - (400 - index) * 86_400_000),
+      })),
+    });
+
+    await db.product.createMany({
+      data: Array.from({ length: FRESH }, (_, index) => ({
+        tenantId: bulk.id,
+        categoryId: idOf('fresh'),
+        slug: `fresh-${index}`,
+        name: `صنف جديد رقم ${index + 1}`,
+        priceAgorot: 1_200 + index * 50,
+        createdAt: new Date(now - (FRESH - index) * 3_600_000),
+      })),
+    });
+
+    // A home page laid out by hand, with a grid pinned to the category that fell off the slice.
+    await db.page.create({
+      data: {
+        tenantId: bulk.id,
+        slug: 'home',
+        title: 'الرئيسية',
+        sections: {
+          create: [
+            { tenantId: bulk.id, type: 'hero', sort: 0, config: {} },
+            {
+              tenantId: bulk.id,
+              type: 'products_grid',
+              sort: 1,
+              config: { categoryKey: 'tools', limit: 8, columns: 4 },
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it('does not count a category out of the slice', async () => {
+    const data = await loadTenantData(bulk.id, false);
+    const tools = data.categories.find((category) => category.key === 'tools');
+
+    // Counting the slice would answer 0 here, because every `tools` row is older than the
+    // newest sixty. `/products?category=tools` has always shown all twelve.
+    expect(tools?.productCount).toBe(OLD);
+    expect(data.categories.find((category) => category.key === 'fresh')?.productCount).toBe(FRESH);
+    // +1: the uncategorised product every factory tenant is created with.
+    expect(data.productTotal).toBe(OLD + FRESH + 1);
+  });
+
+  it('reads a pinned category on its own instead of filtering the slice', async () => {
+    const data = await loadTenantData(bulk.id, false);
+
+    // The slice itself is unchanged — it is the newest 60 rows, and none of them is a tool.
+    expect(data.products).toHaveLength(60);
+    expect(data.products.some((product) => product.categoryKey === 'tools')).toBe(false);
+
+    // Yet the grid pinned to that category has its products, read for it.
+    expect(data.productsByCategory.tools).toHaveLength(8);
+    expect(data.productsByCategory.tools?.every((p) => p.categoryKey === 'tools')).toBe(true);
+    // And the count behind its "عرض الكل" link is the category's, not the slice's.
+    expect(data.productCountByCategory.tools).toBe(OLD);
+  });
+
+  it('reads nothing extra for a grid that is not pinned', async () => {
+    const data = await loadTenantData(bulk.id, false);
+    expect(Object.keys(data.productsByCategory)).toEqual(['tools']);
   });
 });

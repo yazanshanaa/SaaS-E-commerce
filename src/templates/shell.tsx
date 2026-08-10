@@ -93,20 +93,33 @@ export function StorefrontShell({
 
       <SiteFooter context={context} />
 
-      {isDemo ? <DemoWatermark /> : null}
+      {/*
+        ONE fixed stack at the bottom of the viewport, not two overlapping fixed elements.
 
-      {showConsent ? (
-        <ConsentBanner
-          privacyHref={legalHref('privacy')}
-          labels={{
-            title: st('consent.title'),
-            body: st('consent.body'),
-            accept: st('consent.accept'),
-            decline: st('consent.decline'),
-            region: st('consent.label'),
-            more: st('consent.more'),
-          }}
-        />
+        The watermark and the consent banner both used to pin themselves to `inset-block-end`,
+        and the banner is both taller and higher in the stacking order — so on a demo, which is
+        exactly the tenant that shows both, the one marker telling a prospect "this is a demo"
+        sat underneath the banner until they answered it. Stacking them as siblings in flow
+        makes the overlap impossible rather than merely unlikely.
+      */}
+      {isDemo || showConsent ? (
+        <div className="sf-dock">
+          {isDemo ? <DemoWatermark /> : null}
+
+          {showConsent ? (
+            <ConsentBanner
+              privacyHref={legalHref('privacy')}
+              labels={{
+                title: st('consent.title'),
+                body: st('consent.body'),
+                accept: st('consent.accept'),
+                decline: st('consent.decline'),
+                region: st('consent.label'),
+                more: st('consent.more'),
+              }}
+            />
+          ) : null}
+        </div>
       ) : null}
 
       <AnalyticsScript decision={analytics} />

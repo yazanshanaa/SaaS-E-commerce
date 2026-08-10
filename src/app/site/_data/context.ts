@@ -16,15 +16,20 @@ import {
   isCustomHtmlAllowed,
   CUSTOM_HTML_FEATURE_KEY,
   type StorefrontAnnouncement,
+  type StorefrontAnnouncementBar,
   type StorefrontCategory,
   type StorefrontContext,
   type StorefrontImage,
+  type StorefrontProduct,
   type StorefrontSection,
+  type StorefrontSite,
+  type StorefrontSocialLink,
+  type StorefrontTestimonial,
   type TemplateDefinition,
 } from '@/templates';
 import { STOREFRONT_REVALIDATE_SECONDS, storefrontTag } from './cache';
 import { toStorefrontImage, type MediaRow } from './media';
-import { queryProducts } from './products';
+import { countProducts, countProductsByCategoryId, queryProducts } from './products';
 
 /**
  * The one place a storefront talks to the database.
@@ -35,13 +40,30 @@ import { queryProducts } from './products';
  * plain booleans — no component below ever calls `can()`, and none of them has ever seen a plan
  * name (invariant 2).
  *
- * The whole read is one cached unit keyed by tenantId (see `cache.ts` for why not by hostname).
+ * The read happens in TWO parts, and the split is load-bearing:
+ *
+ *   1. CONTENT — one cached unit keyed by tenantId (see `cache.ts` for why not by hostname),
+ *      tagged `storefront:{tenantId}` and dropped by `revalidateStorefront()`;
+ *   2. ACCESS — `can()` and `isCapabilityVisible()`, resolved PER REQUEST and never inside the
+ *      cached unit. They have their own Redis cache, which `invalidateEntitlements()` clears
+ *      the moment a super admin flips a toggle; sealing their answers inside a 300s Next data
+ *      cache would mean an admin switching `analytics` off — a takedown, or a privacy complaint
+ *      — and the storefront tracking visitors for five more minutes. A1's acceptance criterion
+ *      is that a toggle is reflected IMMEDIATELY, and the surface a visitor sees is the only
+ *      place that claim can be true.
+ *
+ * The cached unit therefore reads content unconditionally and the composition step below applies
+ * visibility. A hidden capability costs one extra query on a cache miss; the alternative costs
+ * correctness on the axis this platform sells.
  */
 
 /**
  * The largest a single `products_grid` may ask for is 60 (the zod schema in `site-contract`), so
  * 60 covers every arrangement of home-page sections in one query. `/products` runs its own
  * paginated read rather than inflating this one for a pro tenant with a thousand rows.
+ *
+ * It is a SLICE, never a census: counts and category-pinned grids are read separately, because
+ * counting what happens to be on page one is how a category with 200 items renders "0 منتج".
  */
 const HOME_PRODUCT_CAP = 60;
 
@@ -53,11 +75,14 @@ export interface RequestSurface {
 }
 
 export async function loadStorefrontContext(surface: RequestSurface): Promise<StorefrontContext> {
-  const data = await cachedTenantData(surface.tenantId, surface.isDemo);
+  const [source, access] = await Promise.all([
+    cachedTenantSource(surface.tenantId),
+    resolveAccess(surface.tenantId, surface.isDemo),
+  ]);
   const env = getEnv();
 
   return {
-    ...data,
+    ...composeTenantData(source, access),
     tenantId: surface.tenantId,
     slug: surface.slug,
     hostname: surface.hostname,
@@ -74,24 +99,119 @@ type CachedTenantData = Omit<
   'tenantId' | 'slug' | 'hostname' | 'origin' | 'isDemo'
 >;
 
-function cachedTenantData(tenantId: string, isDemo: boolean): Promise<CachedTenantData> {
-  return unstable_cache(() => loadTenantData(tenantId, isDemo), ['storefront-data', tenantId], {
+function cachedTenantSource(tenantId: string): Promise<TenantSource> {
+  return unstable_cache(() => loadTenantSource(tenantId), ['storefront-data', tenantId], {
     tags: [storefrontTag(tenantId)],
     revalidate: STOREFRONT_REVALIDATE_SECONDS,
   })();
 }
 
 /**
- * The uncached read.
+ * The uncached read, composed.
  *
  * Exported because it is what the integration suite exercises: `unstable_cache` needs a Next
  * request scope, and a test that had to fake one would be testing Next rather than this
- * platform's tenant isolation. Production traffic always goes through `cachedTenantData`.
+ * platform's tenant isolation. Production traffic always goes through `cachedTenantSource`.
  */
 export async function loadTenantData(
   tenantId: string,
   isDemo: boolean,
 ): Promise<CachedTenantData> {
+  const [source, access] = await Promise.all([
+    loadTenantSource(tenantId),
+    resolveAccess(tenantId, isDemo),
+  ]);
+  return composeTenantData(source, access);
+}
+
+// -----------------------------------------------------------------------------
+// Axis (a) + axis (b), per request
+// -----------------------------------------------------------------------------
+
+interface StorefrontAccess {
+  whatsappOrders: boolean;
+  analytics: boolean;
+  customHtml: boolean;
+  announcementBar: boolean;
+  socialLinks: boolean;
+  announcementsBoard: boolean;
+  mapLocation: boolean;
+  colors: boolean;
+}
+
+/**
+ * Both axes, resolved once per request and never cached by Next.
+ *
+ * The visibility half of axis (b) genuinely controls RENDERING — a capability toggled invisible
+ * is content the storefront must not show. `editable_by` is a different question entirely and
+ * belongs to the dashboard: admin-editable content still renders here, which is why `canEdit` is
+ * not consulted anywhere in this file (invariant 2).
+ */
+async function resolveAccess(tenantId: string, isDemo: boolean): Promise<StorefrontAccess> {
+  const [
+    whatsappOrders,
+    analytics,
+    customHtmlFeature,
+    announcementBar,
+    socialLinks,
+    announcementsBoard,
+    mapLocation,
+    colors,
+  ] = await Promise.all([
+    can(tenantId, 'whatsapp_orders'),
+    can(tenantId, 'analytics'),
+    can(tenantId, CUSTOM_HTML_FEATURE_KEY),
+    isCapabilityVisible(tenantId, 'announcement_bar'),
+    isCapabilityVisible(tenantId, 'social_links'),
+    isCapabilityVisible(tenantId, 'announcements_board'),
+    isCapabilityVisible(tenantId, 'map_location'),
+    isCapabilityVisible(tenantId, 'colors'),
+  ]);
+
+  return {
+    whatsappOrders: whatsappOrders === true,
+    analytics: analytics === true,
+    customHtml: isCustomHtmlAllowed({ featureEnabled: customHtmlFeature === true, isDemo }),
+    announcementBar,
+    socialLinks,
+    announcementsBoard,
+    mapLocation,
+    colors,
+  };
+}
+
+// -----------------------------------------------------------------------------
+// The cached content read
+// -----------------------------------------------------------------------------
+
+/**
+ * Everything the cached unit stores. Deliberately JSON-safe: `unstable_cache` serialises its
+ * return value, so a `Date` would come back as a string and every schedule comparison would
+ * silently start comparing a string to a Date. Scheduling is therefore resolved HERE, and what
+ * is stored is the already-decided answer.
+ */
+interface TenantSource {
+  templateKey: string | null;
+  site: StorefrontSite;
+  /** Built from the stored bar regardless of capability; visibility is applied on composition. */
+  announcementBar: StorefrontAnnouncementBar | null;
+  theme: ThemeRow;
+  socialLinks: StorefrontSocialLink[];
+  categories: StorefrontCategory[];
+  products: StorefrontProduct[];
+  productsByCategory: Record<string, StorefrontProduct[]>;
+  productCountByCategory: Record<string, number>;
+  productTotal: number;
+  announcements: StorefrontAnnouncement[];
+  testimonials: StorefrontTestimonial[];
+  storedSections: StorefrontSection[];
+  mediaById: Record<string, StorefrontImage>;
+  hasAbout: boolean;
+  hasWhatsapp: boolean;
+  hasLocation: boolean;
+}
+
+async function loadTenantSource(tenantId: string): Promise<TenantSource> {
   const db = tenantDb(tenantId, PUBLIC_ACTOR);
 
   const [siteRow, themeRow] = await Promise.all([
@@ -137,85 +257,61 @@ export async function loadTenantData(
     }),
   ]);
 
-  const template = getTemplate(siteRow?.templateKey);
-
-  /**
-   * Both axes, resolved once.
-   *
-   * The visibility half of axis (b) genuinely controls RENDERING — a capability toggled
-   * invisible is content the storefront must not show. `editable_by` is a different question
-   * entirely and belongs to the dashboard: admin-editable content still renders here, which is
-   * why `canEdit` is not consulted anywhere in this file (invariant 2).
-   */
-  const [
-    whatsappOrders,
-    analytics,
-    customHtmlFeature,
-    barVisible,
-    socialVisible,
-    boardVisible,
-    mapVisible,
-    colorsVisible,
-  ] = await Promise.all([
-    can(tenantId, 'whatsapp_orders'),
-    can(tenantId, 'analytics'),
-    can(tenantId, CUSTOM_HTML_FEATURE_KEY),
-    isCapabilityVisible(tenantId, 'announcement_bar'),
-    isCapabilityVisible(tenantId, 'social_links'),
-    isCapabilityVisible(tenantId, 'announcements_board'),
-    isCapabilityVisible(tenantId, 'map_location'),
-    isCapabilityVisible(tenantId, 'colors'),
-  ]);
-
   const now = new Date();
 
-  const [socialRows, categoryRows, products, announcementRows, testimonialRows, pageRow] =
-    await Promise.all([
-      socialVisible
-        ? db.socialLink.findMany({
-            where: { tenantId, enabled: true },
-            select: { platform: true, url: true },
-            orderBy: { sort: 'asc' },
-          })
-        : Promise.resolve([]),
-      db.category.findMany({
-        where: { tenantId, published: true },
-        select: { key: true, name: true, imageMediaId: true },
-        orderBy: { sort: 'asc' },
-      }),
-      queryProducts(tenantId, { take: HOME_PRODUCT_CAP }),
-      boardVisible
-        ? db.announcement.findMany({
-            where: { tenantId, published: true },
-            select: {
-              id: true,
-              title: true,
-              body: true,
-              link: true,
-              imageMediaId: true,
-              startsAt: true,
-              endsAt: true,
-            },
-            orderBy: { sort: 'asc' },
-          })
-        : Promise.resolve([]),
-      db.testimonial.findMany({
-        where: { tenantId, published: true },
-        select: { id: true, name: true, text: true, rating: true },
-        orderBy: { sort: 'asc' },
-      }),
-      db.page.findFirst({
-        where: { tenantId, slug: 'home', published: true },
-        select: {
-          id: true,
-          sections: {
-            where: { enabled: true },
-            select: { id: true, type: true, sort: true, config: true },
-            orderBy: { sort: 'asc' },
-          },
+  const [
+    socialRows,
+    categoryRows,
+    products,
+    productTotal,
+    countsByCategoryId,
+    announcementRows,
+    testimonialRows,
+    pageRow,
+  ] = await Promise.all([
+    db.socialLink.findMany({
+      where: { tenantId, enabled: true },
+      select: { platform: true, url: true },
+      orderBy: { sort: 'asc' },
+    }),
+    db.category.findMany({
+      where: { tenantId, published: true },
+      select: { id: true, key: true, name: true, imageMediaId: true },
+      orderBy: { sort: 'asc' },
+    }),
+    queryProducts(tenantId, { take: HOME_PRODUCT_CAP }),
+    countProducts(tenantId),
+    countProductsByCategoryId(tenantId),
+    db.announcement.findMany({
+      where: { tenantId, published: true },
+      select: {
+        id: true,
+        title: true,
+        body: true,
+        link: true,
+        imageMediaId: true,
+        startsAt: true,
+        endsAt: true,
+      },
+      orderBy: { sort: 'asc' },
+    }),
+    db.testimonial.findMany({
+      where: { tenantId, published: true },
+      select: { id: true, name: true, text: true, rating: true },
+      orderBy: { sort: 'asc' },
+    }),
+    db.page.findFirst({
+      where: { tenantId, slug: 'home', published: true },
+      select: {
+        id: true,
+        sections: {
+          where: { enabled: true },
+          select: { id: true, type: true, sort: true, config: true },
+          orderBy: { sort: 'asc' },
         },
-      }),
-    ]);
+      },
+    }),
+  ]);
 
   /**
    * Scheduling is applied HERE, not in the component.
@@ -234,6 +330,22 @@ export async function loadTenantData(
     sort: row.sort,
     config: parseSectionConfig(row.type as SectionType, row.config) as Record<string, unknown>,
   }));
+
+  /**
+   * A `products_grid` pinned to a category gets its OWN read.
+   *
+   * Filtering the 60-row home slice by category is the bug this replaces: a category whose items
+   * are not in the newest sixty renders five of two hundred products, or the "لسا ما انضافت
+   * منتجات" empty state over a full catalogue. One query per pinned category, and there are at
+   * most as many as there are sections on the page.
+   */
+  const pinned = pinnedCategoryLimits(storedSections);
+  const productsByCategory: Record<string, StorefrontProduct[]> = {};
+  await Promise.all(
+    [...pinned].map(async ([categoryKey, take]) => {
+      productsByCategory[categoryKey] = await queryProducts(tenantId, { categoryKey, take });
+    }),
+  );
 
   // Media referenced BY ID from anywhere: one query instead of one per section.
   const referencedMediaIds = new Set<string>();
@@ -271,51 +383,32 @@ export async function loadTenantData(
     if (image) mediaById[row.id] = image;
   }
 
-  const productCountByCategory = new Map<string, number>();
-  for (const product of products) {
-    if (!product.categoryKey) continue;
-    productCountByCategory.set(
-      product.categoryKey,
-      (productCountByCategory.get(product.categoryKey) ?? 0) + 1,
-    );
+  /**
+   * Counts come from a grouped count over the WHOLE catalogue, never from `products`. A pinned
+   * category that is unpublished (or renamed) is not in `categoryRows`, so it gets its own count
+   * — otherwise its grid could never offer "عرض الكل".
+   */
+  const productCountByCategory: Record<string, number> = {};
+  for (const category of categoryRows) {
+    productCountByCategory[category.key] = countsByCategoryId.get(category.id) ?? 0;
   }
+  await Promise.all(
+    [...pinned.keys()]
+      .filter((categoryKey) => productCountByCategory[categoryKey] === undefined)
+      .map(async (categoryKey) => {
+        productCountByCategory[categoryKey] = await countProducts(tenantId, categoryKey);
+      }),
+  );
 
   const categories: StorefrontCategory[] = categoryRows.map((row) => ({
     key: row.key,
     name: row.name,
-    productCount: productCountByCategory.get(row.key) ?? 0,
+    productCount: productCountByCategory[row.key] ?? 0,
     image: row.imageMediaId ? (mediaById[row.imageMediaId] ?? null) : null,
   }));
-
-  const announcements: StorefrontAnnouncement[] = liveAnnouncements.map((row) => ({
-    id: row.id,
-    title: row.title,
-    body: row.body,
-    link: row.link,
-    image: row.imageMediaId ? (mediaById[row.imageMediaId] ?? null) : null,
-  }));
-
-  const sections =
-    storedSections.length > 0
-      ? storedSections
-      : buildDefaultSections({
-          hasProducts: products.length > 0,
-          hasCategories: categories.length > 0,
-          hasAbout: Boolean(siteRow?.about?.trim()),
-          hasTestimonials: testimonialRows.length > 0,
-          hasAnnouncements: announcements.length > 0,
-          hasWhatsapp: Boolean(siteRow?.whatsapp?.trim()),
-          hasLocation: Boolean(
-            siteRow?.mapQuery?.trim() ||
-              siteRow?.address?.trim() ||
-              (siteRow?.mapLat != null && siteRow?.mapLng != null),
-          ),
-          gridColumns: template.layout.gridColumns,
-        });
 
   return {
-    template,
-    colors: resolveTenantColors(colorsVisible ? themeRow : null, template),
+    templateKey: siteRow?.templateKey ?? null,
     site: {
       name: siteRow?.name ?? '',
       tagline: siteRow?.tagline ?? null,
@@ -335,29 +428,110 @@ export async function loadTenantData(
       logo: siteRow?.logoMediaId ? (mediaById[siteRow.logoMediaId] ?? null) : null,
       ogImageUrl: siteRow?.ogImageMediaId ? (mediaById[siteRow.ogImageMediaId]?.src ?? null) : null,
     },
-    flags: {
-      whatsappOrders: whatsappOrders === true,
-      analytics: analytics === true,
-      customHtml: isCustomHtmlAllowed({ featureEnabled: customHtmlFeature === true, isDemo }),
-    },
-    announcementBar: buildAnnouncementBar(barVisible ? siteRow : null, now),
+    announcementBar: buildAnnouncementBar(siteRow, now),
+    theme: themeRow,
     socialLinks: socialRows.map((row) => ({ platform: row.platform, url: row.url })),
     categories,
     products,
-    announcements,
+    productsByCategory,
+    productCountByCategory,
+    productTotal,
+    announcements: liveAnnouncements.map((row) => ({
+      id: row.id,
+      title: row.title,
+      body: row.body,
+      link: row.link,
+      image: row.imageMediaId ? (mediaById[row.imageMediaId] ?? null) : null,
+    })),
     testimonials: testimonialRows.map((row) => ({
       id: row.id,
       name: row.name,
       text: row.text,
       rating: row.rating,
     })),
+    storedSections,
     mediaById,
-    // A capability toggled invisible removes its content, not merely its edit form.
-    sections: mapVisible ? sections : sections.filter((section) => section.type !== 'map'),
+    hasAbout: Boolean(siteRow?.about?.trim()),
+    hasWhatsapp: Boolean(siteRow?.whatsapp?.trim()),
+    hasLocation: Boolean(
+      siteRow?.mapQuery?.trim() ||
+        siteRow?.address?.trim() ||
+        (siteRow?.mapLat != null && siteRow?.mapLng != null),
+    ),
   };
 }
 
 // -----------------------------------------------------------------------------
+// Composition: cached content + per-request access
+// -----------------------------------------------------------------------------
+
+function composeTenantData(source: TenantSource, access: StorefrontAccess): CachedTenantData {
+  const template = getTemplate(source.templateKey ?? undefined);
+
+  const socialLinks = access.socialLinks ? source.socialLinks : [];
+  const announcements = access.announcementsBoard ? source.announcements : [];
+
+  const sections =
+    source.storedSections.length > 0
+      ? source.storedSections
+      : buildDefaultSections({
+          hasProducts: source.products.length > 0,
+          hasCategories: source.categories.length > 0,
+          hasAbout: source.hasAbout,
+          hasTestimonials: source.testimonials.length > 0,
+          hasAnnouncements: announcements.length > 0,
+          hasWhatsapp: source.hasWhatsapp,
+          hasLocation: source.hasLocation,
+          gridColumns: template.layout.gridColumns,
+        });
+
+  return {
+    template,
+    colors: resolveTenantColors(access.colors ? source.theme : null, template),
+    site: source.site,
+    flags: {
+      whatsappOrders: access.whatsappOrders,
+      analytics: access.analytics,
+      customHtml: access.customHtml,
+    },
+    announcementBar: access.announcementBar ? source.announcementBar : null,
+    socialLinks,
+    categories: source.categories,
+    products: source.products,
+    productsByCategory: source.productsByCategory,
+    productCountByCategory: source.productCountByCategory,
+    productTotal: source.productTotal,
+    announcements,
+    testimonials: source.testimonials,
+    mediaById: source.mediaById,
+    // A capability toggled invisible removes its content, not merely its edit form.
+    sections: access.mapLocation ? sections : sections.filter((section) => section.type !== 'map'),
+  };
+}
+
+// -----------------------------------------------------------------------------
+
+/**
+ * Which categories a stored `products_grid` pins itself to, and how many rows each needs.
+ *
+ * Two grids on the same category ask once, for the larger of the two limits. `limit` is bounded
+ * at 60 by the section schema, so this can never grow into a full-catalogue read.
+ */
+function pinnedCategoryLimits(sections: StorefrontSection[]): Map<string, number> {
+  const pinned = new Map<string, number>();
+
+  for (const section of sections) {
+    if (section.type !== 'products_grid') continue;
+
+    const categoryKey = section.config.categoryKey;
+    if (typeof categoryKey !== 'string' || !categoryKey) continue;
+
+    const limit = typeof section.config.limit === 'number' ? section.config.limit : 12;
+    pinned.set(categoryKey, Math.min(HOME_PRODUCT_CAP, Math.max(pinned.get(categoryKey) ?? 0, limit)));
+  }
+
+  return pinned;
+}
 
 /** Ids a section config can reference. One place, so adding a field cannot be forgotten. */
 function mediaIdsInConfig(config: Record<string, unknown>): string[] {
@@ -431,7 +605,7 @@ type BarRow = {
   announcementBarEndsAt: Date | null;
 } | null;
 
-function buildAnnouncementBar(site: BarRow, now: Date) {
+function buildAnnouncementBar(site: BarRow, now: Date): StorefrontAnnouncementBar | null {
   if (!site?.announcementBarEnabled) return null;
 
   const text = site.announcementBarText?.trim();

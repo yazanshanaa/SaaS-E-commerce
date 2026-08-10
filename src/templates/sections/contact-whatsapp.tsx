@@ -29,8 +29,15 @@ export function ContactWhatsappSection({ context, config }: ContactSectionProps)
   const { site } = context;
   const number = normaliseWhatsappNumber(site.whatsapp);
 
-  const template = st('order.messageNoPrice', {
-    product: site.name,
+  /**
+   * A SHOP-level enquiry, not a product one.
+   *
+   * The product message template takes `{product}` and `{shop}`; feeding the shop name to both
+   * produced "بدي أستفسر عن سوبر ماركت الوادي من سوبر ماركت الوادي" — the first sentence a
+   * customer sends to the merchant, on the main conversion path of a shop with no product-page
+   * traffic. `order.messageShop` exists so there is nothing to substitute twice.
+   */
+  const template = st('order.messageShop', {
     shop: site.name,
     url: context.origin,
   });

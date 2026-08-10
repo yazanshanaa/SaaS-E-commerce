@@ -16,6 +16,15 @@ const HOST_DIWAN = 'a2-diwan';
 const HOST_NEON = 'a2-neon';
 const HOST_WARSHEH = 'a2-warsheh';
 const HOST_CLOSED = 'a2-closed';
+/** Its own tenant so the consent-log assertions below count only their own rows. */
+const HOST_CONSENT = 'a2-consent';
+
+/**
+ * The size the A2 acceptance criterion names ("Lighthouse mobile perf ≥ 90 on a template with
+ * 30 products") and the أساسي plan's whole `products_limit`. The mechanical proxies that stand
+ * in for the Lighthouse number are exercised at THIS number, not at a comfortable eight.
+ */
+const CRITERION_PRODUCTS = 30;
 
 /** Arabic of both extremes, and nothing in between invented as filler. */
 const SHORT_PRODUCT = 'زعتر بلدي';
@@ -126,30 +135,46 @@ async function seedStorefront(options: SeedOptions): Promise<void> {
     [`${tenantId}-cat-1`, tenantId, now, `${tenantId}-cat-2`],
   );
 
+  // One statement, not one per product: the acceptance criterion names a 30-product catalogue,
+  // and thirty separate connections to seed it would dominate the suite's runtime.
+  const columns = 12;
+  const tuples: string[] = [];
+  const values: unknown[] = [];
+
   for (let index = 0; index < productCount; index += 1) {
     const long = index % 2 === 1;
+    const base = index * columns;
+
+    // created_at and updated_at share the last placeholder.
+    tuples.push(
+      `(${Array.from({ length: columns }, (_, offset) => `$${base + offset + 1}`).join(', ')}, $${base + columns})`,
+    );
+    values.push(
+      `${tenantId}-p${index}`,
+      tenantId,
+      index % 2 === 0 ? `${tenantId}-cat-1` : `${tenantId}-cat-2`,
+      `SKU-${index}`,
+      `product-${index}`,
+      long ? LONG_PRODUCT : SHORT_PRODUCT,
+      long
+        ? 'طقم كامل للصيانة المنزلية يشمل مفاتيح وكماشات ومفكات بأحجام مختلفة داخل حقيبة مقواة.'
+        : 'من مزارع المنطقة.',
+      1_500 + index * 900,
+      index !== 3,
+      index === 0 ? 'الأكثر مبيعاً' : null,
+      index,
+      now,
+    );
+  }
+
+  if (tuples.length > 0) {
     await sql(
       `INSERT INTO products
          (id, tenant_id, category_id, sku, slug, name, description, price_agorot, available,
           badge, sort, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
+       VALUES ${tuples.join(', ')}
        ON CONFLICT (id) DO NOTHING`,
-      [
-        `${tenantId}-p${index}`,
-        tenantId,
-        index % 2 === 0 ? `${tenantId}-cat-1` : `${tenantId}-cat-2`,
-        `SKU-${index}`,
-        `product-${index}`,
-        long ? LONG_PRODUCT : SHORT_PRODUCT,
-        long
-          ? 'طقم كامل للصيانة المنزلية يشمل مفاتيح وكماشات ومفكات بأحجام مختلفة داخل حقيبة مقواة.'
-          : 'من مزارع المنطقة.',
-        1_500 + index * 900,
-        index !== 3,
-        index === 0 ? 'الأكثر مبيعاً' : null,
-        index,
-        now,
-      ],
+      values,
     );
   }
 
@@ -256,7 +281,7 @@ test.beforeAll(async () => {
     name: 'ورشة الشمال لمواد البناء',
     planKey: 'pro',
     templateKey: 'warsheh',
-    productCount: 12,
+    productCount: CRITERION_PRODUCTS,
   });
   await seedStorefront({
     slug: HOST_CLOSED,
@@ -264,6 +289,13 @@ test.beforeAll(async () => {
     planKey: 'basic',
     templateKey: 'diwan',
     suspended: true,
+    productCount: 2,
+  });
+  await seedStorefront({
+    slug: HOST_CONSENT,
+    name: 'بقالة أبو سامي',
+    planKey: 'store',
+    templateKey: 'diwan',
     productCount: 2,
   });
 });
@@ -499,6 +531,45 @@ test.describe('a demo storefront is noindex on every layer A2 controls', () => {
     expect(sitemap!.headers()['x-robots-tag']).toContain('noindex');
   });
 
+  /**
+   * The watermark used to be a second `position: fixed` element at the same edge as the consent
+   * banner, one z-index lower — so on a demo (the demo plan has analytics, so the banner always
+   * shows on a first visit) the one marker telling a prospect "this is a demo" was covered until
+   * they answered. `toBeVisible()` cannot see that: it checks the box and the CSS, not stacking.
+   * Geometry can.
+   */
+  test('the watermark is not covered by the consent banner it shares an edge with', async ({
+    page,
+  }) => {
+    const [demo] = await sql<{ slug: string; token: string }>(
+      `SELECT t.slug, d.token FROM tenants t JOIN demo_links d ON d.tenant_id = t.id
+        WHERE t.is_demo = true LIMIT 1`,
+    );
+
+    // 360px is where the banner wraps to its tallest and the overlap was total.
+    for (const width of [360, 1280]) {
+      await page.setViewportSize({ width, height: 720 });
+      await page.goto(`${origin(demo!.slug)}/?token=${demo!.token}`);
+
+      const banner = page.getByRole('region', { name: 'خيارات الإحصاءات' });
+      await expect(banner).toBeVisible();
+
+      const watermark = page.getByText('نسخة تجريبية');
+      await expect(watermark).toBeVisible();
+
+      const mark = (await watermark.boundingBox())!;
+      const bar = (await banner.boundingBox())!;
+
+      expect(
+        mark.y + mark.height <= bar.y + 1,
+        `the watermark sits inside the consent banner at ${width}px`,
+      ).toBe(true);
+      // And it is still on screen rather than pushed above the fold to dodge the banner.
+      expect(mark.y).toBeGreaterThan(0);
+      expect(mark.y + mark.height).toBeLessThanOrEqual(720);
+    }
+  });
+
   test('a demo passes axe too — it is the page a prospect is shown', async ({ page }) => {
     const [demo] = await sql<{ slug: string; token: string }>(
       `SELECT t.slug, d.token FROM tenants t JOIN demo_links d ON d.tenant_id = t.id
@@ -529,6 +600,15 @@ test.describe('the storefront itself', () => {
     expect(preloads[0]).toMatch(/\.woff2$/);
   });
 
+  /**
+   * NOTE: this one is currently vacuous and knowingly so. The e2e stack runs NODE_ENV=production
+   * with the local storage driver, and `storage()` refuses to mint a public URL in that
+   * combination (invariant 4) — so `toStorefrontImage` returns null, the templates render their
+   * deliberate no-image state, and this selector matches nothing. The rule itself is asserted
+   * against `MediaImage` in tests/unit/a2-storefront-logic.test.ts. Giving the e2e web server a
+   * `CDN_PUBLIC_BASE_URL` needs playwright.config.ts, which A2 does not own — sync point 4 in
+   * docs/decisions/a2.md.
+   */
   test('gives every image an explicit width and height', async ({ page }) => {
     await page.goto(`${origin(HOST_WARSHEH)}/products`);
     const missing = await page.locator('img').evaluateAll((nodes) =>
@@ -643,5 +723,226 @@ test.describe('the storefront itself', () => {
 
     const robots = await page.goto(`${origin(HOST_CLOSED)}/robots.txt`);
     expect(await robots!.text()).toContain('Disallow: /');
+  });
+});
+
+// -------------------------------------------------- the consent endpoint itself --
+
+/**
+ * `POST /api/storefront/consent` is a public, unauthenticated, state-changing endpoint that
+ * writes a compliance record and sets the cookie the server reads to decide whether the Umami
+ * tag exists at all. Both halves of the compliance claim depend on it being un-forgeable and
+ * un-floodable, so it is tested as an endpoint and not only through the banner.
+ */
+test.describe('the consent endpoint refuses forgery and repetition', () => {
+  const endpoint = `${origin(HOST_CONSENT)}/api/storefront/consent`;
+  const tenantId = `a2-${HOST_CONSENT}`;
+
+  async function consentRows(): Promise<Array<{ granted: boolean; ip_hash: string | null }>> {
+    return sql<{ granted: boolean; ip_hash: string | null }>(
+      `SELECT granted, ip_hash FROM consents WHERE tenant_id = $1 ORDER BY created_at`,
+      [tenantId],
+    );
+  }
+
+  /**
+   * Every request below is made BY THE BROWSER, not by Playwright's API context — the point of
+   * these assertions is the headers a browser attaches (`Origin`, `Sec-Fetch-Site`) and the
+   * preflight it does or does not send, and an API context reproduces none of that.
+   */
+
+  test('a body that is not JSON is refused before it is parsed', async ({ page }) => {
+    const before = await consentRows();
+    await page.goto(`${origin(HOST_CONSENT)}/`);
+
+    // The forgeable shape: `Request.json()` parses a body whatever its Content-Type, so a
+    // cross-site `<form enctype="text/plain">` can produce valid JSON with no preflight at all.
+    // Requiring application/json is what closes that path.
+    const status = await page.evaluate(async () => {
+      const response = await fetch('/api/storefront/consent', {
+        method: 'POST',
+        headers: { 'content-type': 'text/plain' },
+        body: '{"granted":true, "x":"="}',
+      });
+      return response.status;
+    });
+
+    expect(status).toBe(415);
+    expect(await consentRows()).toHaveLength(before.length);
+    expect(await page.context().cookies()).not.toContainEqual(
+      expect.objectContaining({ name: 'souq_consent' }),
+    );
+  });
+
+  test('the cross-site form post that would otherwise work writes nothing', async ({ page }) => {
+    const before = await consentRows();
+
+    // A page on ANOTHER storefront submits the crafted form at this tenant's endpoint. No
+    // preflight fires (text/plain is a simple request), so this is the request that actually
+    // reaches the handler — and SameSite=Lax would not have stopped the response SETTING a
+    // cookie. The victim never saw the banner.
+    await page.goto(`${origin(HOST_DIWAN)}/`);
+
+    const landed = page.waitForEvent('framenavigated', (frame) =>
+      frame.url().includes('/api/storefront/consent'),
+    );
+
+    await page.evaluate((action) => {
+      const sink = document.createElement('iframe');
+      sink.name = 'sink';
+      document.body.appendChild(sink);
+
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = action;
+      form.enctype = 'text/plain';
+      form.target = 'sink';
+
+      const field = document.createElement('input');
+      field.name = '{"granted":true, "x":"';
+      field.value = '"}';
+      form.appendChild(field);
+
+      document.body.appendChild(form);
+      form.submit();
+    }, endpoint);
+
+    await landed;
+
+    expect(await consentRows()).toHaveLength(before.length);
+    expect(await page.context().cookies()).not.toContainEqual(
+      expect.objectContaining({ name: 'souq_consent' }),
+    );
+  });
+
+  test('a cross-origin JSON POST never reaches the handler', async ({ page }) => {
+    const before = await consentRows();
+    await page.goto(`${origin(HOST_DIWAN)}/`);
+
+    // application/json is not a simple request, so this needs a preflight the route does not
+    // answer. The fetch fails in the browser and no POST is ever sent.
+    const blocked = await page.evaluate(async (action) => {
+      try {
+        await fetch(action, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ granted: true }),
+        });
+        return false;
+      } catch {
+        return true;
+      }
+    }, endpoint);
+
+    expect(blocked).toBe(true);
+    expect(await consentRows()).toHaveLength(before.length);
+  });
+
+  test('one visitor answering twice is one record, and changing their mind is two', async ({
+    page,
+  }) => {
+    await page.goto(`${origin(HOST_CONSENT)}/`);
+
+    const answer = (granted: boolean) =>
+      page.evaluate(async (value) => {
+        const response = await fetch('/api/storefront/consent', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ granted: value }),
+        });
+        return response.json() as Promise<{ ok: boolean; recorded: boolean }>;
+      }, granted);
+
+    expect(await answer(true)).toMatchObject({ ok: true, recorded: true });
+
+    // The replay: same visitor, same answer. The row already proves the decision.
+    expect(await answer(true)).toMatchObject({ ok: true, recorded: false });
+    // The cookie is still set — a visitor must not be nagged by a banner they already answered.
+    expect(await page.context().cookies()).toContainEqual(
+      expect.objectContaining({ name: 'souq_consent', value: 'granted' }),
+    );
+
+    // A withdrawal is a different decision and has to be provable.
+    expect(await answer(false)).toMatchObject({ ok: true, recorded: true });
+
+    const rows = await consentRows();
+    expect(rows.map((row) => row.granted)).toEqual([true, false]);
+  });
+
+  test('never stores a hash of the visitor’s IP address', async ({ page }) => {
+    /**
+     * `ipHash` would be an HMAC with no tenant salt and no time salt: byte-identical for the
+     * same visitor in every merchant's consents table, forever, and identical to their
+     * `demo_requests.ip_hash`. That is exactly the cross-tenant join `visitorHash` — which
+     * already incorporates the IP, and rotates monthly — was built to prevent.
+     */
+    await page.goto(`${origin(HOST_NEON)}/`);
+    await page
+      .getByRole('region', { name: 'خيارات الإحصاءات' })
+      .getByRole('button', { name: 'موافق' })
+      .click();
+    await expect(page.getByRole('region', { name: 'خيارات الإحصاءات' })).toHaveCount(0);
+
+    const written = await sql<{ count: string }>(
+      `SELECT count(*)::text AS count FROM consents WHERE tenant_id = $1`,
+      [`a2-${HOST_NEON}`],
+    );
+    expect(Number(written[0]?.count)).toBeGreaterThan(0);
+
+    const leaked = await sql<{ count: string }>(
+      `SELECT count(*)::text AS count FROM consents WHERE ip_hash IS NOT NULL`,
+    );
+    expect(leaked[0]?.count).toBe('0');
+  });
+});
+
+// ------------------------------------- performance proxies at the criterion's size --
+
+/**
+ * The A2 acceptance criterion is "Lighthouse mobile perf ≥ 90 on a template with 30 products".
+ * Lighthouse itself is NOT run here — it is not installed, and installing it is a dependency
+ * change, which is a mandatory sync point (see docs/decisions/a2.md). What IS run is every
+ * mechanical proxy the track claims, at the 30-product size the criterion names rather than at
+ * the comfortable eight the rest of the suite uses.
+ */
+test.describe('the documented performance proxies, on a 30-product catalogue', () => {
+  test('the whole catalogue is there, and the home page still ships twelve of it', async ({
+    page,
+  }) => {
+    await page.goto(`${origin(HOST_WARSHEH)}/`);
+
+    const grid = page.locator('.sf-grid .sf-card');
+    await expect(grid).toHaveCount(12);
+
+    // 30 > 12, so the rest is one link away rather than thirty cards deep.
+    await expect(page.getByRole('link', { name: 'شوف كل المنتجات' })).toBeVisible();
+
+    await page.goto(`${origin(HOST_WARSHEH)}/products`);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    // 24 per page, so the thirtieth product is on page two — not in one 30-card document.
+    await expect(page.locator('.sf-card')).toHaveCount(24);
+  });
+
+  test('still one preloaded font and zero cross-origin requests at 30 products', async ({
+    page,
+  }) => {
+    const foreign = await collectCrossOriginRequests(page, `${origin(HOST_WARSHEH)}/products`);
+    expect(foreign).toEqual([]);
+
+    const preloads = await page
+      .locator('link[rel="preload"][as="font"]')
+      .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('href') ?? ''));
+    expect(preloads).toHaveLength(1);
+    expect(preloads[0]).toContain('/fonts/');
+  });
+
+  test('30 Arabic product names do not push the page sideways on a phone', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 780 });
+    await page.goto(`${origin(HOST_WARSHEH)}/products`);
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(1);
   });
 });

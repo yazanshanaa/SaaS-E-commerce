@@ -793,11 +793,32 @@
 
 /* ------------------------------------------------- consent + watermark -- */
 
-.sf-consent {
+/*
+  The bottom dock: the ONE thing pinned to the bottom of the viewport.
+
+  The watermark and the consent banner used to be two independently fixed elements at the same
+  edge, which meant the taller, higher-stacked banner covered the watermark completely — on a
+  demo tenant, which is the only tenant that shows both, and for as long as the prospect had not
+  answered. Stacking them in normal flow inside one fixed container makes that overlap
+  structurally impossible; nothing here depends on either element's height.
+
+  The dock itself is click-through so the empty strip beside the watermark never eats a tap;
+  each child re-enables pointer events for itself.
+*/
+.sf-dock {
   position: fixed;
   inset-block-end: 0;
   inset-inline: 0;
   z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  pointer-events: none;
+}
+
+.sf-consent {
+  inline-size: 100%;
+  pointer-events: auto;
   background: var(--t-surface);
   border-block-start: var(--t-rule-frame);
   padding: var(--t-space-lg);
@@ -828,10 +849,8 @@
 }
 
 .sf-watermark {
-  position: fixed;
-  inset-block-end: var(--t-space-md);
-  inset-inline-start: var(--t-space-md);
-  z-index: 55;
+  margin-inline-start: var(--t-space-md);
+  margin-block-end: var(--t-space-md);
   background: var(--t-surface);
   color: var(--t-text);
   border: 2px solid var(--t-primary);

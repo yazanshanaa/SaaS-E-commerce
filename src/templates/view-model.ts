@@ -126,7 +126,24 @@ export interface StorefrontContext {
   announcementBar: StorefrontAnnouncementBar | null;
   socialLinks: StorefrontSocialLink[];
   categories: StorefrontCategory[];
+  /**
+   * The home page's product pool: the first `HOME_PRODUCT_CAP` rows in merchant order. It is a
+   * SLICE, so nothing may be counted out of it — see `productCountByCategory` and `productTotal`.
+   */
   products: StorefrontProduct[];
+  /**
+   * Published products per category key, over the whole catalogue rather than over `products`.
+   * A category tile prints this, and a category-pinned grid decides its "عرض الكل" link from it.
+   */
+  productCountByCategory: Record<string, number>;
+  /** Published products in the whole catalogue. */
+  productTotal: number;
+  /**
+   * Products for each category a `products_grid` section is PINNED to, read per category rather
+   * than filtered out of `products` — filtering a slice renders five of two hundred items and
+   * calls it the category.
+   */
+  productsByCategory: Record<string, StorefrontProduct[]>;
   announcements: StorefrontAnnouncement[];
   testimonials: StorefrontTestimonial[];
   /**

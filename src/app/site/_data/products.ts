@@ -105,6 +105,34 @@ export async function countProducts(tenantId: string, categoryKey?: string): Pro
   });
 }
 
+/**
+ * Published products per category, over the WHOLE catalogue.
+ *
+ * Counting a page of products instead would be wrong the moment a tenant has more rows than the
+ * page holds — and مَتجر allows 200 while احترافي allows 1000, so that is the common case rather
+ * than an edge. A category whose items all sit past the home page's slice would otherwise render
+ * "0 منتج" beside a link to a full listing, which is not a rounding error but a false statement.
+ *
+ * One grouped query, not one count per category: a merchant with twenty categories must not cost
+ * twenty round trips on every cache miss. Keyed by categoryId — the caller already holds the
+ * id→key map from its own category read, so resolving keys here would mean reading them twice.
+ */
+export async function countProductsByCategoryId(tenantId: string): Promise<Map<string, number>> {
+  const db = tenantDb(tenantId, PUBLIC_ACTOR);
+
+  const rows = await db.product.groupBy({
+    by: ['categoryId'],
+    where: { tenantId, published: true, categoryId: { not: null } },
+    _count: { _all: true },
+  });
+
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    if (row.categoryId) counts.set(row.categoryId, row._count._all);
+  }
+  return counts;
+}
+
 export async function queryProductBySlug(
   tenantId: string,
   slug: string,

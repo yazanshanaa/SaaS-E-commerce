@@ -31,6 +31,11 @@ export const STOREFRONT_REVALIDATE_SECONDS = 300;
  * domain reassignment) call this after any write that changes what the storefront renders. The
  * five-minute TTL above is a net for a missed call, never the mechanism — a merchant who fixes
  * a price expects to see it, and "wait five minutes" is not an answer they will accept.
+ *
+ * It covers CONTENT only. A feature or capability toggle needs `invalidateEntitlements()` and
+ * nothing else: the storefront resolves both access axes PER REQUEST, outside this cache,
+ * precisely so that a super admin switching `analytics` off is not followed by five more minutes
+ * of tracking. See `context.ts` and the Caching section of docs/decisions/a2.md.
  */
 export async function revalidateStorefront(tenantId: string): Promise<void> {
   // Next 16 requires an expiry profile. `{ expire: 0 }` is "gone now", which is the only

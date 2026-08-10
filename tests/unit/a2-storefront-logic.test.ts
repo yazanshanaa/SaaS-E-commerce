@@ -1,19 +1,84 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { isWithinSchedule } from '@/shared/site-contract';
+import { isWithinSchedule, parseSectionConfig, type SectionConfig } from '@/shared/site-contract';
 import {
   analyticsDecision,
   buildDefaultSections,
   buildOrderUrl,
   CUSTOM_HTML_FEATURE_KEY,
   fillOrderMessage,
+  getTemplate,
   isCustomHtmlAllowed,
   isLegalSlug,
   legalHref,
   legalPagesFor,
   normaliseWhatsappNumber,
   resolveMapTarget,
+  type StorefrontContext,
+  type StorefrontProduct,
 } from '@/templates';
+import { MediaImage } from '@/templates/components/media-image';
+import { ProductsGridSection } from '@/templates/sections/products-grid';
 import { t } from '@/shared/i18n';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+
+/** Enough of the view model to render one section. Everything a test cares about is overridden. */
+function storefrontContext(overrides: Partial<StorefrontContext> = {}): StorefrontContext {
+  const template = getTemplate('warsheh');
+
+  return {
+    tenantId: 'tenant-1',
+    slug: 'warsheh',
+    hostname: 'warsheh.souqbartaa.test',
+    origin: 'https://warsheh.souqbartaa.test',
+    isDemo: false,
+    template,
+    colors: {
+      primary: template.tokens.color.primary,
+      secondary: template.tokens.color.secondary,
+      background: template.tokens.color.background,
+      surface: template.tokens.color.surface,
+      text: template.tokens.color.text,
+    },
+    site: {
+      name: 'ورشة الشمال',
+      tagline: null,
+      about: null,
+      address: null,
+      phone: null,
+      whatsapp: null,
+      hours: null,
+      email: null,
+      mapLat: null,
+      mapLng: null,
+      mapQuery: null,
+      sellingEnabled: false,
+      metaTitle: null,
+      metaDescription: null,
+      umamiWebsiteId: null,
+      logo: null,
+      ogImageUrl: null,
+    },
+    flags: { whatsappOrders: true, analytics: false, customHtml: false },
+    announcementBar: null,
+    socialLinks: [],
+    categories: [],
+    products: [],
+    productCountByCategory: {},
+    productTotal: 0,
+    productsByCategory: {},
+    announcements: [],
+    testimonials: [],
+    mediaById: {},
+    sections: [],
+    ...overrides,
+  };
+}
 
 describe('the analytics rule (a compliance claim, not a preference)', () => {
   const base = { websiteId: 'w-1', scriptUrl: 'https://umami.example/script.js' };
@@ -209,5 +274,185 @@ describe('default sections for a site nobody has arranged yet', () => {
   it('keeps sort order contiguous so the renderer needs no re-sorting', () => {
     const sections = buildDefaultSections(everything);
     expect(sections.map((section) => section.sort)).toEqual(sections.map((_, index) => index));
+  });
+});
+
+describe('the shop-level WhatsApp enquiry (the contact block, not a product)', () => {
+  it('names the shop ONCE and never substitutes it as the product', () => {
+    const shop = 'سوبر ماركت الوادي';
+    const message = t('storefront', 'order.messageShop', {
+      shop,
+      url: 'https://wadi.example',
+    });
+
+    // The regression: the contact section reused the product template with `product` and `shop`
+    // both set to the shop name, so the first sentence a customer sent to a merchant read
+    // "بدي أستفسر عن سوبر ماركت الوادي من سوبر ماركت الوادي".
+    expect(message.split(shop)).toHaveLength(2);
+    expect(message).not.toContain('{product}');
+    expect(message).not.toContain('{');
+  });
+
+  it('is what the contact section actually renders', () => {
+    const source = readFileSync(
+      path.join(repoRoot, 'src', 'templates', 'sections', 'contact-whatsapp.tsx'),
+      'utf8',
+    );
+    expect(source).toContain("st('order.messageShop'");
+    expect(source).not.toContain('product: site.name');
+  });
+});
+
+describe('entitlements are answered per request, never sealed inside the storefront data cache', () => {
+  const source = readFileSync(
+    path.join(repoRoot, 'src', 'app', 'site', '_data', 'context.ts'),
+    'utf8',
+  );
+
+  /**
+   * `invalidateEntitlements()` clears Redis; it knows nothing about a Next data-cache tag. So an
+   * entitlement answer computed inside the 300s `unstable_cache` unit would keep a switched-off
+   * `analytics` feature tracking visitors for five more minutes after a super admin — or a
+   * privacy complaint — turned it off. The split is the fix, and this is the guard on it.
+   */
+  it('caches loadTenantSource, which is the DB read and nothing else', () => {
+    expect(source).toContain('unstable_cache(() => loadTenantSource(tenantId)');
+  });
+
+  it('never calls can() or isCapabilityVisible() inside the cached read', () => {
+    const start = source.indexOf('async function loadTenantSource(');
+    const end = source.indexOf('function composeTenantData(');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+
+    const cachedBody = source.slice(start, end);
+    expect(cachedBody).not.toMatch(/\bcan\(/);
+    expect(cachedBody).not.toMatch(/\bisCapabilityVisible\(/);
+  });
+});
+
+describe('a products_grid pinned to a category', () => {
+  /**
+   * The bug: the grid filtered `context.products` — the newest sixty rows of the WHOLE
+   * catalogue — by `config.categoryKey`. On a متجر tenant (200 products) that renders five of
+   * two hundred, or the "لسا ما انضافت منتجات على المتجر" empty state over a full category, and
+   * the "شوف كل المنتجات" escape hatch never appears because the slice is all the grid can see.
+   */
+  function product(id: string, categoryKey: string): StorefrontProduct {
+    return {
+      id,
+      slug: id,
+      name: `مفتاح إنجليزي ${id}`,
+      description: null,
+      priceAgorot: 4_500,
+      available: true,
+      badge: null,
+      sku: null,
+      categoryKey,
+      categoryName: 'عدد ومعدات',
+      image: null,
+      images: [],
+    };
+  }
+
+  function render(context: Partial<StorefrontContext>, config: Record<string, unknown>): string {
+    return renderToStaticMarkup(
+      createElement(ProductsGridSection, {
+        context: storefrontContext(context),
+        config: parseSectionConfig('products_grid', config) as SectionConfig<'products_grid'>,
+      }),
+    );
+  }
+
+  it('renders the category’s own products, not whatever the slice happened to hold', () => {
+    const html = render(
+      {
+        // The slice contains nothing from `tools` — every tool is older than the newest sixty.
+        products: [product('fresh-1', 'fresh')],
+        productsByCategory: { tools: [product('tool-1', 'tools'), product('tool-2', 'tools')] },
+        productCountByCategory: { tools: 40 },
+        productTotal: 240,
+      },
+      { categoryKey: 'tools', limit: 2 },
+    );
+
+    expect(html).toContain('tool-1');
+    expect(html).toContain('tool-2');
+    expect(html).not.toContain('fresh-1');
+    // Not the empty state, which is what filtering the slice produced.
+    expect(html).not.toContain('لسا ما انضافت');
+  });
+
+  it('offers the rest of the CATEGORY, and links into it rather than at everything', () => {
+    const html = render(
+      {
+        productsByCategory: { tools: [product('tool-1', 'tools'), product('tool-2', 'tools')] },
+        productCountByCategory: { tools: 40 },
+      },
+      { categoryKey: 'tools', limit: 2 },
+    );
+
+    expect(html).toContain('شوف كل المنتجات');
+    expect(html).toContain('/products?category=tools');
+  });
+
+  it('offers no link when the category fits in the grid', () => {
+    const html = render(
+      {
+        productsByCategory: { tools: [product('tool-1', 'tools')] },
+        productCountByCategory: { tools: 1 },
+      },
+      { categoryKey: 'tools', limit: 12 },
+    );
+
+    expect(html).not.toContain('شوف كل المنتجات');
+  });
+
+  it('an unpinned grid still decides its link from the catalogue total', () => {
+    const html = render(
+      { products: [product('a', 'fresh'), product('b', 'fresh')], productTotal: 200 },
+      { limit: 2 },
+    );
+
+    expect(html).toContain('شوف كل المنتجات');
+    expect(html).not.toContain('?category=');
+  });
+});
+
+describe('MediaImage — the CLS and lazy rules, asserted where they live', () => {
+  /**
+   * The e2e check for these cannot bite: the e2e stack runs NODE_ENV=production with the local
+   * storage driver, `storage()` refuses to mint a public URL in that combination (invariant 4),
+   * so `toStorefrontImage` returns null and no `<img>` reaches the browser at all. The rules are
+   * real, so they are asserted against the component instead of against an empty NodeList.
+   */
+  const image = {
+    src: 'https://cdn.example/tenants/t1/media/card.webp',
+    sources: [{ type: 'image/avif', srcSet: 'https://cdn.example/tenants/t1/media/card.avif 800w' }],
+    width: 800,
+    height: 600,
+    alt: 'زعتر بلدي معبأ بكيس',
+  };
+
+  it('always writes width and height, so the box is reserved before a byte arrives', () => {
+    const html = renderToStaticMarkup(createElement(MediaImage, { image }));
+    expect(html).toContain('width="800"');
+    expect(html).toContain('height="600"');
+    expect(html).toContain('alt="زعتر بلدي معبأ بكيس"');
+  });
+
+  it('lazy-loads by default and is eager only when a caller asks', () => {
+    expect(renderToStaticMarkup(createElement(MediaImage, { image }))).toContain('loading="lazy"');
+    expect(
+      renderToStaticMarkup(createElement(MediaImage, { image, priority: true })),
+    ).toContain('loading="eager"');
+  });
+
+  it('degrades to the deliberate no-image state rather than a broken img', () => {
+    const html = renderToStaticMarkup(
+      createElement(MediaImage, { image: null, fallbackLabel: 'زعتر' }),
+    );
+    expect(html).not.toContain('<img');
+    expect(html).toContain('sf-ph');
   });
 });
