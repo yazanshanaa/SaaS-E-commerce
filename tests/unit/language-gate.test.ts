@@ -261,10 +261,32 @@ describe('user-facing source strings', () => {
     'content',
   ]);
 
+  /**
+   * The roots the gate walks.
+   *
+   * `src/templates` was outside it until Group A merged, which meant every storefront component —
+   * the shell, all ten sections, the product card, the header, the footer, the consent banner —
+   * was exempt from the one check that enforces "no hardcoded sentence in a component". They were
+   * clean when A2 was written, and nothing kept them that way; a gate with a hole in it is how
+   * the first hardcoded string lands. Raised by A2 as a sync point, because this file is
+   * forbidden to a track.
+   */
+  const scanRoots = [path.join(repoRoot, 'src', 'app'), path.join(repoRoot, 'src', 'templates')];
+
+  const scannedFiles = (): string[] => scanRoots.flatMap((root) => tsxFiles(root));
+
+  it('actually walks both roots', () => {
+    // Without this, renaming a folder turns the two checks below into assertions about an empty
+    // list — they would pass, loudly and permanently, while measuring nothing.
+    for (const root of scanRoots) {
+      expect(tsxFiles(root).length).toBeGreaterThan(0);
+    }
+  });
+
   it('has no hardcoded Arabic sentence inside a JSX component', () => {
     const offenders: string[] = [];
 
-    for (const file of tsxFiles(path.join(repoRoot, 'src', 'app'))) {
+    for (const file of scannedFiles()) {
       for (const literal of jsxLiterals(file)) {
         if (!ARABIC.test(literal.text)) continue;
         offenders.push(`${path.relative(repoRoot, file)}: ${literal.text}`);
@@ -277,7 +299,7 @@ describe('user-facing source strings', () => {
   it('has no stray English sentence in a JSX text node either', () => {
     const offenders: string[] = [];
 
-    for (const file of tsxFiles(path.join(repoRoot, 'src', 'app'))) {
+    for (const file of scannedFiles()) {
       for (const literal of jsxLiterals(file)) {
         if (literal.attribute && !COPY_ATTRIBUTES.has(literal.attribute)) continue;
         if (!LATIN_WORD.test(literal.text)) continue;
