@@ -108,6 +108,14 @@ const schema = z.object({
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().optional(),
 
+  // --- Internal service-to-service (worker -> web) --------------------------
+  // The worker is a separate container and `revalidateTag()` only works inside the Next
+  // server, so the queue reaches the data cache through `/internal/revalidate`. Internal to
+  // the docker network; the secret is the second layer and is REQUIRED in production.
+  INTERNAL_BASE_URL: z.string().default('http://127.0.0.1:3000'),
+  INTERNAL_API_SECRET: z.string().optional(),
+  INTERNAL_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
+
   // --- Lifecycle ------------------------------------------------------------
   RETENTION_DAYS: z.coerce.number().int().positive().default(30),
   DEMO_REQUEST_RETENTION_DAYS: z.coerce.number().int().positive().default(30),

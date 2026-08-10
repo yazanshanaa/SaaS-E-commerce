@@ -2,6 +2,7 @@ import { Queue, Worker, type JobsOptions, type Processor } from 'bullmq';
 import { queueRedis } from '@/server/redis';
 import { logger } from '@/server/logger';
 import { withTenantTxn, type TenantTx } from '@/server/db';
+import { requestStorefrontRevalidation, wantsStorefrontRevalidation } from '@/server/revalidation';
 import { parseJob, QUEUE_NAMES, type Job, type QueueName, type SystemJob, type TenantJob } from './jobs/contract';
 
 /**
@@ -143,6 +144,12 @@ async function loadProcessor(
  * The single dispatch point. A TenantJob is wrapped in withTenantTxn — which also fails closed
  * for a purging tenant — and a SystemJob is handed no transaction at all, so it physically
  * cannot be handed a tenant-scoped writer by accident.
+ *
+ * POST-COMMIT EFFECTS live here and nowhere else. A processor runs entirely inside the
+ * transaction, so a cache drop it fired itself would land BEFORE the commit — and a tag dropped
+ * pre-commit races a concurrent read that repopulates the cache from the old snapshot, which is
+ * the one outcome the drop exists to prevent. A processor therefore ASKS, by returning
+ * `revalidateStorefront: true`, and this is where the asking is honoured.
  */
 export function createWorker(queueName: QueueName): Worker {
   const processor: Processor = async (bullJob) => {
@@ -150,7 +157,18 @@ export function createWorker(queueName: QueueName): Worker {
 
     if (job.scope === 'tenant') {
       const run = (await loadProcessor(queueName, job.name)) as TenantProcessor;
-      return withTenantTxn(job.tenantId, (tx) => run({ job, tx }), { timeoutMs: 120_000 });
+      const result = await withTenantTxn(job.tenantId, (tx) => run({ job, tx }), {
+        timeoutMs: 120_000,
+      });
+
+      if (wantsStorefrontRevalidation(result)) {
+        // Best effort by design: the write has committed, and re-running the job to retry a
+        // cache drop would redo minutes of image processing. Failure is logged and bounded by
+        // the storefront's five-minute TTL.
+        await requestStorefrontRevalidation(job.tenantId);
+      }
+
+      return result;
     }
 
     const run = (await loadProcessor(queueName, job.name)) as SystemProcessor;

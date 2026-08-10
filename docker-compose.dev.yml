@@ -97,6 +97,9 @@ services:
       REDIS_URL: redis://redis:6379
       SMTP_HOST: mailpit
       SMTP_PORT: '1025'
+      # The worker reaches Next's data cache through the web container — revalidateTag() does
+      # not work outside the Next server, and the image pipeline finishes variants here.
+      INTERNAL_BASE_URL: http://web:3000
     profiles: ['full']
 
 volumes:

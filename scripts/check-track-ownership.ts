@@ -48,6 +48,11 @@ const FORBIDDEN = [
   // its R2 driver by editing this folder would rewrite a contract Phase 1 already shipped.
   // A3 implements in src/server/media/storage and calls setStorageAdapter().
   'src/server/storage/**',
+  // Added for Group B. `requestStorefrontRevalidation()` is the one door between the worker
+  // container and Next's data cache, and B1's jobs, B2's screens and B3's demo builder all
+  // reach for it. A track that "fixed" it for its own case would be rewriting the contract the
+  // other two are coding against — the same shape as the storage adapter above.
+  'src/server/revalidation/**',
   'src/shared/site-contract/**',
   'src/shared/features.ts',
   'src/shared/i18n/**',

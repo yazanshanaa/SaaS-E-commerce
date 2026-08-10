@@ -121,6 +121,12 @@ export interface ProcessUploadResult {
   storedBytes: number;
   originalBytes: number;
   failureCode?: MediaFailureCode;
+  /**
+   * Asks `createWorker` to drop the tenant's storefront cache once this job's transaction has
+   * committed. See `src/server/revalidation`: a processor cannot do it itself, because
+   * everything it calls runs pre-commit.
+   */
+  revalidateStorefront?: boolean;
 }
 
 /**
@@ -448,6 +454,10 @@ export async function processMedia({
       variants,
       storedBytes,
       originalBytes: media.sizeBytes,
+      // The storefront renders from `MediaVariant` rows that did not exist a moment ago, so its
+      // cached catalogue is now wrong. Asking rather than calling is deliberate: this runs INSIDE
+      // the transaction, and `createWorker` is the only place that is past the commit.
+      revalidateStorefront: true,
     };
   } catch (error) {
     if (error instanceof PermanentProcessingError) {
