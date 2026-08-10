@@ -73,4 +73,14 @@ export interface StorageUsageView {
   label: string;
   usedLabel: string;
   limitLabel: string;
+  /**
+   * The remainder, pre-formatted in the SAME convention as the other two.
+   *
+   * `messages/ar/media.json` carries «المتبقي {remaining}» and this view did not answer it, which
+   * left the one number on that panel for B2 to format itself. The helper in scope there is
+   * `formatBytes()` from the i18n layer, which counts 1GB as 1024MB where a plan counts it as
+   * 1000 — and the result would sit directly under `limitLabel`, reproducing the exact
+   * self-contradicting sentence limits.ts was rewritten to eliminate.
+   */
+  remainingLabel: string;
 }

@@ -3,9 +3,12 @@ import { z } from 'zod';
 import { actorFromSession, getSession, checkMerchantAccess } from '@/server/auth';
 import { logger } from '@/server/logger';
 import { readRequestTenant } from '@/server/tenancy';
+import type { MessageParams } from '@/shared/i18n';
 import {
   ABSOLUTE_MAX_UPLOAD_BYTES,
+  MAX_ALT_LENGTH,
   MediaError,
+  consumeUploadSlot,
   isMediaError,
   uploadMedia,
   type MediaErrorCode,
@@ -58,6 +61,21 @@ const envelopeSchema = z.object({
     .optional(),
 });
 
+/**
+ * A declared length is an OPTIMISATION, so a malformed one must not become a verdict.
+ *
+ * `Headers.get` joins duplicate headers into `"100, 100"` and `Number()` turns anything
+ * unparseable into NaN. Handing that to zod produced an issue on `contentLength`, which the
+ * handler read as "too large" — answering 413 «الملف أكبر من الحد الأقصى» to a 100-byte request
+ * and telling the merchant to shrink a photo that was never too big. An unusable header simply
+ * means we do not know the length yet; the stream ceiling is the real bound either way.
+ */
+function declaredLength(raw: string | null): number | undefined {
+  if (raw === null) return undefined;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
 const formSchema = z.object({
   altText: z.string().trim().max(300).optional(),
 });
@@ -69,6 +87,9 @@ const formSchema = z.object({
  * bound rather than whatever the client felt like sending. The stream is cancelled on the way out
  * so the connection is not left half-drained.
  */
+/** A client that hung up mid-upload. Routine on 3G; never a server fault. */
+class ClientDisconnected extends Error {}
+
 async function readCappedBody(request: NextRequest, limit: number): Promise<Blob | null> {
   const stream = request.body;
   if (!stream) return new Blob([]);
@@ -79,7 +100,17 @@ async function readCappedBody(request: NextRequest, limit: number): Promise<Blob
 
   try {
     for (;;) {
-      const { done, value } = await reader.read();
+      let chunk;
+      try {
+        chunk = await reader.read();
+      } catch (error) {
+        // The socket died under us: the tab closed, the phone lost signal, the merchant
+        // navigated away. Letting this propagate turns every cancelled upload into a 500 and a
+        // Sentry alert indistinguishable from a real fault.
+        throw new ClientDisconnected((error as Error).message);
+      }
+
+      const { done, value } = chunk;
       if (done) break;
       if (!value) continue;
 
@@ -97,8 +128,12 @@ async function readCappedBody(request: NextRequest, limit: number): Promise<Blob
   return new Blob(chunks);
 }
 
-function fail(code: MediaErrorCode) {
-  const error = new MediaError(code);
+/**
+ * `params` is not optional decoration: `altTooLong` interpolates `{max}`, and answering without
+ * it told the merchant to shorten their description to «{max}» characters.
+ */
+function fail(code: MediaErrorCode, params?: MessageParams) {
+  const error = new MediaError(code, params);
   return NextResponse.json(
     { ok: false, code: error.code, message: error.arabicMessage },
     { status: error.httpStatus },
@@ -108,9 +143,7 @@ function fail(code: MediaErrorCode) {
 export async function POST(request: NextRequest): Promise<Response> {
   const envelope = envelopeSchema.safeParse({
     contentType: request.headers.get('content-type') ?? '',
-    contentLength: request.headers.get('content-length')
-      ? Number(request.headers.get('content-length'))
-      : undefined,
+    contentLength: declaredLength(request.headers.get('content-length')),
   });
 
   if (!envelope.success) {
@@ -133,8 +166,29 @@ export async function POST(request: NextRequest): Promise<Response> {
   const access = await checkMerchantAccess(session.tenantId, session.memberRole, 'media');
   if (!access.allowed) return fail('forbidden');
 
+  /**
+   * The rate limit is charged BEFORE the body is buffered, and that ordering is the point.
+   *
+   * Charging it inside `uploadMedia` — after the read — meant a caller over budget still made
+   * the server hold 25MB first, and could repeat immediately at no cost to itself: the 429 was
+   * an answer, not a bound. One authenticated account could keep the web container at several
+   * copies of 25MB per in-flight request (the Blob, the parsed File, the Buffer) for as long as
+   * it liked. Refusing here costs one Redis round trip and reads nothing.
+   */
+  const slot = await consumeUploadSlot(session.tenantId, { headers: request.headers });
+  if (!slot.allowed) return fail('rateLimited');
+
   // The real ceiling: bounded regardless of what the client declared, or did not declare.
-  const raw = await readCappedBody(request, ABSOLUTE_MAX_UPLOAD_BYTES);
+  let raw: Blob | null;
+  try {
+    raw = await readCappedBody(request, ABSOLUTE_MAX_UPLOAD_BYTES);
+  } catch (error) {
+    if (error instanceof ClientDisconnected) {
+      logger().info({ tenantId: session.tenantId }, 'media upload abandoned by the client');
+      return fail('noFile');
+    }
+    throw error;
+  }
   if (raw === null) return fail('tooLargeForServer');
 
   let form: FormData;
@@ -157,7 +211,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const fields = formSchema.safeParse({
     altText: typeof rawAlt === 'string' ? rawAlt : undefined,
   });
-  if (!fields.success) return fail('altTooLong');
+  if (!fields.success) return fail('altTooLong', { max: MAX_ALT_LENGTH });
 
   const body = Buffer.from(await file.arrayBuffer());
 
@@ -169,7 +223,6 @@ export async function POST(request: NextRequest): Promise<Response> {
       fileName: file.name || undefined,
       declaredContentType: file.type || undefined,
       altText: fields.data.altText,
-      request: { headers: request.headers },
     });
 
     return NextResponse.json(

@@ -73,21 +73,39 @@ export async function storageUsage(tenantId: string): Promise<StorageUsageView> 
   }
 
   const usedBytes = await currentStorageBytes(tenantId);
+  const remainingBytes = Math.max(0, limits.storageBytes - usedBytes);
+
   // "استعملت {used} من {limit}" puts a real byte count and a plan number in one sentence, so both
   // ends have to be in the plan's convention — see the note on formatStorageBytes in limits.ts.
   const usedLabel = formatStorageBytes(usedBytes);
   const limitLabel = formatPlanMegabytes(limits.storageMb);
+  // Rounded DOWN, like every other free-space figure: never promise room that is not there.
+  const remainingLabel = formatStorageBytes(remainingBytes, 'down');
+
+  /**
+   * The meter reaches 100% only when the account is ACTUALLY full.
+   *
+   * `Math.round` turned 499.97MB of a 500MB plan into 100%, so B2 drew a full bar and the copy
+   * said the plan was exhausted while the next upload was admitted normally — a merchant either
+   * buys an upgrade they do not need or opens a ticket saying the counter lies. Flooring keeps
+   * "full" meaning full, and the exhausted case is stated directly rather than inferred from
+   * rounding.
+   */
+  const percentUsed =
+    remainingBytes === 0
+      ? 100
+      : limits.storageBytes === 0
+        ? 100
+        : Math.min(99, Math.floor((usedBytes / limits.storageBytes) * 100));
 
   return {
     usedBytes,
     limitBytes: limits.storageBytes,
-    remainingBytes: Math.max(0, limits.storageBytes - usedBytes),
-    percentUsed:
-      limits.storageBytes === 0
-        ? 100
-        : Math.min(100, Math.round((usedBytes / limits.storageBytes) * 100)),
+    remainingBytes,
+    percentUsed,
     label: t('media', 'storageUsage', { used: usedLabel, limit: limitLabel }),
     usedLabel,
     limitLabel,
+    remainingLabel,
   };
 }

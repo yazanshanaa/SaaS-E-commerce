@@ -267,6 +267,14 @@ describe('the upload endpoint establishes its own caller', () => {
     expect(response.status).toBe(422);
     expect(body.code).toBe('altTooLong');
     expect(body.message).toMatch(ARABIC);
+    /**
+     * And the number is actually IN it. The sentence is «الوصف طويل. اختصره لـ {max} حرف أو أقل.»,
+     * so a refusal built without params told the merchant to shorten their description to «{max}»
+     * characters — a placeholder shown to a human, which the language policy forbids. An
+     * Arabic-only assertion cannot see that: the rest of the sentence is Arabic either way.
+     */
+    expect(body.message).toContain('300');
+    expect(body.message).not.toMatch(/\{\w+\}/);
     expect(uploads).toHaveLength(0);
   });
 

@@ -50,6 +50,9 @@ describe('every refusal has Arabic copy behind it', () => {
         max: 300,
       });
       expect(error.arabicMessage, code).toMatch(ARABIC);
+      // No message may reach a merchant with an unfilled slot in it. An Arabic-only assertion
+      // cannot see «اختصره لـ {max} حرف»: the sentence around the placeholder is Arabic too.
+      expect(error.arabicMessage, code).not.toMatch(/\{\w+\}/);
       // The English side stays on `message`, which is what a log line and a stack trace carry.
       expect(error.message).toContain(code);
       expect(error.httpStatus).toBeGreaterThanOrEqual(400);
@@ -281,6 +284,33 @@ describe('alt text', () => {
     expect(isArabicText('عباية')).toBe(true);
     expect(isArabicText('abaya')).toBe(false);
     expect(isArabicText('123')).toBe(false);
+  });
+
+  it('demands an Arabic LETTER, not merely a character from an Arabic block', () => {
+    /**
+     * The old range began at U+0600, which swept in Arabic punctuation, the tatweel and the
+     * Arabic-Indic digits — so the rule was defeatable by accident and on purpose. The last case
+     * is the one that matters: one Arabic comma turned the exact Latin filename this check exists
+     * to refuse into a valid product description.
+     */
+    expect(isArabicText('٢٠٢٤')).toBe(false); // Arabic-Indic digits: no description at all
+    expect(isArabicText('ـــ')).toBe(false); // three tatweels
+    expect(isArabicText('،؟!')).toBe(false); // Arabic punctuation only
+    expect(isArabicText('IMG_2043،')).toBe(false); // the filename, plus one Arabic comma
+    expect(isArabicText('حذاء رياضي أبيض مقاس 42')).toBe(true); // Western digits are fine
+  });
+
+  it('accepts Arabic pasted out of a PDF, which arrives as presentation forms', () => {
+    /**
+     * A shop owner copying a line from a supplier's price list gets U+FB50–U+FEFF codepoints:
+     * «ﻗﻤﻴﺺ ﻗﻄﻦ» renders identically to «قميص قطن» and is a different string. Refusing it told the
+     * merchant to write in Arabic about text that was plainly Arabic in front of them, with no way
+     * to comply but to retype it. NFKC also means the STORED alt is the form a screen reader and
+     * the shop's own search expect.
+     */
+    const pastedFromPdf = 'ﻗﻤﻴﺺ ﻗﻄﻦ';
+    expect(isArabicText(pastedFromPdf)).toBe(true);
+    expect(assertProductImageAlt(pastedFromPdf)).toBe('قميص قطن');
   });
 
   it('hands B2 the same rule as a zod schema, with the Arabic message on the issue', () => {

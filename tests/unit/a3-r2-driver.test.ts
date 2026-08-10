@@ -8,6 +8,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetEnvCache } from '@/env';
 import { R2StorageAdapter, SIGV4_MAX_TTL_SECONDS } from '@/server/media/storage';
 import { MAX_SIGNED_URL_TTL_SECONDS, StorageError, exportsPrefix, mediaPrefix } from '@/server/storage';
 
@@ -41,6 +42,8 @@ let bucket: Map<string, FakeObject>;
 let client: S3Client;
 let sent: unknown[];
 let adapter: R2StorageAdapter;
+/** Keys the fake bucket refuses to delete, so a partial failure can be exercised. */
+let undeletableKeys: Set<string>;
 
 class NotFound extends Error {
   readonly $metadata = { httpStatusCode: 404 };
@@ -86,10 +89,26 @@ function handle(command: unknown): unknown {
   }
 
   if (command instanceof DeleteObjectsCommand) {
+    /**
+     * DeleteObjects is a PARTIAL-SUCCESS API: it answers 200 and reports per-key failures in an
+     * `Errors` array rather than throwing. The fake models that, because it is the behaviour the
+     * driver has to survive — B1's purge certifies a tenant's data as erased on the strength of
+     * this call's return value.
+     */
+    const deleted: Array<{ Key: string }> = [];
+    const errors: Array<{ Key: string; Code: string; Message: string }> = [];
+
     for (const object of command.input.Delete?.Objects ?? []) {
-      bucket.delete(String(object.Key));
+      const key = String(object.Key);
+      if (undeletableKeys.has(key)) {
+        errors.push({ Key: key, Code: 'AccessDenied', Message: 'refused by a lifecycle rule' });
+        continue;
+      }
+      bucket.delete(key);
+      deleted.push({ Key: key });
     }
-    return {};
+
+    return errors.length ? { Deleted: deleted, Errors: errors } : { Deleted: deleted };
   }
 
   if (command instanceof ListObjectsV2Command) {
@@ -116,6 +135,7 @@ function handle(command: unknown): unknown {
 beforeEach(() => {
   bucket = new Map();
   sent = [];
+  undeletableKeys = new Set();
 
   client = new S3Client({
     region: 'auto',
@@ -246,6 +266,45 @@ describe('delete versus deleteByPrefix', () => {
     await expect(adapter.deleteByPrefix('')).rejects.toBeInstanceOf(StorageError);
     expect(bucket.size).toBe(1);
   });
+
+  /**
+   * The guarantee B1's purge is built on, and the one a green gate could not see.
+   *
+   * DeleteObjects answers 200 with a per-key `Errors` array when some of a batch survives, so the
+   * SDK throws nothing. Counting the batch as removed meant the driver reported a clean sweep over
+   * objects that are still there: the purge would write its audit row, delete the Tenant row, and
+   * leave product images fetchable unsigned from the public media prefix for a merchant whose data
+   * the platform had just certified as erased.
+   */
+  it('RAISES when R2 refuses part of a batch, instead of reporting a clean sweep', async () => {
+    const survivor = `${mediaPrefix(TENANT)}m2/full.webp`;
+    await adapter.put(`${mediaPrefix(TENANT)}m1/full.webp`, Buffer.from('a'));
+    await adapter.put(survivor, Buffer.from('b'));
+    await adapter.put(`${mediaPrefix(TENANT)}m3/full.webp`, Buffer.from('c'));
+    undeletableKeys.add(survivor);
+
+    let thrown: unknown;
+    try {
+      await adapter.deleteByPrefix(`tenants/${TENANT}/`);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(StorageError);
+    // The message has to name what survived: "some objects remain" is not actionable at 03:00.
+    expect((thrown as StorageError).message).toContain(survivor);
+    expect(bucket.has(survivor)).toBe(true);
+  });
+
+  it('asks for the per-key report rather than suppressing it with Quiet', async () => {
+    await adapter.put(`${mediaPrefix(TENANT)}m1/full.webp`, Buffer.from('a'));
+    sent.length = 0;
+    await adapter.deleteByPrefix(`tenants/${TENANT}/`);
+
+    const [command] = sent.filter((c) => c instanceof DeleteObjectsCommand) as DeleteObjectsCommand[];
+    // Quiet mode suppresses exactly the `Errors` array the check above depends on.
+    expect(command?.input.Delete?.Quiet).toBe(false);
+  });
 });
 
 describe('list', () => {
@@ -299,5 +358,84 @@ describe('signedUrl', () => {
     // is kept by a revocable platform route, and this constant is the reason why.
     expect(SIGV4_MAX_TTL_SECONDS).toBe(604_800);
     expect(MAX_SIGNED_URL_TTL_SECONDS).toBeLessThan(SIGV4_MAX_TTL_SECONDS);
+  });
+});
+
+describe('failures that are NOT "the object is absent"', () => {
+  /**
+   * A 404 is not one fact. `NoSuchBucket` also arrives as 404, and folding it into "not found"
+   * turns a configuration mistake into a permanent lie: `process-upload` asks `exists()` before it
+   * decides whether a source is genuinely gone, so a web container writing to one bucket and a
+   * worker reading from another marks every upload `sourceMissing` — never retried, and the
+   * merchant is told «ما لقينا ملف الصورة الأصلي» about an object sitting safely in the other
+   * bucket. On a fresh deploy with a typo in R2_BUCKET that is 100% of uploads.
+   */
+  class NoSuchBucket extends Error {
+    readonly $metadata = { httpStatusCode: 404 };
+    constructor() {
+      super('The specified bucket does not exist');
+      this.name = 'NoSuchBucket';
+    }
+  }
+
+  it('reports a missing BUCKET as an error, not as a missing object', async () => {
+    vi.spyOn(client, 'send').mockImplementation((async () => {
+      throw new NoSuchBucket();
+    }) as never);
+
+    await expect(adapter.head(`${mediaPrefix(TENANT)}m1/full.webp`)).rejects.toBeInstanceOf(
+      StorageError,
+    );
+    await expect(adapter.exists(`${mediaPrefix(TENANT)}m1/full.webp`)).rejects.toBeInstanceOf(
+      StorageError,
+    );
+  });
+
+  it('still reports a genuinely missing object as absent', async () => {
+    expect(await adapter.head(`${mediaPrefix(TENANT)}nothing/full.webp`)).toBeNull();
+    expect(await adapter.exists(`${mediaPrefix(TENANT)}nothing/full.webp`)).toBe(false);
+  });
+});
+
+describe('configuration that must fail loudly', () => {
+  it('refuses an unsupported R2_SSE_ALGORITHM, naming the variable', async () => {
+    const previous = process.env.R2_SSE_ALGORITHM;
+    process.env.R2_SSE_ALGORITHM = 'AES-256'; // the plausible typo for AES256
+    resetEnvCache();
+
+    try {
+      let thrown: unknown;
+      try {
+        await adapter.put(`${exportsPrefix(TENANT)}artifact.zip`, Buffer.from('catalogue'), {
+          encrypt: true,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(StorageError);
+      expect((thrown as StorageError).message).toContain('R2_SSE_ALGORITHM');
+      // It must fail BEFORE the write, not emit an unusable header and let R2 answer 400 on the
+      // one artifact whose loss is unrecoverable.
+      expect(bucket.size).toBe(0);
+    } finally {
+      if (previous === undefined) delete process.env.R2_SSE_ALGORITHM;
+      else process.env.R2_SSE_ALGORITHM = previous;
+      resetEnvCache();
+    }
+  });
+
+  it('refuses a CDN base with no scheme, which would resolve against the storefront', () => {
+    // `cdn.souqbartaa.com` without https:// makes every <img src> a RELATIVE path, so every image
+    // request lands on the app container as a 404 — with no exception and no log line.
+    const relative = new R2StorageAdapter({
+      client,
+      bucket: BUCKET,
+      publicBaseUrl: 'cdn.souqbartaa.test',
+    });
+
+    expect(() => relative.publicUrl(`${mediaPrefix(TENANT)}m1/full.webp`)).toThrow(
+      /CDN_PUBLIC_BASE_URL/,
+    );
   });
 });

@@ -14,10 +14,17 @@ import { registerMediaStorage } from './storage';
  *
  * IMPORTING THIS MODULE INSTALLS THE PRODUCTION DRIVER. `registerMediaStorage()` is idempotent
  * and does nothing unless STORAGE_DRIVER=r2, so a development checkout keeps the local-disk
- * driver and keeps working with no credentials and no network. It runs on import because a
- * worktree may not edit the worker's entry point; see docs/decisions/a3.md, which asks the main
- * session to call it once at boot so the export route also has a driver on a request that never
- * touches media.
+ * driver and keeps working with no credentials and no network.
+ *
+ * THIS IMPORT IS NOT ENOUGH ON ITS OWN, and the gap is a live production bug rather than a
+ * tidiness note — see sync point 3 in docs/decisions/a3.md. Every module inside this folder
+ * resolves storage through `mediaStorage()`, which registers first. Everything OUTSIDE it does
+ * not: `src/server/export` and `src/server/billing` call the bare `storage()` from
+ * `@/server/storage`, which THROWS under STORAGE_DRIVER=r2 when no adapter has been registered.
+ * The only route whose bundle reaches this barrel is `/api/media/upload`, so in a fresh web
+ * container a suspended merchant opening `app.{DOMAIN}/export/{token}` gets a 500 unless someone
+ * happened to upload a photo through that same process first. The one-line boot call that closes
+ * it lives outside this track's write scope; the sync point names the exact lines.
  */
 registerMediaStorage();
 

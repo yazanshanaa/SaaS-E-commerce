@@ -45,18 +45,26 @@ export interface ScheduleMediaCleanupOptions {
 }
 
 /**
- * Register the daily orphan sweep. Idempotent through `jobId`, so calling it on every worker boot
- * is correct.
+ * Register the daily orphan sweep. Idempotent by ID, on every worker boot.
+ *
+ * `queue.add(..., { repeat, jobId })` is NOT idempotent the way it reads. BullMQ keys a repeatable
+ * on a hash of name, jobId, endDate, tz AND pattern, so the id alone only dedupes while the
+ * pattern never changes. Tighten the cadence once and revert it, and Redis is left holding two
+ * live schedules — the old one nothing ever removed and the new one — each doing a full-bucket
+ * listing and a full per-tenant fan-out, duplicating every cleanup job onto a queue with
+ * concurrency 2. `upsertJobScheduler` is keyed on the id alone and overrides in place, which is
+ * the guarantee the comment above always claimed.
  */
 export async function scheduleMediaCleanup(
   options: ScheduleMediaCleanupOptions = {},
 ): Promise<void> {
   const pattern = options.pattern ?? MEDIA_CLEANUP_CRON;
 
-  await queue('media').add('cleanup-orphans', systemJob('cleanup-orphans'), {
-    repeat: { pattern, tz: MEDIA_CLEANUP_TIMEZONE },
-    jobId: MEDIA_CLEANUP_JOB_ID,
-  });
+  await queue('media').upsertJobScheduler(
+    MEDIA_CLEANUP_JOB_ID,
+    { pattern, tz: MEDIA_CLEANUP_TIMEZONE },
+    { name: 'cleanup-orphans', data: systemJob('cleanup-orphans') },
+  );
 
   logger().info({ pattern, tz: MEDIA_CLEANUP_TIMEZONE }, 'media orphan sweep scheduled');
 }

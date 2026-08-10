@@ -4,12 +4,10 @@ import { randomToken } from '@/server/crypto';
 import { logger } from '@/server/logger';
 import { enqueue, tenantJob } from '@/server/queues';
 import { mediaStorage } from './storage';
-import type { ClientIpInput } from '@/server/http/get-client-ip';
 import { MediaError } from './errors';
 import { mediaSourceKey } from './keys';
 import { admitUpload, resolveStorageLimits } from './limits';
 import { sniffImage, sniffIngestible } from './magic-bytes';
-import { consumeUploadSlot } from './rate-limit';
 import { adjustTenantStorageBytes, currentStorageBytes, readTenantStorageBytes } from './usage';
 import { normaliseAltText } from './alt-text';
 import type { IngestibleMime, MediaStatus } from './types';
@@ -20,13 +18,18 @@ import type { IngestibleMime, MediaStatus } from './types';
  * Order matters and is the point of the file:
  *
  *   1. validate the metadata with zod,
- *   2. rate limit by the IP `getClientIp()` resolved,
- *   3. decide what the file IS from its magic bytes — never the header, never the extension,
- *   4. check BOTH plan limits server-side, naming whichever one was hit,
- *   5. store the bytes,
- *   6. reserve the quota and write the `Media` row in one transaction,
- *   7. enqueue processing. Never process inline: a 8MB image costs seconds of CPU, and a request
+ *   2. decide what the file IS from its magic bytes — never the header, never the extension,
+ *   3. check BOTH plan limits server-side, naming whichever one was hit,
+ *   4. store the bytes,
+ *   5. reserve the quota and write the `Media` row in one transaction,
+ *   6. enqueue processing. Never process inline: a 8MB image costs seconds of CPU, and a request
  *      thread is the wrong place to spend them.
+ *
+ * RATE LIMITING IS THE ROUTE'S, not this function's. It used to live here, which meant the
+ * budget was charged only after the handler had already buffered the whole body — so a caller
+ * over its limit still cost the server 25MB of memory per attempt and could retry at once. A
+ * limit that only answers after paying the cost it exists to avoid is not a limit. The HTTP door
+ * charges the slot before it reads a byte; `ingestInternalImage` has no door and is not limited.
  *
  * If the enqueue fails the whole thing is undone — object, row and reservation. A `Media` row
  * with no job behind it is a permanently "قيد المعالجة" tile in the merchant's library and quota
@@ -36,13 +39,29 @@ import type { IngestibleMime, MediaStatus } from './types';
 export const MEDIA_QUEUE = 'media' as const;
 export const PROCESS_UPLOAD_JOB = 'process-upload' as const;
 
+/**
+ * Advisory metadata is TRUNCATED, never grounds for refusal.
+ *
+ * Both fields are chosen entirely by the client and neither decides anything — the bytes do. A
+ * `.max(255)` therefore turned a well-formed image with a long filename, or a `Content-Type` with
+ * 300 characters of parameters, into a ZodError thrown before the magic-byte sniff or either plan
+ * check even ran: the merchant got a 500 and «صار خلل عندنا» for a picture that was perfectly
+ * fine. Trimming a diagnostic string to fit is the whole of the correct behaviour.
+ */
+const advisory = (max: number) =>
+  z
+    .string()
+    .transform((value) => value.trim().slice(0, max))
+    .optional();
+
 export const uploadMetadataSchema = z.object({
-  fileName: z.string().trim().min(1).max(255).optional(),
+  fileName: advisory(255),
   /**
    * Advisory ONLY. Recorded for diagnostics and never used to decide anything — the bytes do
-   * that. Kept so a support question ("the browser said it was a PNG") has an answer.
+   * that. Kept so a support question ("the browser said it was a PNG") has an answer; it is
+   * logged on both the accepted and the refused path.
    */
-  declaredContentType: z.string().trim().max(255).optional(),
+  declaredContentType: advisory(255),
   altText: z.string().trim().max(300).optional(),
 });
 
@@ -52,8 +71,6 @@ export interface UploadMediaInput extends UploadMetadata {
   tenantId: string;
   body: Buffer;
   actor: Actor;
-  /** For the rate limiter. Absent for internal ingestion, which is not rate limited. */
-  request?: ClientIpInput;
 }
 
 export interface UploadedMedia {
@@ -70,8 +87,6 @@ interface IngestInput {
   actor: Actor;
   mimeType: IngestibleMime;
   metadata: UploadMetadata;
-  /** Skipped for internal ingestion. */
-  request?: ClientIpInput;
 }
 
 async function ingest({
@@ -147,7 +162,13 @@ async function ingest({
     throw new MediaError('queueUnavailable');
   }
 
-  logger().info({ tenantId, mediaId, sizeBytes, mimeType }, 'media upload accepted');
+  // `declaredContentType` is recorded HERE and nowhere else: the column does not exist and the
+  // bytes decide the type anyway, but "the browser said it was a PNG" is a real support question
+  // and this line is the only place that can answer it.
+  logger().info(
+    { tenantId, mediaId, sizeBytes, mimeType, declaredContentType: metadata.declaredContentType },
+    'media upload accepted',
+  );
 
   return { mediaId, key, mimeType, sizeBytes, status: 'pending' };
 }
@@ -185,15 +206,19 @@ export async function uploadMedia(input: UploadMediaInput): Promise<UploadedMedi
     altText: input.altText,
   });
 
-  if (input.request) {
-    const decision = await consumeUploadSlot(input.tenantId, input.request);
-    if (!decision.allowed) {
-      throw new MediaError('rateLimited');
-    }
-  }
-
   const sniffed = sniffImage(input.body);
   if (!sniffed.ok) {
+    // The type the client CLAIMED is diagnostic exactly here, where we disagreed with it.
+    logger().info(
+      {
+        tenantId: input.tenantId,
+        reason: sniffed.reason,
+        detected: sniffed.detected,
+        declaredContentType: metadata.declaredContentType,
+      },
+      'media upload refused by magic bytes',
+    );
+
     if (sniffed.reason === 'empty') throw new MediaError('emptyFile');
     if (sniffed.reason === 'vector') throw new MediaError('vectorRejected');
     throw new MediaError('unsupportedType');
@@ -205,7 +230,6 @@ export async function uploadMedia(input: UploadMediaInput): Promise<UploadedMedi
     actor: input.actor,
     mimeType: sniffed.mimeType,
     metadata,
-    request: input.request,
   });
 }
 

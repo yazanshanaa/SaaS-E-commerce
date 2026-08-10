@@ -16,10 +16,34 @@ import type { MediaStatus, MediaVariantView, MediaView } from './types';
  * trail — cannot be re-implemented slightly differently by whoever adds the second caller.
  */
 
+/**
+ * The cursor is `{createdAt ISO}|{id}`, not a timestamp.
+ *
+ * `created_at` is not unique and is not close to unique here: a merchant multi-selecting sixty
+ * photos fires the uploads in parallel, each ingest transaction serialises on the tenant row and
+ * commits immediately after the one before it, so several rows land in the same millisecond
+ * routinely. A cursor of `createdAt < T` then skips every row that TIED with the last row of the
+ * previous page — the photo is in the library, counted against `storage_mb`, and reachable from
+ * no page the merchant can scroll to. Ordering by a total key and comparing the pair fixes it.
+ */
+const CURSOR_SEPARATOR = '|';
+
+function parseCursor(cursor: string | undefined): { createdAt: Date; id: string } | null {
+  if (!cursor) return null;
+  const separator = cursor.lastIndexOf(CURSOR_SEPARATOR);
+  if (separator <= 0) return null;
+
+  const createdAt = new Date(cursor.slice(0, separator));
+  const id = cursor.slice(separator + 1);
+  if (Number.isNaN(createdAt.getTime()) || !id) return null;
+
+  return { createdAt, id };
+}
+
 export const listMediaSchema = z.object({
   status: z.enum(['pending', 'processing', 'ready', 'failed']).optional(),
-  /** `Media.createdAt` of the last row on the previous page. */
-  cursor: z.string().datetime().optional(),
+  /** `{createdAt}|{id}` of the last row on the previous page. */
+  cursor: z.string().min(1).optional(),
   limit: z.number().int().min(1).max(100).default(48),
 });
 
@@ -58,6 +82,7 @@ export async function listMedia(
   input: Partial<ListMediaInput> = {},
 ): Promise<MediaPage> {
   const { status, cursor, limit } = listMediaSchema.parse(input);
+  const after = parseCursor(cursor);
 
   const rows = await withTenantTxn(
     tenantId,
@@ -66,9 +91,16 @@ export async function listMedia(
         where: {
           tenantId,
           ...(status ? { status } : {}),
-          ...(cursor ? { createdAt: { lt: new Date(cursor) } } : {}),
+          ...(after
+            ? {
+                OR: [
+                  { createdAt: { lt: after.createdAt } },
+                  { createdAt: after.createdAt, id: { lt: after.id } },
+                ],
+              }
+            : {}),
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: limit + 1,
         select: {
           id: true,
@@ -111,9 +143,12 @@ export async function listMedia(
     };
   });
 
+  const last = page.at(-1);
+
   return {
     items,
-    nextCursor: rows.length > limit ? (page.at(-1)?.createdAt.toISOString() ?? null) : null,
+    nextCursor:
+      rows.length > limit && last ? `${last.createdAt.toISOString()}${CURSOR_SEPARATOR}${last.id}` : null,
   };
 }
 
@@ -210,9 +245,20 @@ export const deleteMediaSchema = z.object({
   force: z.boolean().default(false),
 });
 
+/**
+ * `actor` and `ip` are REQUIRED, deliberately.
+ *
+ * They used to be optional and defaulted to `SYSTEM_ACTOR` with a null ip, so the obvious call —
+ * `deleteMedia(tenantId, { mediaId })`, which is the shape the barrel advertises and every test
+ * used — produced an audit row saying the platform itself deleted a merchant's photo, from
+ * nowhere. That is the one row that has to be true: a staff member clearing the library before
+ * they leave is exactly what an audit trail exists to answer, and PHASES.md requires the ip to
+ * come from `getClientIp()`. Making them required moves the mistake from a silent misattribution
+ * to a typecheck failure in B2's screen.
+ */
 export interface DeleteMediaInput extends z.input<typeof deleteMediaSchema> {
-  actor?: Actor;
-  ip?: string | null;
+  actor: Actor;
+  ip: string | null;
   userAgent?: string | null;
 }
 
@@ -237,11 +283,26 @@ export async function deleteMedia(
     mediaId: input.mediaId,
     force: input.force,
   });
-  const actor = input.actor ?? SYSTEM_ACTOR;
+  const actor = input.actor;
 
   const { keys, bytesReleased } = await withTenantTxn(
     tenantId,
     async (tx) => {
+      /**
+       * LOCK THE ROW BEFORE READING IT.
+       *
+       * The processor is a concurrent writer on exactly this row, and it holds its lock for the
+       * seconds it spends in Sharp. Reading first meant deleting a «قيد المعالجة» tile read the
+       * PRE-processing snapshot — `sizeBytes` still the 10MB upload, `variants` still empty — and
+       * then blocked on the delete until the processor committed `sizeBytes: 1.1MB`, six variant
+       * rows and a `-8.9MB` adjustment of its own. The delete then released 10MB that had already
+       * been reduced to 1.1MB, driving the tenant's counter down by the difference twice, and
+       * removed only the source key it had seen: the six variant objects the processor had just
+       * written were cascaded out of the database and left in the bucket with no row to find them
+       * by. Taking the lock first means every number below is the committed one.
+       */
+      await tx.$executeRaw`SELECT 1 FROM "media" WHERE "id" = ${mediaId} AND "tenant_id" = ${tenantId} FOR UPDATE`;
+
       const media = await tx.media.findFirst({
         where: { id: mediaId, tenantId },
         select: {
@@ -250,14 +311,14 @@ export async function deleteMedia(
           sizeBytes: true,
           altText: true,
           variants: { select: { key: true } },
-          _count: { select: { productImages: true } },
+          productImages: { select: { productId: true } },
         },
       });
 
       if (!media) throw new MediaError('notFound');
 
-      if (media._count.productImages > 0 && !force) {
-        throw new MediaError('inUse', { count: media._count.productImages });
+      if (media.productImages.length > 0 && !force) {
+        throw new MediaError('inUse', { count: media.productImages.length });
       }
 
       // Every object this item owns, whatever state processing reached: the source may still be
@@ -272,9 +333,19 @@ export async function deleteMedia(
           action: 'media.deleted',
           entityType: 'media',
           entityId: mediaId,
-          before: { key: media.key, sizeBytes: media.sizeBytes, altText: media.altText },
-          after: {},
-          ip: input.ip ?? null,
+          /**
+           * A forced delete cascades `ProductImage` rows, and once they are gone nothing else
+           * records which product pages lost a photo. The override is the destructive branch, so
+           * it is the branch whose before/after has to be reconstructable.
+           */
+          before: {
+            key: media.key,
+            sizeBytes: media.sizeBytes,
+            altText: media.altText,
+            productIds: media.productImages.map((image) => image.productId),
+          },
+          after: { forced: force && media.productImages.length > 0 },
+          ip: input.ip,
           userAgent: input.userAgent ?? null,
         },
       });

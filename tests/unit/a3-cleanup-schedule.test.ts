@@ -10,11 +10,11 @@ import { describe, expect, it, vi } from 'vitest';
  * module exists for would never run in production.
  *
  * The queue is mocked because there is no Redis here and BullMQ is not what is under test — what
- * is under test is the (queue, job name, payload, repeat, jobId) tuple the worker will register.
+ * is under test is the (queue, scheduler id, job name, payload, repeat) tuple the worker registers.
  */
 
-const { added } = vi.hoisted(() => ({
-  added: [] as Array<{ name: string; data: unknown; options: unknown }>,
+const { scheduled } = vi.hoisted(() => ({
+  scheduled: [] as Array<{ id: string; repeat: unknown; template: unknown }>,
 }));
 
 vi.mock('@/server/queues', async (importOriginal) => {
@@ -22,9 +22,20 @@ vi.mock('@/server/queues', async (importOriginal) => {
   return {
     ...actual,
     queue: vi.fn(() => ({
-      add: async (name: string, data: unknown, options: unknown) => {
-        added.push({ name, data, options });
-        return { id: 'repeat-job' };
+      upsertJobScheduler: async (id: string, repeat: unknown, template: unknown) => {
+        // The real one is an upsert keyed on the id: model that, so the test can only pass for
+        // the reason production would.
+        const existing = scheduled.findIndex((entry) => entry.id === id);
+        const entry = { id, repeat, template };
+        if (existing >= 0) scheduled[existing] = entry;
+        else scheduled.push(entry);
+        return { id };
+      },
+      add: async () => {
+        throw new Error(
+          'scheduleMediaCleanup must not use queue.add: BullMQ keys a repeatable on a hash that ' +
+            'includes the PATTERN, so add() stacks a second schedule whenever the cadence changes.',
+        );
       },
     })),
   };
@@ -39,29 +50,40 @@ import {
 
 describe('the orphan sweep is schedulable in one line from the worker', () => {
   it('registers a repeating SYSTEM job on the media queue', async () => {
-    added.length = 0;
+    scheduled.length = 0;
     await scheduleMediaCleanup();
 
-    expect(added).toHaveLength(1);
-    const [entry] = added;
+    expect(scheduled).toHaveLength(1);
+    const [entry] = scheduled;
 
+    expect(entry?.id).toBe(MEDIA_CLEANUP_JOB_ID);
+    expect(entry?.repeat).toMatchObject({
+      pattern: MEDIA_CLEANUP_CRON,
+      tz: MEDIA_CLEANUP_TIMEZONE,
+    });
     // The job name has to match the frozen registry entry in src/server/queues.ts.
-    expect(entry?.name).toBe('cleanup-orphans');
+    expect(entry?.template).toMatchObject({ name: 'cleanup-orphans' });
     // System scope: the fan-out half reads across tenants and must not be handed a transaction.
-    expect(entry?.data).toMatchObject({ scope: 'system', name: 'cleanup-orphans' });
-    expect(entry?.options).toMatchObject({
-      repeat: { pattern: MEDIA_CLEANUP_CRON, tz: MEDIA_CLEANUP_TIMEZONE },
-      jobId: MEDIA_CLEANUP_JOB_ID,
+    expect((entry?.template as { data: unknown }).data).toMatchObject({
+      scope: 'system',
+      name: 'cleanup-orphans',
     });
   });
 
-  it('carries a stable jobId, so restarting the worker replaces the schedule', async () => {
-    added.length = 0;
+  it('replaces its schedule rather than stacking one, even when the pattern changes', async () => {
+    scheduled.length = 0;
+
     await scheduleMediaCleanup();
+    await scheduleMediaCleanup();
+    // The case `queue.add(..., { repeat, jobId })` could not survive: BullMQ derives a
+    // repeatable's key from a hash of name, jobId, endDate, tz AND pattern, so tightening the
+    // cadence once and reverting it left TWO live schedules in Redis — each running a full-bucket
+    // listing and a full per-tenant fan-out onto a queue with concurrency 2.
+    await scheduleMediaCleanup({ pattern: '0 */6 * * *' });
     await scheduleMediaCleanup();
 
-    const ids = added.map((entry) => (entry.options as { jobId: string }).jobId);
-    expect(new Set(ids).size).toBe(1);
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0]?.repeat).toMatchObject({ pattern: MEDIA_CLEANUP_CRON });
   });
 
   it('runs off-peak in Israeli local time, not at a fixed UTC hour', () => {

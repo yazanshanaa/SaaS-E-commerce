@@ -19,12 +19,57 @@ import { cacheRedis } from '@/server/redis';
 
 const WINDOW_SECONDS = 60;
 
+/**
+ * INCR and EXPIRE as ONE operation.
+ *
+ * As two commands they are not atomic, and the gap is not theoretical: if `INCR` succeeds and
+ * `EXPIRE` then fails — a failover, a restart mid-deploy, a dropped connection — the key exists
+ * with no TTL and no later call can repair it, because the `count === 1` branch that sets the
+ * expiry is never reached again. The counter then rises forever across days instead of resetting
+ * every minute, and once it passes the limit that tenant+IP is refused every upload, permanently,
+ * with an Arabic message telling them to wait a minute. A Lua script makes that state
+ * unreachable: Redis runs it as a single unit, so a key with a value always has a TTL.
+ */
+const INCR_WITH_TTL = `
+  local count = redis.call('INCR', KEYS[1])
+  if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+  return count
+`;
+
+/** A ceiling on the degraded path's memory, so an outage cannot grow the heap without bound. */
+const MAX_MEMORY_WINDOWS = 10_000;
+
 interface Window {
   count: number;
   resetAt: number;
 }
 
 const memoryWindows = new Map<string, Window>();
+
+/**
+ * Drop windows that have already expired.
+ *
+ * Without this the fallback map only ever replaces a key that happens to be seen again, so every
+ * key never seen again — a merchant's staff on a mobile network present a new IP per session —
+ * stays forever, and the web container's heap grows for as long as Redis is down and never
+ * recovers when it returns.
+ */
+function pruneMemoryWindows(now: number): void {
+  for (const [key, window] of memoryWindows) {
+    if (window.resetAt <= now) memoryWindows.delete(key);
+  }
+
+  // Still over the ceiling after pruning: evict oldest-first. Insertion order is close enough to
+  // age order here, and a stated bound beats an implicit one.
+  if (memoryWindows.size > MAX_MEMORY_WINDOWS) {
+    const excess = memoryWindows.size - MAX_MEMORY_WINDOWS;
+    let dropped = 0;
+    for (const key of memoryWindows.keys()) {
+      memoryWindows.delete(key);
+      if (++dropped >= excess) break;
+    }
+  }
+}
 
 export interface RateLimitDecision {
   allowed: boolean;
@@ -45,6 +90,7 @@ function consumeInMemory(key: string, limit: number): RateLimitDecision {
   const existing = memoryWindows.get(key);
 
   if (!existing || existing.resetAt <= now) {
+    pruneMemoryWindows(now);
     memoryWindows.set(key, { count: 1, resetAt: now + WINDOW_SECONDS * 1_000 });
     return { allowed: true, remaining: limit - 1, limit, source: 'memory' };
   }
@@ -67,10 +113,8 @@ export async function consumeUploadSlot(
 
   try {
     const redis = cacheRedis();
-    const count = await redis.incr(key);
-    if (count === 1) {
-      await redis.expire(key, WINDOW_SECONDS);
-    }
+    // One round trip, one atomic unit: a counted key always carries its TTL.
+    const count = Number(await redis.eval(INCR_WITH_TTL, 1, key, String(WINDOW_SECONDS)));
 
     return {
       allowed: count <= limit,

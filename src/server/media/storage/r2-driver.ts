@@ -61,9 +61,49 @@ export interface R2StorageAdapterOptions {
   publicBaseUrl?: string;
 }
 
+/**
+ * Bucket-level failures that also arrive as a 404.
+ *
+ * These must NEVER read as "the object is absent". A wrong or drifted `R2_BUCKET` — the web
+ * container writing to one bucket and the worker reading from another, or a bucket rename
+ * applied to one side first — answers `NoSuchBucket` with HTTP 404. Folded into "not found",
+ * that misconfiguration reaches the merchant as `sourceMissing`: a PERMANENT failure, never
+ * retried, telling them «ما لقينا ملف الصورة الأصلي» about an object that is sitting safely in
+ * the other bucket. The distinction between "gone" and "we are looking in the wrong place" is
+ * the difference between a truthful failure and a lie that also loses the photo.
+ */
+const BUCKET_LEVEL_ERRORS = new Set(['NoSuchBucket', 'PermanentRedirect']);
+
+function errorCode(error: unknown): string {
+  const err = error as { name?: string; Code?: string; code?: string };
+  return err?.name ?? err?.Code ?? err?.code ?? '';
+}
+
 function isNotFound(error: unknown): boolean {
-  const err = error as { name?: string; $metadata?: { httpStatusCode?: number } };
-  return err?.name === 'NotFound' || err?.name === 'NoSuchKey' || err?.$metadata?.httpStatusCode === 404;
+  const err = error as { $metadata?: { httpStatusCode?: number } };
+  const code = errorCode(error);
+  if (BUCKET_LEVEL_ERRORS.has(code)) return false;
+  return code === 'NotFound' || code === 'NoSuchKey' || err?.$metadata?.httpStatusCode === 404;
+}
+
+/**
+ * The server-side encryption algorithms R2 accepts, checked rather than cast.
+ *
+ * `R2_SSE_ALGORITHM` is a plain string in `src/env.ts`, so a typo (`AES-256` for `AES256`)
+ * validates fine and costs nothing until the FIRST write that asks for encryption — which is the
+ * suspension export, the one artifact whose loss is unrecoverable and whose absence the merchant
+ * only discovers after being told they had thirty days. Failing at the point of use, naming the
+ * variable, is the difference between a five-minute fix and a dead export job nobody can read.
+ */
+const SUPPORTED_SSE_ALGORITHMS = new Set<ServerSideEncryption>(['AES256', 'aws:kms']);
+
+function sseAlgorithm(value: string): ServerSideEncryption {
+  if (!SUPPORTED_SSE_ALGORITHMS.has(value as ServerSideEncryption)) {
+    throw new StorageError(
+      `R2_SSE_ALGORITHM is set to "${value}", which R2 does not accept. Use one of: ${[...SUPPORTED_SSE_ALGORITHMS].join(', ')}.`,
+    );
+  }
+  return value as ServerSideEncryption;
 }
 
 export class R2StorageAdapter implements StorageAdapter {
@@ -135,6 +175,16 @@ export class R2StorageAdapter implements StorageAdapter {
     const buffer = typeof body === 'string' ? Buffer.from(body, 'utf8') : Buffer.from(body);
     const env = getEnv();
 
+    /**
+     * Resolved OUTSIDE the try, deliberately.
+     *
+     * Required for anything under `_exports/` — a whole business in one file — and the env value
+     * is CHECKED rather than cast. Inside the try, the catch-all below would rewrite the refusal
+     * as "Failed to store object: {key}" and throw away the one sentence that names the variable
+     * at fault, which is the entire point of validating it.
+     */
+    const encryption = options.encrypt ? sseAlgorithm(env.R2_SSE_ALGORITHM) : undefined;
+
     try {
       await this.client().send(
         new PutObjectCommand({
@@ -144,11 +194,7 @@ export class R2StorageAdapter implements StorageAdapter {
           ContentType: options.contentType,
           CacheControl: options.cacheControl,
           ContentDisposition: options.contentDisposition,
-          // Required for anything under `_exports/` — a whole business in one file. R2 accepts
-          // the S3 algorithm names; the env value is narrowed rather than trusted blindly.
-          ServerSideEncryption: options.encrypt
-            ? (env.R2_SSE_ALGORITHM as ServerSideEncryption)
-            : undefined,
+          ServerSideEncryption: encryption,
         }),
       );
     } catch (error) {
@@ -227,7 +273,17 @@ export class R2StorageAdapter implements StorageAdapter {
     }
   }
 
-  /** Everything under a prefix. Returns how many objects were removed. */
+  /**
+   * Everything under a prefix. Returns how many objects were removed.
+   *
+   * DeleteObjects is a PARTIAL-SUCCESS API: it answers 200 and reports per-key failures in an
+   * `Errors` array, so the SDK throws nothing when some of the batch survives. Counting the
+   * batch as removed — which this did — makes the driver report a clean sweep over objects that
+   * are still there. B1's purge is the caller that matters: it would write its audit row, delete
+   * the Tenant row, and leave product images fetchable unsigned from the public media prefix,
+   * for a merchant whose data the platform had just certified as erased. So the failures are
+   * read, and a prefix that did not empty RAISES rather than returning a comfortable number.
+   */
   async deleteByPrefix(prefix: string): Promise<number> {
     // An empty prefix means "the whole bucket" — every tenant at once. Refuse it here rather
     // than trusting every future caller to have built the string with tenantPrefix().
@@ -237,21 +293,37 @@ export class R2StorageAdapter implements StorageAdapter {
     if (objects.length === 0) return 0;
 
     const bucket = this.bucket();
+    const failures: string[] = [];
     let removed = 0;
 
     for (let i = 0; i < objects.length; i += DELETE_BATCH_SIZE) {
       const batch = objects.slice(i, i + DELETE_BATCH_SIZE);
+      let response;
+
       try {
-        await this.client().send(
+        response = await this.client().send(
           new DeleteObjectsCommand({
             Bucket: bucket,
-            Delete: { Objects: batch.map((object) => ({ Key: object.key })), Quiet: true },
+            // NOT Quiet: quiet mode suppresses the per-key report we are here to read.
+            Delete: { Objects: batch.map((object) => ({ Key: object.key })), Quiet: false },
           }),
         );
-        removed += batch.length;
       } catch (error) {
         throw new StorageError(`Failed to delete objects under prefix: ${objectPrefix}`, error);
       }
+
+      for (const failure of response.Errors ?? []) {
+        if (failure.Key) failures.push(failure.Key);
+      }
+      removed += batch.length - (response.Errors?.length ?? 0);
+    }
+
+    if (failures.length > 0) {
+      throw new StorageError(
+        `Failed to delete ${failures.length} object(s) under prefix ${objectPrefix}: ${failures
+          .slice(0, 5)
+          .join(', ')}${failures.length > 5 ? ', …' : ''}`,
+      );
     }
 
     return removed;
@@ -337,6 +409,22 @@ export class R2StorageAdapter implements StorageAdapter {
       // it would look like it worked.
       throw new StorageError(
         'CDN_PUBLIC_BASE_URL is not set. Media is always delivered by the CDN in front of R2.',
+      );
+    }
+
+    /**
+     * The base must be an ABSOLUTE origin, and the check is worth its three lines.
+     *
+     * `CDN_PUBLIC_BASE_URL=cdn.souqbartaa.com` — a missing scheme, the most ordinary deploy typo
+     * there is — produced `cdn.souqbartaa.com/tenants/…`, which every `<img src>` on every
+     * storefront resolves as a RELATIVE path against the shop's own hostname. The browser then
+     * asks the app container for `https://{shop}.{DOMAIN}/cdn.souqbartaa.com/tenants/…`, which
+     * 404s. No exception, no log line: just broken images everywhere and every image request
+     * landing on the origin the CDN exists to protect.
+     */
+    if (!/^https?:\/\//i.test(base)) {
+      throw new StorageError(
+        `CDN_PUBLIC_BASE_URL must be an absolute http(s) origin; got "${base}". Without a scheme every media URL resolves against the storefront's own hostname.`,
       );
     }
 
