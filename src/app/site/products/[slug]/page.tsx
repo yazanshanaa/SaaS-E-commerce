@@ -39,6 +39,20 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const context = await loadStorefrontContext(surface);
   const { slug } = await params;
 
+  /**
+   * A suspended site never names the product, and never reads it.
+   *
+   * The surface layout short-circuits the RENDERED subtree, which is not the same thing: Next
+   * builds metadata from the loader tree, as a sibling of the component tree, so a layout that
+   * refuses to render `children` does not stop this function running. A suspended storefront was
+   * therefore still querying the catalogue on every product URL and putting the product's name in
+   * the document title — the one string a crawler or a link preview shows — while the page itself
+   * served the Arabic pause notice.
+   */
+  if (surface.isSuspended) {
+    return storefrontMetadata({ context, path: `/products/${slug}`, suspended: true });
+  }
+
   const product = await queryProductBySlug(context.tenantId, slug);
   if (!product) {
     // The render below 404s; the metadata pass just must not advertise a page that is gone.
@@ -198,11 +212,16 @@ export default async function ProductPage({ params }: PageProps) {
                     }}
                   />
                 ) : (
+                  /* Same three-way split as the contact block: out of stock, ordering switched
+                     off, or a stored number we cannot dial — and in the last case, print it. */
                   <p className="sf-note">
-                    {t(
-                      'storefront',
-                      product.available ? 'order.noNumber' : 'order.outOfStock',
-                    )}
+                    {!product.available
+                      ? t('storefront', 'order.outOfStock')
+                      : context.flags.whatsappOrders && context.site.whatsapp
+                        ? t('storefront', 'order.numberNotUsable', {
+                            number: context.site.whatsapp,
+                          })
+                        : t('storefront', 'order.noNumber')}
                   </p>
                 )}
               </div>

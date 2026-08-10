@@ -136,8 +136,24 @@ export async function POST(request: Request): Promise<Response> {
     });
   }
 
+  /**
+   * The cookie may only say `granted` when the LOG can prove it.
+   *
+   * `recorded` means a row was just written; `unchanged` means one already exists saying exactly
+   * this. Neither holds when the per-visitor ceiling is reached — and the cookie used to be set
+   * anyway, which is the one combination that must never happen: tracking switched on for a
+   * visitor with no stored record of them agreeing. The whole compliance claim is "we do not
+   * track without consent AND we can show the consent", and half a claim is the one you cannot
+   * defend.
+   *
+   * A DECLINE needs no proof to be safe, so it is always honoured: failing closed means not
+   * tracking, and a visitor who cannot be recorded still gets what they asked for.
+   */
+  const proven = recorded || unchanged;
+  const decision = granted && proven ? 'granted' : 'denied';
+
   const store = await cookies();
-  store.set(CONSENT_COOKIE, granted ? 'granted' : 'denied', {
+  store.set(CONSENT_COOKIE, decision, {
     httpOnly: true,
     sameSite: 'lax',
     path: '/',
@@ -145,7 +161,10 @@ export async function POST(request: Request): Promise<Response> {
     secure: new URL(request.url).protocol === 'https:',
   });
 
-  return Response.json({ ok: true, recorded }, { status: 200 });
+  return Response.json(
+    { ok: decision === (granted ? 'granted' : 'denied'), recorded },
+    { status: 200 },
+  );
 }
 
 // -----------------------------------------------------------------------------

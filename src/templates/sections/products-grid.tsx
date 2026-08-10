@@ -53,12 +53,24 @@ export function ProductsGridSection({ context, config }: ProductsGridSectionProp
       ) : (
         <>
           <div className="sf-grid" style={{ '--sf-cols': columns } as CSSProperties}>
-            {products.map((product, index) => (
+            {/*
+              NOTHING here is eager, and that is the rule the hero already states: "the ONLY
+              image on the page allowed to load eagerly — it is the LCP element, and everything
+              below it is lazy" (sections/hero.tsx).
+
+              This grid used to mark its first ROW eager via `index < columns`, which it cannot
+              justify: the component receives `{context, config}` and no page position, so a grid
+              that is the fourth block down — below the hero, the offers board and the categories,
+              which is the default arrangement — was fetching three or four images at
+              `fetchPriority="high"` while the actual LCP element competed for the same Fast 3G
+              connection. The catalogue page is the case that genuinely needs an eager first row,
+              it has no hero, and it renders `ProductCard` itself rather than through this section.
+            */}
+            {products.map((product) => (
               <ProductCard
                 key={product.id}
                 product={product}
                 template={template}
-                priority={index < columns}
                 showPrice={config.showPrices !== false}
               />
             ))}

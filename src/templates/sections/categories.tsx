@@ -1,6 +1,6 @@
 import type { SectionConfig } from '@/shared/site-contract';
 import { MediaImage } from '../components/media-image';
-import { st } from '../i18n';
+import { pluralCount, st } from '../i18n';
 import { SECTION_ANCHORS } from '../section-anchors';
 import type { StorefrontContext } from '../view-model';
 import { SectionBlock } from './block';
@@ -43,14 +43,18 @@ export function CategoriesSection({ context, config }: CategoriesSectionProps) {
               <a href={`/products?category=${encodeURIComponent(category.key)}`}>
                 <span>{category.name}</span>
                 <span className="sf-cat__count">
-                  {st('categories.productCount', { count: category.productCount })}
+                  {pluralCount('categories.productCount', category.productCount)}
                 </span>
               </a>
             </li>
           ))}
         </ul>
       ) : variant === 'chips' ? (
-        <ul className="sf-social" aria-label={title}>
+        /* `.sf-chips`, not `.sf-social`: the social row is a fixed 44x44 icon target, so borrowing
+           it put every category NAME inside a circle the size of an icon — and `.sf-social a` at
+           (0,1,1) beats `.sf-btn` at (0,1,0), so the button class could not undo it. Arabic
+           category names are words, not glyphs. */
+        <ul className="sf-chips" aria-label={title}>
           {categories.map((category) => (
             <li key={category.key}>
               <a className="sf-btn sf-btn--ghost" href={`/products?category=${encodeURIComponent(category.key)}`}>
@@ -73,7 +77,7 @@ export function CategoriesSection({ context, config }: CategoriesSectionProps) {
                 <span className="sf-cat__label">
                   <span>{category.name}</span>
                   <span className="sf-cat__count">
-                    {st('categories.productCount', { count: category.productCount })}
+                    {pluralCount('categories.productCount', category.productCount)}
                   </span>
                 </span>
               </a>

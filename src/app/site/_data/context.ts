@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { unstable_cache } from 'next/cache';
 import { getEnv } from '@/env';
 import { PUBLIC_ACTOR, tenantDb } from '@/server/db';
@@ -5,7 +6,6 @@ import { can, isCapabilityVisible } from '@/server/entitlements';
 import {
   colorSelectionSchema,
   isWithinSchedule,
-  parseSectionConfig,
   resolveColors,
   type ColorSelection,
   type SectionType,
@@ -14,6 +14,9 @@ import {
   buildDefaultSections,
   getTemplate,
   isCustomHtmlAllowed,
+  isRenderableSocialUrl,
+  isSectionType,
+  normaliseSectionConfig,
   CUSTOM_HTML_FEATURE_KEY,
   type StorefrontAnnouncement,
   type StorefrontAnnouncementBar,
@@ -74,7 +77,24 @@ export interface RequestSurface {
   isDemo: boolean;
 }
 
-export async function loadStorefrontContext(surface: RequestSurface): Promise<StorefrontContext> {
+/**
+ * Once per request, not once per caller.
+ *
+ * Every storefront route calls this TWICE — `generateMetadata` and the page component — and all
+ * of them are `force-dynamic`, so both run on every request. The content half is cheap on a hit,
+ * but `resolveAccess` is eight entitlement lookups that are deliberately NOT in the Next data
+ * cache (see below), so the duplicate load doubled them: sixteen Redis round trips per page view,
+ * and on a cold key sixteen scoped-client transactions, for two identical answers.
+ *
+ * `React.cache` dedupes within a single request and nothing beyond it, which is exactly the
+ * lifetime wanted here: the freshness argument for keeping entitlements out of the data cache is
+ * about requests, not about the two calls inside one.
+ */
+export const loadStorefrontContext = cache(loadStorefrontContextUncached);
+
+async function loadStorefrontContextUncached(
+  surface: RequestSurface,
+): Promise<StorefrontContext> {
   const [source, access] = await Promise.all([
     cachedTenantSource(surface.tenantId),
     resolveAccess(surface.tenantId, surface.isDemo),
@@ -187,14 +207,14 @@ async function resolveAccess(tenantId: string, isDemo: boolean): Promise<Storefr
 /**
  * Everything the cached unit stores. Deliberately JSON-safe: `unstable_cache` serialises its
  * return value, so a `Date` would come back as a string and every schedule comparison would
- * silently start comparing a string to a Date. Scheduling is therefore resolved HERE, and what
- * is stored is the already-decided answer.
+ * silently start comparing a string to a Date. Schedule BOUNDS are therefore carried as epoch
+ * milliseconds and the comparison happens at composition time — see `SCHEDULE` below.
  */
 interface TenantSource {
   templateKey: string | null;
   site: StorefrontSite;
-  /** Built from the stored bar regardless of capability; visibility is applied on composition. */
-  announcementBar: StorefrontAnnouncementBar | null;
+  /** Built from the stored bar regardless of capability OR schedule; both apply on composition. */
+  announcementBar: ScheduledBar | null;
   theme: ThemeRow;
   socialLinks: StorefrontSocialLink[];
   categories: StorefrontCategory[];
@@ -202,13 +222,55 @@ interface TenantSource {
   productsByCategory: Record<string, StorefrontProduct[]>;
   productCountByCategory: Record<string, number>;
   productTotal: number;
-  announcements: StorefrontAnnouncement[];
+  announcements: ScheduledAnnouncement[];
   testimonials: StorefrontTestimonial[];
   storedSections: StorefrontSection[];
   mediaById: Record<string, StorefrontImage>;
   hasAbout: boolean;
-  hasWhatsapp: boolean;
+  /** Any way for a customer to reach the shop, not the WhatsApp number alone. */
+  hasContact: boolean;
   hasLocation: boolean;
+}
+
+/**
+ * SCHEDULE — decided per request, never inside the cached unit.
+ *
+ * The bar and the offer cards used to be filtered inside `loadTenantSource`, which meant the
+ * VERDICT was what got cached: an offer that ended at midnight kept rendering until the entry
+ * aged out, and a bar scheduled for 09:00 did not appear until then either. On a quiet shop that
+ * is not five minutes — Next serves a stale entry while it revalidates, so the first visitor
+ * after a slow night can be shown an offer that expired hours ago, and the merchant refreshing at
+ * 09:00 sees nothing and concludes scheduling is broken. Nothing else could save it: no cron
+ * fires on a schedule boundary, and the only invalidation hook is a content write.
+ *
+ * So the loader now stores the BOUNDS and `composeTenantData` compares them against a fresh
+ * `new Date()`, exactly as it already does for the two entitlement axes and for the same reason.
+ *
+ * The property the original design was protecting is untouched: an out-of-window card is dropped
+ * before any component sees it, so next month's price is still not in the page source of a site
+ * anyone can view-source. It is only the *cache entry*, which no visitor can read, that now holds
+ * a card ahead of its window.
+ */
+type Scheduled<T> = T & {
+  /** Epoch ms, or null for an open bound. Never a `Date`: this crosses `unstable_cache`. */
+  startsAtMs: number | null;
+  endsAtMs: number | null;
+};
+
+type ScheduledAnnouncement = Scheduled<StorefrontAnnouncement>;
+type ScheduledBar = Scheduled<StorefrontAnnouncementBar>;
+
+function isLive(item: { startsAtMs: number | null; endsAtMs: number | null }, now: Date): boolean {
+  return isWithinSchedule(
+    now,
+    item.startsAtMs === null ? null : new Date(item.startsAtMs),
+    item.endsAtMs === null ? null : new Date(item.endsAtMs),
+  );
+}
+
+function strip<T>(item: Scheduled<T>): T {
+  const { startsAtMs: _startsAtMs, endsAtMs: _endsAtMs, ...rest } = item;
+  return rest as T;
 }
 
 async function loadTenantSource(tenantId: string): Promise<TenantSource> {
@@ -232,6 +294,7 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
         mapQuery: true,
         logoMediaId: true,
         ogImageMediaId: true,
+        faviconMediaId: true,
         sellingEnabled: true,
         metaTitle: true,
         metaDescription: true,
@@ -256,8 +319,6 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
       },
     }),
   ]);
-
-  const now = new Date();
 
   const [
     socialRows,
@@ -314,22 +375,19 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
   ]);
 
   /**
-   * Scheduling is applied HERE, not in the component.
-   *
-   * A card outside its window is never fetched into the response, so next month's price is not
-   * sitting in the page source of a site anyone can view-source. Hiding it with CSS would leave
-   * the merchant honouring an offer they had not launched yet.
+   * A stored row this build cannot render is SKIPPED, and a config that no longer fits its schema
+   * falls back to that section's defaults. Neither may throw: every storefront route awaits this
+   * function, so one bad row would 500 the whole site rather than one block — see
+   * `src/templates/lib/section-config.ts` for why that is reachable and not hypothetical.
    */
-  const liveAnnouncements = announcementRows.filter((row) =>
-    isWithinSchedule(now, row.startsAt, row.endsAt),
-  );
-
-  const storedSections: StorefrontSection[] = (pageRow?.sections ?? []).map((row) => ({
-    id: row.id,
-    type: row.type as SectionType,
-    sort: row.sort,
-    config: parseSectionConfig(row.type as SectionType, row.config) as Record<string, unknown>,
-  }));
+  const storedSections: StorefrontSection[] = (pageRow?.sections ?? [])
+    .filter((row) => isSectionType(row.type))
+    .map((row) => ({
+      id: row.id,
+      type: row.type as SectionType,
+      sort: row.sort,
+      config: normaliseSectionConfig(row.type as SectionType, row.config),
+    }));
 
   /**
    * A `products_grid` pinned to a category gets its OWN read.
@@ -351,10 +409,13 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
   const referencedMediaIds = new Set<string>();
   if (siteRow?.logoMediaId) referencedMediaIds.add(siteRow.logoMediaId);
   if (siteRow?.ogImageMediaId) referencedMediaIds.add(siteRow.ogImageMediaId);
+  if (siteRow?.faviconMediaId) referencedMediaIds.add(siteRow.faviconMediaId);
   for (const category of categoryRows) {
     if (category.imageMediaId) referencedMediaIds.add(category.imageMediaId);
   }
-  for (const announcement of liveAnnouncements) {
+  // Every published card, not only the live ones: the schedule is decided per request now, so a
+  // card that goes live in an hour must already have its image resolved in the cached entry.
+  for (const announcement of announcementRows) {
     if (announcement.imageMediaId) referencedMediaIds.add(announcement.imageMediaId);
   }
   for (const section of storedSections) {
@@ -427,21 +488,37 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
       umamiWebsiteId: siteRow?.umamiWebsiteId ?? null,
       logo: siteRow?.logoMediaId ? (mediaById[siteRow.logoMediaId] ?? null) : null,
       ogImageUrl: siteRow?.ogImageMediaId ? (mediaById[siteRow.ogImageMediaId]?.src ?? null) : null,
+      // `Site.faviconMediaId` has existed since Phase 1 and was read by nothing, so a merchant
+      // who set one saw the generated mark anyway. The shell falls back to that mark when this
+      // is null, which is the common case until Phase 4 generates icons from the logo.
+      faviconUrl: siteRow?.faviconMediaId
+        ? (mediaById[siteRow.faviconMediaId]?.src ?? null)
+        : null,
     },
-    announcementBar: buildAnnouncementBar(siteRow, now),
+    announcementBar: buildAnnouncementBar(siteRow),
     theme: themeRow,
-    socialLinks: socialRows.map((row) => ({ platform: row.platform, url: row.url })),
+    /**
+     * Filtered HERE, so `context.socialLinks.length` is a truthful answer to "is there anything
+     * to show". Both callers render the "تابعنا" heading from that length, so dropping a bad row
+     * further down would put a heading over an empty list — the one failure this whole element
+     * was designed around. `SocialLink.url` is a bare String column with nothing validating it.
+     */
+    socialLinks: socialRows
+      .filter((row) => isRenderableSocialUrl(row.url))
+      .map((row) => ({ platform: row.platform, url: row.url })),
     categories,
     products,
     productsByCategory,
     productCountByCategory,
     productTotal,
-    announcements: liveAnnouncements.map((row) => ({
+    announcements: announcementRows.map((row) => ({
       id: row.id,
       title: row.title,
       body: row.body,
       link: row.link,
       image: row.imageMediaId ? (mediaById[row.imageMediaId] ?? null) : null,
+      startsAtMs: row.startsAt?.getTime() ?? null,
+      endsAtMs: row.endsAt?.getTime() ?? null,
     })),
     testimonials: testimonialRows.map((row) => ({
       id: row.id,
@@ -452,7 +529,13 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
     storedSections,
     mediaById,
     hasAbout: Boolean(siteRow?.about?.trim()),
-    hasWhatsapp: Boolean(siteRow?.whatsapp?.trim()),
+    hasContact: Boolean(
+      siteRow?.whatsapp?.trim() ||
+        siteRow?.phone?.trim() ||
+        siteRow?.email?.trim() ||
+        siteRow?.hours?.trim() ||
+        siteRow?.address?.trim(),
+    ),
     hasLocation: Boolean(
       siteRow?.mapQuery?.trim() ||
         siteRow?.address?.trim() ||
@@ -468,8 +551,25 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
 function composeTenantData(source: TenantSource, access: StorefrontAccess): CachedTenantData {
   const template = getTemplate(source.templateKey ?? undefined);
 
+  /**
+   * Fresh on every request, which is the whole point: the cached unit above may be up to
+   * `STOREFRONT_REVALIDATE_SECONDS` old (older still while Next revalidates in the background),
+   * and a schedule decided against the time the entry was BUILT is a schedule that keeps an
+   * expired offer on the page. Both windows are compared here, against now.
+   */
+  const now = new Date();
+
   const socialLinks = access.socialLinks ? source.socialLinks : [];
-  const announcements = access.announcementsBoard ? source.announcements : [];
+  const announcements = access.announcementsBoard
+    ? source.announcements.filter((card) => isLive(card, now)).map(strip)
+    : [];
+
+  const announcementBar =
+    access.announcementBar && source.announcementBar && isLive(source.announcementBar, now)
+      ? strip(source.announcementBar)
+      : null;
+
+  const hiddenSectionTypes: SectionType[] = access.mapLocation ? [] : ['map'];
 
   const sections =
     source.storedSections.length > 0
@@ -480,7 +580,9 @@ function composeTenantData(source: TenantSource, access: StorefrontAccess): Cach
           hasAbout: source.hasAbout,
           hasTestimonials: source.testimonials.length > 0,
           hasAnnouncements: announcements.length > 0,
-          hasWhatsapp: source.hasWhatsapp,
+          // Any contact route at all, including a social link — the block renders every one of
+          // them, and the nav links to it from every page.
+          hasContact: source.hasContact || socialLinks.length > 0,
           hasLocation: source.hasLocation,
           gridColumns: template.layout.gridColumns,
         });
@@ -494,7 +596,7 @@ function composeTenantData(source: TenantSource, access: StorefrontAccess): Cach
       analytics: access.analytics,
       customHtml: access.customHtml,
     },
-    announcementBar: access.announcementBar ? source.announcementBar : null,
+    announcementBar,
     socialLinks,
     categories: source.categories,
     products: source.products,
@@ -504,8 +606,15 @@ function composeTenantData(source: TenantSource, access: StorefrontAccess): Cach
     announcements,
     testimonials: source.testimonials,
     mediaById: source.mediaById,
-    // A capability toggled invisible removes its content, not merely its edit form.
-    sections: access.mapLocation ? sections : sections.filter((section) => section.type !== 'map'),
+    /**
+     * A capability toggled invisible removes its CONTENT, not merely its edit form.
+     *
+     * Applied here for the home arrangement and carried on the context so `SectionList` applies
+     * it on every other route that renders sections — `/p/{slug}` loads its own `Page` row and
+     * would otherwise keep rendering a map an admin had just hidden.
+     */
+    sections: sections.filter((section) => !hiddenSectionTypes.includes(section.type)),
+    hiddenSectionTypes,
   };
 }
 
@@ -605,24 +714,32 @@ type BarRow = {
   announcementBarEndsAt: Date | null;
 } | null;
 
-function buildAnnouncementBar(site: BarRow, now: Date): StorefrontAnnouncementBar | null {
+function buildAnnouncementBar(site: BarRow): ScheduledBar | null {
   if (!site?.announcementBarEnabled) return null;
 
   const text = site.announcementBarText?.trim();
   if (!text) return null;
-  if (!isWithinSchedule(now, site.announcementBarStartsAt, site.announcementBarEndsAt)) return null;
 
   const link = site.announcementBarLink?.trim() || null;
+  const startsAtMs = site.announcementBarStartsAt?.getTime() ?? null;
+  const endsAtMs = site.announcementBarEndsAt?.getTime() ?? null;
 
   return {
     text,
     link,
     /**
-     * The dismissal key, derived from the CONTENT — so dismissing this week's bar does not
-     * swallow next week's. That is the classic form of this bug: a merchant is certain the bar
-     * is broken because one visitor closed a different message a month earlier.
+     * The dismissal key, derived from the content AND ITS WINDOW — so dismissing this week's bar
+     * does not swallow next week's. That is the classic form of this bug: a merchant is certain
+     * the bar is broken because one visitor closed a different message a month earlier.
+     *
+     * The window is in the fingerprint because re-running a promotion with the SAME wording is
+     * the ordinary case for a shop, not an exotic one: "عرض نهاية الأسبوع" every Thursday, same
+     * text, new dates. Keyed on text alone, everyone who closed it once would never see that
+     * campaign again — the same bug the content key was meant to prevent, one field over.
      */
-    signature: signature(`${text}|${link ?? ''}`),
+    signature: signature(`${text}|${link ?? ''}|${startsAtMs ?? ''}|${endsAtMs ?? ''}`),
+    startsAtMs,
+    endsAtMs,
   };
 }
 

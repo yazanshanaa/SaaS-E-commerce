@@ -98,8 +98,9 @@
   -webkit-line-clamp: 2;
 }
 
+/* --t-accent: the secondary colour held to the body-text threshold. See warsheh.css. */
 [data-template='neon-souq'] .sf-price {
-  color: var(--t-secondary);
+  color: var(--t-accent);
 }
 
 [data-template='neon-souq'] .sf-badge {
@@ -114,8 +115,9 @@
 }
 
 [data-template='neon-souq'] .sf-btn--ghost {
+  /* Border raw (non-text, 3:1); label guarded (text, 4.5:1). */
   border-color: var(--t-secondary);
-  color: var(--t-secondary);
+  color: var(--t-accent);
 }
 
 [data-template='neon-souq'] .sf-cat {

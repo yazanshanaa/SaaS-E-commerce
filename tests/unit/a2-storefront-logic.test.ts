@@ -4,7 +4,12 @@ import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { isWithinSchedule, parseSectionConfig, type SectionConfig } from '@/shared/site-contract';
+import {
+  isWithinSchedule,
+  parseSectionConfig,
+  SECTION_TYPES,
+  type SectionConfig,
+} from '@/shared/site-contract';
 import {
   analyticsDecision,
   buildDefaultSections,
@@ -14,8 +19,11 @@ import {
   getTemplate,
   isCustomHtmlAllowed,
   isLegalSlug,
+  isRenderableSocialUrl,
+  isSectionType,
   legalHref,
   legalPagesFor,
+  normaliseSectionConfig,
   normaliseWhatsappNumber,
   resolveMapTarget,
   type StorefrontContext,
@@ -63,6 +71,7 @@ function storefrontContext(overrides: Partial<StorefrontContext> = {}): Storefro
       umamiWebsiteId: null,
       logo: null,
       ogImageUrl: null,
+      faviconUrl: null,
     },
     flags: { whatsappOrders: true, analytics: false, customHtml: false },
     announcementBar: null,
@@ -76,6 +85,7 @@ function storefrontContext(overrides: Partial<StorefrontContext> = {}): Storefro
     testimonials: [],
     mediaById: {},
     sections: [],
+    hiddenSectionTypes: [],
     ...overrides,
   };
 }
@@ -241,7 +251,7 @@ describe('default sections for a site nobody has arranged yet', () => {
     hasAbout: true,
     hasTestimonials: true,
     hasAnnouncements: true,
-    hasWhatsapp: true,
+    hasContact: true,
     hasLocation: true,
     gridColumns: 3 as const,
   };
@@ -257,7 +267,7 @@ describe('default sections for a site nobody has arranged yet', () => {
       hasAbout: false,
       hasTestimonials: false,
       hasAnnouncements: false,
-      hasWhatsapp: false,
+      hasContact: false,
       hasLocation: false,
       gridColumns: 3,
     });
@@ -328,6 +338,136 @@ describe('entitlements are answered per request, never sealed inside the storefr
     const cachedBody = source.slice(start, end);
     expect(cachedBody).not.toMatch(/\bcan\(/);
     expect(cachedBody).not.toMatch(/\bisCapabilityVisible\(/);
+  });
+
+  /**
+   * The schedule belongs on the same side of that line, for the same reason.
+   *
+   * Deciding it inside the cached unit caches the VERDICT: an offer that ended at midnight keeps
+   * rendering until the entry ages out, and a bar scheduled for 09:00 does not appear until then
+   * — worse than the 300s TTL suggests, because Next serves a stale entry while it revalidates.
+   * Nothing else can save it: no cron fires on a schedule boundary and the only invalidation hook
+   * is a content write.
+   */
+  it('never decides a schedule inside the cached read', () => {
+    const start = source.indexOf('async function loadTenantSource(');
+    const end = source.indexOf('function composeTenantData(');
+    const cachedBody = source.slice(start, end);
+
+    expect(cachedBody).not.toMatch(/\bisWithinSchedule\(/);
+    expect(cachedBody).not.toMatch(/\bisLive\(/);
+  });
+
+  it('decides it in composeTenantData instead, against a fresh clock', () => {
+    const composed = source.slice(source.indexOf('function composeTenantData('));
+
+    expect(composed).toMatch(/const now = new Date\(\)/);
+    expect(composed).toMatch(/isLive\(/);
+  });
+
+  /**
+   * `unstable_cache` serialises what it returns, so a `Date` comes back a string and every
+   * comparison silently starts comparing a string to a Date. Epoch milliseconds survive the round
+   * trip; this is the guard that keeps them that way now that the bounds — rather than the answer
+   * — are what crosses the boundary.
+   */
+  it('carries schedule bounds across the cache as numbers, never as Dates', () => {
+    expect(source).toMatch(/startsAtMs: number \| null/);
+    expect(source).toMatch(/endsAtMs: number \| null/);
+    expect(source).toMatch(/startsAtMs: row\.startsAt\?\.getTime\(\) \?\? null/);
+  });
+});
+
+/**
+ * `SocialLink.url` is a bare String column and nothing between the row and the anchor validates
+ * it. The failure is not exotic: "instagram.com/souq-bartaa" is how a person pastes a profile
+ * address, and as an `href` it is RELATIVE — the visitor lands on
+ * `{shop}.souqbartaa.com/instagram.com/souq-bartaa` and gets a 404 from an icon that promised
+ * Instagram.
+ */
+describe('a social link is not rendered until its URL is one', () => {
+  it('accepts the two schemes a browser can follow', () => {
+    expect(isRenderableSocialUrl('https://instagram.com/souq-bartaa')).toBe(true);
+    expect(isRenderableSocialUrl('http://example.com')).toBe(true);
+  });
+
+  it('refuses a scheme-less address, which would silently become a relative path', () => {
+    expect(isRenderableSocialUrl('instagram.com/souq-bartaa')).toBe(false);
+    expect(isRenderableSocialUrl('/instagram')).toBe(false);
+    expect(isRenderableSocialUrl('')).toBe(false);
+  });
+
+  it('refuses a scheme that is not a navigation', () => {
+    expect(isRenderableSocialUrl('javascript:alert(1)')).toBe(false);
+    expect(isRenderableSocialUrl('data:text/html,<script>alert(1)</script>')).toBe(false);
+    expect(isRenderableSocialUrl('file:///etc/passwd')).toBe(false);
+  });
+});
+
+describe('a stored section that no longer fits its schema', () => {
+  /**
+   * `parseSectionConfig` throws, and every storefront route awaits the loader that calls it —
+   * including `generateMetadata`. One bad row therefore used to return Next's generic English 500
+   * on EVERY page of that merchant's site, on every request, with no way for the merchant to
+   * understand or undo it. It is reachable: the shared `sectionSchema` that A1 and B2 validate
+   * writes against declares `config: z.record(z.string(), z.unknown())`, so any object saves.
+   */
+  it('degrades to that section’s defaults rather than throwing', () => {
+    // limit is capped at 60 by the schema; 999 is exactly what an older dashboard could store.
+    const config = normaliseSectionConfig('products_grid', { limit: 999, columns: 17 });
+
+    expect(() => config).not.toThrow();
+    expect(config.limit).toBe(12);
+    expect(config.columns).toBe(3);
+  });
+
+  it('survives a config that is not even an object', () => {
+    expect(normaliseSectionConfig('hero', 'not-an-object')).toEqual(
+      normaliseSectionConfig('hero', {}),
+    );
+    expect(normaliseSectionConfig('gallery', null)).toEqual(normaliseSectionConfig('gallery', {}));
+  });
+
+  it('keeps a VALID config exactly as parsed', () => {
+    expect(normaliseSectionConfig('products_grid', { limit: 8, columns: 4 })).toMatchObject({
+      limit: 8,
+      columns: 4,
+    });
+  });
+
+  /**
+   * Every one of the ten schemas has to accept `{}` for the fallback above to mean anything. If a
+   * later phase adds a section with a required field, this fails here rather than on a storefront.
+   */
+  it('has a defaults-only fallback available for every section type', () => {
+    for (const type of SECTION_TYPES) {
+      expect(() => normaliseSectionConfig(type, { deliberately: 'wrong' })).not.toThrow();
+    }
+  });
+
+  /**
+   * `SectionType` is declared twice and independently — a Postgres enum and `SECTION_TYPES` —
+   * with nothing enforcing parity. A row carrying a type this build does not know must be skipped,
+   * not dereferenced into `SECTION_CONFIG_SCHEMAS[undefined].parse`.
+   */
+  it('recognises only the types this build can render', () => {
+    for (const type of SECTION_TYPES) expect(isSectionType(type)).toBe(true);
+
+    expect(isSectionType('faq')).toBe(false);
+    expect(isSectionType('')).toBe(false);
+    expect(isSectionType('constructor')).toBe(false);
+  });
+
+  it('renders nothing — never a raw type name — for a type the switch does not know', () => {
+    const source = readFileSync(
+      path.join(repoRoot, 'src', 'templates', 'sections', 'index.tsx'),
+      'utf8',
+    );
+
+    // `return unreachable` returns the type STRING at runtime, which React renders as visible
+    // Latin text on an Arabic-only storefront.
+    expect(source).not.toMatch(/return unreachable/);
+    expect(source).toMatch(/const unreachable: never = section\.type/);
   });
 });
 

@@ -39,6 +39,8 @@ export const neonSouq: TemplateDefinition = {
       textMuted: '#C3B4BC',
       border: '#3A3040',
       link: '#F4C95D',
+      // Gold on near-black is ~11:1, so the accent and the link land on the same value here.
+      accent: '#F4C95D',
     },
     radius: { sm: '2px', md: '4px', lg: '28px', pill: '999px' },
     space: {

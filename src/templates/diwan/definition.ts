@@ -38,6 +38,9 @@ export const diwan: TemplateDefinition = {
       textMuted: '#6B5B49',
       border: '#DCCDB4',
       link: '#9A330A',
+      // The olive secondary already clears 4.5:1 on cream and on the card surface, so the
+      // guarded accent lands on the design value unchanged.
+      accent: '#5F6F3E',
     },
     radius: { sm: '6px', md: '14px', lg: '26px', pill: '999px' },
     space: {

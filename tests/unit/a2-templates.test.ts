@@ -112,7 +112,131 @@ describe('tokens and the contrast guard', () => {
           contrastRatio(derived.link, surface),
           `${template.key} link on ${surface}`,
         ).toBeGreaterThanOrEqual(AA_NORMAL);
+
+        /**
+         * The PRIMARY text colour, on all three surfaces too.
+         *
+         * It used to pass through unguarded, which made the whole guard optional for the copy
+         * that matters most: `resolveColors` checks text against the BACKGROUND, while the card
+         * surface and the footer's alt tone are derived afterwards and a `custom`-mode merchant
+         * picks the surface directly. Every product description and every price sat on a surface
+         * nothing had checked.
+         */
+        expect(
+          contrastRatio(derived.text, surface),
+          `${template.key} text on ${surface}`,
+        ).toBeGreaterThanOrEqual(AA_NORMAL);
+
+        // And the SECONDARY accent, which the templates set prices, badges and ghost-button
+        // labels in — all normal-size text held to the 3:1 bar until `accent` existed.
+        expect(
+          contrastRatio(derived.accent, surface),
+          `${template.key} accent on ${surface}`,
+        ).toBeGreaterThanOrEqual(AA_NORMAL);
       }
+    }
+  });
+
+  /**
+   * The palettes a `custom`-mode merchant can actually save, including the ones that cannot work.
+   *
+   * `resolveColors` guards the tenant's text against the BACKGROUND and the two brand colours
+   * against the background. It never looks at `surface`, which the free picker sets directly — so
+   * these combinations reach `deriveColorTokens` intact, and it is the only thing standing
+   * between them and an unreadable storefront.
+   */
+  const hostilePalettes = [
+    {
+      label: 'white background with a slate card surface — no text colour can serve both',
+      base: {
+        primary: '#1D4ED8',
+        secondary: '#0EA5A4',
+        background: '#FFFFFF',
+        surface: '#334155',
+        text: '#1A1A1A',
+      },
+      expectSurfaceReplaced: true,
+    },
+    {
+      label: 'white background with a near-black card surface',
+      base: {
+        primary: '#1D4ED8',
+        secondary: '#0EA5A4',
+        background: '#FFFFFF',
+        surface: '#0F172A',
+        text: '#1A1A1A',
+      },
+      expectSurfaceReplaced: true,
+    },
+    {
+      /**
+       * This one IS satisfiable and must be KEPT: no colour is dark enough for black cards or
+       * light enough for a white page, but a mid-grey clears 4.5:1 against both. A feasibility
+       * test that collapsed each target to one interval would reject it and quietly repaint a
+       * merchant's black cards white.
+       */
+      label: 'white background with BLACK cards — extreme but legitimate',
+      base: {
+        primary: '#1D4ED8',
+        secondary: '#0EA5A4',
+        background: '#FFFFFF',
+        surface: '#000000',
+        text: '#1A1A1A',
+      },
+      expectSurfaceReplaced: false,
+    },
+  ] as const;
+
+  for (const palette of hostilePalettes) {
+    it(`keeps every text token readable — ${palette.label}`, () => {
+      const derived = deriveColorTokens(palette.base);
+
+      expect(
+        derived.surface.toLowerCase() !== palette.base.surface.toLowerCase(),
+        'surface replacement',
+      ).toBe(palette.expectSurfaceReplaced);
+
+      for (const surface of [derived.background, derived.surface, derived.surfaceAlt]) {
+        for (const [name, color] of [
+          ['text', derived.text],
+          ['textMuted', derived.textMuted],
+          ['link', derived.link],
+          ['accent', derived.accent],
+        ] as const) {
+          expect(
+            contrastRatio(color, surface),
+            `${name} (${color}) on ${surface}`,
+          ).toBeGreaterThanOrEqual(AA_NORMAL);
+        }
+      }
+    });
+  }
+
+  /**
+   * A guard on the guard.
+   *
+   * The tokens above only help if the stylesheets USE them. Three of the four stylesheets were
+   * setting normal-size text in the raw `--t-primary` / `--t-secondary`, which is exactly the
+   * failure `link` and `accent` were introduced to prevent — the tokens existed and the CSS
+   * reached past them.
+   */
+  it('never paints text in the unguarded brand tokens', () => {
+    const stylesheets = [
+      'storefront.css',
+      'diwan/diwan.css',
+      'neon-souq/neon-souq.css',
+      'warsheh/warsheh.css',
+    ];
+
+    for (const sheet of stylesheets) {
+      const css = readFileSync(path.join(repoRoot, 'src', 'templates', sheet), 'utf8');
+
+      const offenders = css
+        .split('\n')
+        .map((line, index) => ({ line: line.trim(), number: index + 1 }))
+        .filter(({ line }) => /^color:\s*var\(--t-(primary|secondary)\)/.test(line));
+
+      expect(offenders, `${sheet} sets text in an unguarded brand token`).toEqual([]);
     }
   });
 
@@ -165,7 +289,30 @@ describe('tokens and the contrast guard', () => {
 
   it('picks black or white for an "on" colour, never a tinted guess', () => {
     expect(readableOn('#0F0B10')).toBe('#ffffff');
-    expect(readableOn('#F4C95D')).toBe('#101010');
+    expect(readableOn('#F4C95D')).toBe('#000000');
+  });
+
+  /**
+   * PURE black, not a near-black, and that is a WCAG threshold rather than a preference.
+   *
+   * Picking the better of two fixed colours has a guaranteed floor at the background luminance
+   * where both are equally bad. With `#101010` that floor is 4.36:1 — under AA for normal text —
+   * and the failing band is reachable by an ordinary mid-tone brand colour that `resolveColors`
+   * passes, because it only holds `primary` to 3:1 against the background. Pure black lifts the
+   * floor to 4.58:1, so every button label clears AA by construction.
+   */
+  it('guarantees an "on" colour clears AA for every background it can be asked about', () => {
+    for (let step = 0; step <= 255; step += 1) {
+      const level = step.toString(16).padStart(2, '0');
+      const background = `#${level}${level}${level}`;
+      expect(
+        contrastRatio(readableOn(background), background),
+        `readableOn(${background})`,
+      ).toBeGreaterThanOrEqual(AA_NORMAL);
+    }
+
+    // The specific colour that produced 4.46:1 before: a mid-tone the write-time guard accepts.
+    expect(contrastRatio(readableOn('#598559'), '#598559')).toBeGreaterThanOrEqual(AA_NORMAL);
   });
 
   it('emits tenant colours as CSS custom properties and nothing else', () => {

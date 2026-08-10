@@ -83,6 +83,8 @@ export interface StorefrontSite {
   umamiWebsiteId: string | null;
   logo: StorefrontImage | null;
   ogImageUrl: string | null;
+  /** The merchant's own tab icon when they have set one; the shell generates a mark when null. */
+  faviconUrl: string | null;
 }
 
 export interface StorefrontSection {
@@ -153,4 +155,14 @@ export interface StorefrontContext {
    */
   mediaById: Record<string, StorefrontImage>;
   sections: StorefrontSection[];
+  /**
+   * Section types an admin has switched INVISIBLE for this tenant (axis (b), the visibility half).
+   *
+   * It travels on the context rather than being applied once by the loader because more than one
+   * route renders sections: the home arrangement AND every `/p/{slug}` content page, which loads
+   * its own `Page` row. `SectionList` applies it, so a route added later cannot forget — the
+   * previous shape left `map` hidden on the home page and still rendering, with its address and
+   * both navigation deep links, on the business-identity page Phase 6 generates.
+   */
+  hiddenSectionTypes: SectionType[];
 }

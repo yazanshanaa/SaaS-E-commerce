@@ -100,7 +100,26 @@ export function ContactWhatsappSection({ context, config }: ContactSectionProps)
               }}
             />
           ) : (
-            <p className="sf-note">{st('order.noNumber')}</p>
+            /*
+              Two DIFFERENT facts, and the old copy conflated them into one false sentence.
+
+              "رقم واتساب غير متوفر حالياً — فيك تتواصل معنا على الهاتف" was wrong twice over. When
+              a super admin turns `whatsapp_orders` off, a shop with a perfectly good number told
+              its customers the number was unavailable. And when the merchant stored a LOCAL number
+              — `059…`, which `normaliseWhatsappNumber` correctly refuses because Bartaa sits in
+              the Seam Zone and the country code is genuinely ambiguous — the sentence pointed the
+              visitor at a phone number that is frequently not on the page at all, because a
+              merchant who filled the WhatsApp field often left `phone` empty. A dead end on the
+              main conversion path.
+
+              So: the feature being off is one message, and an unusable stored number is another
+              that PRINTS THE NUMBER, letting the customer dial or message it themselves.
+            */
+            <p className="sf-note">
+              {context.flags.whatsappOrders && site.whatsapp
+                ? st('order.numberNotUsable', { number: site.whatsapp })
+                : st('order.noNumber')}
+            </p>
           )}
 
           {context.socialLinks.length > 0 ? (

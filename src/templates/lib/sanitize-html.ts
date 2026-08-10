@@ -73,8 +73,24 @@ const ALLOWED_ATTRIBUTES: Record<string, Set<string>> = {
   th: new Set(['colspan', 'rowspan', 'scope']),
 };
 
-/** Only these schemes may appear in an href or src. No `javascript:`, no `data:`, no `blob:`. */
+/** Only these schemes may appear in an href. No `javascript:`, no `data:`, no `blob:`. */
 const SAFE_URL = /^(https?:\/\/|mailto:|tel:|\/(?!\/)|#)/i;
+
+/**
+ * A `src` is held to a stricter rule than an `href`, and the difference is the whole point.
+ *
+ * A link is inert until someone clicks it. An `<img src>` is a REQUEST, issued on first paint,
+ * to whatever host it names — which is a tracking pixel with an `alt` attribute. On a storefront
+ * whose entire compliance claim is "no third-party request before the visitor has answered the
+ * banner", one line of pasted HTML would have made that claim false, silently, on a page the
+ * merchant controls and nobody reviews. `analyticsDecision()` cannot help: it governs the Umami
+ * tag, not arbitrary markup.
+ *
+ * So an image must be SAME-ORIGIN: a root-relative path. That still covers every legitimate use
+ * (the media library serves through the CDN, and A3's pipeline is how an image is meant to get
+ * onto a page at all) and refuses the one that is indistinguishable from surveillance.
+ */
+const SAFE_SRC = /^\/(?!\/)/;
 
 function escapeText(value: string): string {
   return value
@@ -84,12 +100,20 @@ function escapeText(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function isSafeUrl(value: string): boolean {
-  // Control characters are stripped first: `java\tscript:` is a real bypass.
-  const cleaned = Array.from(value)
+/** Control characters are stripped first: `java\tscript:` is a real bypass. */
+function stripControlCharacters(value: string): string {
+  return Array.from(value)
     .filter((ch) => (ch.codePointAt(0) ?? 0) > 0x20)
     .join('');
-  return SAFE_URL.test(cleaned);
+}
+
+function isSafeUrl(value: string): boolean {
+  return SAFE_URL.test(stripControlCharacters(value));
+}
+
+/** Same-origin only — see `SAFE_SRC`. A remote `src` is a request, not a link. */
+function isSafeSrc(value: string): boolean {
+  return SAFE_SRC.test(stripControlCharacters(value));
 }
 
 function sanitiseAttributes(tag: string, raw: string): string {
@@ -106,7 +130,10 @@ function sanitiseAttributes(tag: string, raw: string): string {
     // Belt and braces: every `on*` handler is rejected before the allow-list is even consulted.
     if (name.startsWith('on')) continue;
     if (!allowed.has(name)) continue;
-    if ((name === 'href' || name === 'src') && !isSafeUrl(value)) continue;
+    if (name === 'href' && !isSafeUrl(value)) continue;
+    // A dropped `src` leaves an `<img>` with no source, which renders its `alt` — the merchant
+    // sees their caption and the visitor's browser contacts nobody.
+    if (name === 'src' && !isSafeSrc(value)) continue;
 
     out.push(`${name}="${escapeText(value)}"`);
   }

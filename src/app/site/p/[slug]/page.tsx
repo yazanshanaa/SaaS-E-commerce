@@ -3,9 +3,16 @@ import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { getEnv } from '@/env';
 import { PUBLIC_ACTOR, tenantDb } from '@/server/db';
-import { parseSectionConfig, type SectionType } from '@/shared/site-contract';
+import { type SectionType } from '@/shared/site-contract';
 import { t } from '@/shared/i18n';
-import { analyticsDecision, isLegalSlug, SectionList, StorefrontShell } from '@/templates';
+import {
+  analyticsDecision,
+  isLegalSlug,
+  isSectionType,
+  normaliseSectionConfig,
+  SectionList,
+  StorefrontShell,
+} from '@/templates';
 import { CONSENT_COOKIE, readConsentCookie } from '../../_data/consent';
 import { loadStorefrontContext } from '../../_data/context';
 import { storefrontMetadata } from '../../_data/metadata';
@@ -39,7 +46,19 @@ interface LoadedPage {
   sections: Array<{ id: string; type: SectionType; sort: number; config: Record<string, unknown> }>;
 }
 
+/**
+ * `home` is not a content page — it is the section source for `/`.
+ *
+ * Serving it here too would publish the whole home arrangement at a second indexable URL with a
+ * canonical pointing at itself: duplicate content competing with the page it is a copy of, on a
+ * shop whose entire search presence is one storefront. `sitemap.xml` already skips it, so without
+ * this the two disagreed about what the site is.
+ */
+const RESERVED_SLUGS = new Set(['home']);
+
 async function loadPage(tenantId: string, slug: string): Promise<LoadedPage | null> {
+  if (RESERVED_SLUGS.has(slug)) return null;
+
   const db = tenantDb(tenantId, PUBLIC_ACTOR);
 
   const row = await db.page.findFirst({
@@ -62,15 +81,17 @@ async function loadPage(tenantId: string, slug: string): Promise<LoadedPage | nu
     title: row.title,
     metaTitle: row.metaTitle,
     metaDescription: row.metaDescription,
-    sections: row.sections.map((section) => ({
-      id: section.id,
-      type: section.type as SectionType,
-      sort: section.sort,
-      config: parseSectionConfig(section.type as SectionType, section.config) as Record<
-        string,
-        unknown
-      >,
-    })),
+    // Same treatment as the home page's sections: a type this build cannot render is skipped and
+    // a config that no longer fits its schema falls back to defaults. Throwing here would 500
+    // every legal page on the site — the pages a compliance requirement links from every footer.
+    sections: row.sections
+      .filter((section) => isSectionType(section.type))
+      .map((section) => ({
+        id: section.id,
+        type: section.type as SectionType,
+        sort: section.sort,
+        config: normaliseSectionConfig(section.type as SectionType, section.config),
+      })),
   };
 }
 

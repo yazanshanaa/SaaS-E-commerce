@@ -9,8 +9,10 @@ export { TEMPLATE_IMPLEMENTATIONS, FALLBACK_TEMPLATE_KEY, getTemplate, allTempla
 export { templateCssVars, deriveColorTokens, readableOn, isDarkColor, fontUrl } from './tokens';
 export { StorefrontShell, type StorefrontShellProps } from './shell';
 export { SectionRenderer, SectionList } from './sections';
+export { pluralCount } from './i18n';
 export { SECTION_ANCHORS } from './section-anchors';
 export { buildDefaultSections, type DefaultSectionInput } from './lib/default-sections';
+export { isSectionType, normaliseSectionConfig } from './lib/section-config';
 export {
   LEGAL_PAGES,
   LEGAL_SLUGS,
@@ -39,6 +41,7 @@ export {
 } from './lib/seo';
 export { JsonLdScript } from './components/json-ld';
 export { ProductCard } from './components/product-card';
+export { SocialLinks, isRenderableSocialUrl } from './components/social-links';
 export { MediaImage } from './components/media-image';
 export { WhatsappOrder } from './components/whatsapp-order';
 export type { TemplateDefinition, TemplateTokens, TemplateLayout, TemplateFont } from './types';

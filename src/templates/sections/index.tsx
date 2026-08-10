@@ -1,4 +1,5 @@
-import { parseSectionConfig, type SectionConfig } from '@/shared/site-contract';
+import { type SectionConfig } from '@/shared/site-contract';
+import { normaliseSectionConfig } from '../lib/section-config';
 import type { StorefrontContext, StorefrontSection } from '../view-model';
 import { AboutSection } from './about';
 import { AnnouncementsSection } from './announcements';
@@ -78,21 +79,43 @@ export function SectionRenderer({
         <CustomHtmlSection context={context} config={config<'custom_html'>('custom_html', section)} />
       );
     default: {
-      // Exhaustiveness: `never` here is the compiler proving every section type is handled.
+      /**
+       * Exhaustiveness: assigning to `never` is the compiler proving every section type is
+       * handled. Returning it would not be — at runtime that returns the type STRING, which React
+       * renders as visible Latin text on an Arabic-only storefront. This branch is unreachable
+       * through the loader (which drops unknown types) but is reachable through `SectionList`,
+       * which B2's live preview calls with a hand-built view model.
+       */
       const unreachable: never = section.type;
-      return unreachable;
+      void unreachable;
+      return null;
     }
   }
 }
 
-function config<T extends Parameters<typeof parseSectionConfig>[0]>(
+/**
+ * Re-parse at the render boundary, never throwing.
+ *
+ * The loader has already normalised this config, so the fallback should not fire in the app —
+ * but this component is exported for B2's live preview, which hands in a config the loader never
+ * saw. A preview that renders a section with default settings is useful; one that throws inside
+ * a Server Component takes the whole page with it.
+ */
+function config<T extends Parameters<typeof normaliseSectionConfig>[0]>(
   type: T,
   section: StorefrontSection,
 ): SectionConfig<T> {
-  return parseSectionConfig(type, section.config) as SectionConfig<T>;
+  return normaliseSectionConfig(type, section.config) as SectionConfig<T>;
 }
 
-/** Render a whole page's worth of sections in sort order. */
+/**
+ * Render a whole page's worth of sections in sort order.
+ *
+ * Capability visibility is applied HERE, not by each caller, because there is more than one
+ * caller: the home arrangement and every `/p/{slug}` content page, which loads its own `Page` row
+ * and knows nothing about what an admin has hidden. A hide that is applied on one route and not
+ * the other is worse than no hide at all, because it reads as done.
+ */
 export function SectionList({
   context,
   sections,
@@ -100,9 +123,11 @@ export function SectionList({
   context: StorefrontContext;
   sections: StorefrontSection[];
 }) {
+  const visible = sections.filter((section) => !context.hiddenSectionTypes.includes(section.type));
+
   return (
     <>
-      {sections.map((section) => (
+      {visible.map((section) => (
         <SectionRenderer key={section.id} context={context} section={section} />
       ))}
     </>

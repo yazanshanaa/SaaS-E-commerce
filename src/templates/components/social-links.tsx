@@ -14,7 +14,36 @@ import { SocialIcon } from './icons';
  * A platform with no glyph still renders, with the globe mark and its own Arabic label — the
  * list is meant to grow without a code change here.
  */
-export function SocialLinks({ links }: { links: StorefrontSocialLink[] }) {
+/**
+ * A stored URL is not a URL until something checks it.
+ *
+ * `SocialLink.url` is a bare `String` column: nothing between the row and this anchor validates
+ * it, and "instagram.com/souq-bartaa" — with no scheme, which is how people actually paste a
+ * profile address — becomes a RELATIVE link. The visitor lands on
+ * `{shop}.souqbartaa.com/instagram.com/souq-bartaa`, which 404s, from an icon that promised
+ * Instagram. A `javascript:` value is neutralised by React, but relying on the framework for that
+ * is luck rather than design, and it does nothing about the scheme-less case.
+ *
+ * A link that cannot be trusted is not rendered at all: an icon leading nowhere is worse than an
+ * absent icon, and the footer already handles an empty list as its normal state.
+ */
+export function isRenderableSocialUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+export function SocialLinks({ links: stored }: { links: StorefrontSocialLink[] }) {
+  /**
+   * The loader has already dropped unrenderable rows, so this is a backstop — the component is
+   * exported for B2's live preview, which builds its own view model. It stays here because the
+   * callers decide whether to render the "تابعنا" heading from `links.length`, and a heading
+   * over an empty list is the exact thing this component was written to avoid.
+   */
+  const links = stored.filter((link) => isRenderableSocialUrl(link.url));
   if (links.length === 0) return null;
 
   return (

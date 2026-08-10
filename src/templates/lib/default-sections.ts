@@ -21,7 +21,17 @@ export interface DefaultSectionInput {
   hasAbout: boolean;
   hasTestimonials: boolean;
   hasAnnouncements: boolean;
-  hasWhatsapp: boolean;
+  /**
+   * ANY way to reach the shop — WhatsApp, a phone, an email, opening hours, an address or a
+   * social link — not the WhatsApp number alone.
+   *
+   * The contact block renders all of those, so keying it on WhatsApp meant a merchant who works
+   * by landline had their phone, hours and address vanish from their own home page. It was also
+   * half of a worse bug: the header nav, the footer and the hero's secondary button all link
+   * `#contact-whatsapp` unconditionally, so on that same site the primary navigation link on
+   * every page jumped nowhere.
+   */
+  hasContact: boolean;
   hasLocation: boolean;
   gridColumns: 2 | 3 | 4;
 }
@@ -38,7 +48,7 @@ export function buildDefaultSections(input: DefaultSectionInput): StorefrontSect
   }
   if (input.hasAbout) planned.push({ type: 'about', config: {} });
   if (input.hasTestimonials) planned.push({ type: 'testimonials', config: { limit: 3 } });
-  if (input.hasWhatsapp) planned.push({ type: 'contact_whatsapp', config: {} });
+  if (input.hasContact) planned.push({ type: 'contact_whatsapp', config: {} });
   if (input.hasLocation) planned.push({ type: 'map', config: {} });
 
   return planned.map((section, index) => ({

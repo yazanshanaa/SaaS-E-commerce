@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import { getEnv } from '@/env';
 import { t } from '@/shared/i18n';
-import { analyticsDecision, ProductCard, StorefrontShell } from '@/templates';
+import { analyticsDecision, pluralCount, ProductCard, StorefrontShell } from '@/templates';
 import { CONSENT_COOKIE, readConsentCookie } from '../_data/consent';
 import { loadStorefrontContext } from '../_data/context';
 import { storefrontMetadata } from '../_data/metadata';
@@ -24,14 +24,45 @@ export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 24;
 
+/**
+ * `string | string[]`, because that is what the App Router actually hands over.
+ *
+ * A repeated key — `?category=a&category=b`, which a mail client concatenating two links or a
+ * crawler following a malformed share URL produces without any malice — arrives as an ARRAY. The
+ * old declaration said `string`, so `params.category?.trim()` typechecked and threw
+ * `TypeError: params.category.trim is not a function` at runtime, 500ing the catalogue. Declaring
+ * the truth is what makes the compiler force the normalisation below.
+ */
 interface PageProps {
-  searchParams: Promise<{ category?: string; page?: string }>;
+  searchParams: Promise<{ category?: string | string[]; page?: string | string[] }>;
+}
+
+/** The first value of a possibly-repeated parameter, trimmed to nothing-or-something. */
+function firstParam(value: string | string[] | undefined): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return raw?.trim() || undefined;
+}
+
+/**
+ * Page numbers are bounded at BOTH ends.
+ *
+ * `?page=99999999999999999999` parses to 1e20 and makes `skip` 2.4e21, which is outside the
+ * 64-bit integer the Prisma engine accepts — so the query is rejected and the storefront answers
+ * 500 rather than an empty page. The ceiling is generous enough that no real catalogue reaches
+ * it (a احترافي tenant is capped at 1000 products, i.e. 42 pages at 24 per page).
+ */
+const MAX_PAGE = 10_000;
+
+function pageNumber(value: string | string[] | undefined): number {
+  const parsed = Number.parseInt(firstParam(value) ?? '1', 10);
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.min(MAX_PAGE, Math.max(1, parsed));
 }
 
 export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
   const surface = await requireStorefront();
   const context = await loadStorefrontContext(surface);
-  const { category } = await searchParams;
+  const category = firstParam((await searchParams).category);
 
   const categoryName = category
     ? context.categories.find((entry) => entry.key === category)?.name
@@ -52,14 +83,14 @@ export default async function ProductsPage({ searchParams }: PageProps) {
   const context = await loadStorefrontContext(surface);
   const params = await searchParams;
 
-  const category = params.category?.trim() || undefined;
+  const category = firstParam(params.category);
   const known = category ? context.categories.some((entry) => entry.key === category) : false;
   // An unknown category is treated as no filter rather than as a 404: the link is usually a
   // stale bookmark from a category the merchant renamed, and an empty catalogue page is a worse
   // answer than the whole catalogue.
   const activeCategory = known ? category : undefined;
 
-  const page = Math.max(1, Number.parseInt(params.page ?? '1', 10) || 1);
+  const page = pageNumber(params.page);
   const [products, total] = await Promise.all([
     queryProducts(context.tenantId, {
       categoryKey: activeCategory,
@@ -94,11 +125,14 @@ export default async function ProductsPage({ searchParams }: PageProps) {
         <div className="sf-shell">
           <div className="sf-block__head">
             <h1 className="sf-block__title">{activeName ?? t('storefront', 'products.all')}</h1>
-            <p className="sf-block__lead">{t('storefront', 'products.count', { count: total })}</p>
+            <p className="sf-block__lead">{pluralCount('products.count', total)}</p>
           </div>
 
           {context.categories.length > 0 ? (
-            <nav className="sf-social" aria-label={t('storefront', 'products.filterLabel')}>
+            /* `.sf-chips`, not `.sf-social`: the social row sizes its links to a fixed 44x44
+               icon target, which put every Arabic category name in this filter row inside a
+               circle the size of a glyph. */
+            <nav className="sf-chips" aria-label={t('storefront', 'products.filterLabel')}>
               <a
                 className="sf-btn sf-btn--ghost"
                 href="/products"
@@ -142,7 +176,9 @@ export default async function ProductsPage({ searchParams }: PageProps) {
           {pageCount > 1 ? (
             <nav
               className="sf-actions"
-              aria-label={t('storefront', 'nav.label')}
+              /* Its own name: sharing `nav.label` with the header made two landmarks announce
+                 identically, so choosing between them in a screen reader's rotor was a coin flip. */
+              aria-label={t('storefront', 'products.pagination')}
               style={{ marginBlockStart: 'var(--t-space-xl)' }}
             >
               {Array.from({ length: pageCount }, (_, index) => index + 1).map((number) => (

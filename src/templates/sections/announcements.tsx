@@ -47,8 +47,19 @@ export function AnnouncementsSection({ context, config }: AnnouncementsSectionPr
             {card.body ? <p className="sf-offer__body">{card.body}</p> : null}
             {card.link ? (
               <p>
-                <a className="sf-btn sf-btn--ghost" href={card.link} rel="noopener noreferrer">
-                  {st('products.details')}
+                {/*
+                  Its own string, not the product-detail one. An offer card is not a product: a
+                  merchant linking the terms of "خصم 20% على الأجبان البلدية" would have been
+                  offering the visitor "تفاصيل المنتج" for a product that does not exist — on the
+                  main conversion path of a shop whose whole promotion is this board.
+                */}
+                <a
+                  className="sf-btn sf-btn--ghost"
+                  href={card.link}
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                >
+                  {st('announcements.details')}
                 </a>
               </p>
             ) : null}

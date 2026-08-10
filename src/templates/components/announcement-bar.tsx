@@ -95,8 +95,15 @@ export function AnnouncementBar({
     <aside className="sf-bar" aria-label={regionLabel}>
       <div className="sf-shell sf-bar__inner">
         <p className="sf-bar__text">
+          {/*
+            A new tab, and `nofollow`. The href is merchant-supplied and this bar is on every page
+            of a `*.souqbartaa.com` subdomain, so a followed link here accrues against the apex
+            domain for every tenant at once. `noopener` was also inert without a target — the
+            attribute pair read as protection that was not doing anything. Same shape as
+            `social-links.tsx`, which had it right.
+          */}
           {link ? (
-            <a href={link} rel="noopener noreferrer">
+            <a href={link} target="_blank" rel="noopener noreferrer nofollow">
               {text}
             </a>
           ) : (

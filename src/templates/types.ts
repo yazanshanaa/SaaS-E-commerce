@@ -47,6 +47,12 @@ export interface TemplateTokens {
      * as a button fill is routinely under 4.5:1 as a sentence of text on the same colour.
      */
     link: string;
+    /**
+     * The SECONDARY accent at the same body-text threshold as `link`. Templates set normal-size
+     * text in the secondary colour — a price, a badge, a ghost button's label — and the raw
+     * token is only ever checked at 3:1, which is the bar for a fill, not for a sentence.
+     */
+    accent: string;
   };
   radius: { sm: string; md: string; lg: string; pill: string };
   space: { xs: string; sm: string; md: string; lg: string; xl: string; xxl: string; xxxl: string };

@@ -44,6 +44,7 @@ function context(overrides: Partial<StorefrontContext> = {}): StorefrontContext 
       umamiWebsiteId: null,
       logo: null,
       ogImageUrl: null,
+      faviconUrl: null,
     },
     flags: { whatsappOrders: true, analytics: false, customHtml: false },
     announcementBar: null,
@@ -57,6 +58,7 @@ function context(overrides: Partial<StorefrontContext> = {}): StorefrontContext 
     testimonials: [],
     mediaById: {},
     sections: [],
+    hiddenSectionTypes: [],
     ...overrides,
   };
 }

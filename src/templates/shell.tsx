@@ -36,6 +36,28 @@ import type { StorefrontContext } from './view-model';
  *      there is no script on the page for a consent flag to switch on later.
  */
 
+/**
+ * The tab mark: a rounded tile in the tenant's primary colour with a notch in its background
+ * colour, as an inline SVG data URI.
+ *
+ * No text, deliberately. An SVG favicon renders `<text>` with the BROWSER's font stack, not the
+ * page's, so an Arabic monogram would be at the mercy of whatever the visitor's OS has installed
+ * and would shape inconsistently across platforms — on a favicon, at 16px, that is a smudge. Two
+ * shapes read at 16px on every device and cannot fail to a box.
+ *
+ * The URI is single-quoted and `#` is escaped: an unescaped `#` inside a data URI truncates it at
+ * the fragment, which silently produces a blank icon.
+ */
+function faviconDataUri(primary: string, background: string): string {
+  const svg =
+    `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>` +
+    `<rect width='32' height='32' rx='8' fill='${primary}'/>` +
+    `<path d='M9 21.5 L16 9 L23 21.5 Z' fill='${background}'/>` +
+    `</svg>`;
+
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
 export interface StorefrontShellProps {
   context: StorefrontContext;
   children: ReactNode;
@@ -74,6 +96,28 @@ export function StorefrontShell({
         href={fontUrl(template, 'regular')}
         crossOrigin="anonymous"
       />
+
+      {/*
+        A tab icon, inline, costing zero requests.
+
+        Without a `rel="icon"` every browser asks for /favicon.ico, and nothing on this platform
+        answers it — proxy.ts excludes the path from its matcher, so it falls through to a 404 on
+        every page view of every storefront. It is invisible in Playwright (headless Chromium does
+        not request it) and perfectly visible to Lighthouse, which is where it surfaced: "Browser
+        errors were logged to the console".
+
+        A file would have answered it too, but the same file for every merchant is worse than
+        none — a shop's tab is part of its identity, and this platform's whole proposition is that
+        the sites do not look like each other. So the mark is generated from the tenant's own
+        resolved primary colour, which means it is already correct on the day the account is
+        opened and changes with the palette. Phase 4 replaces it with the merchant's real logo
+        when it generates the PWA icons from `Site.logoMediaId`.
+      */}
+      <link
+        rel="icon"
+        href={context.site.faviconUrl ?? faviconDataUri(colors.primary, colors.background)}
+      />
+
 
       {context.announcementBar ? (
         <AnnouncementBar

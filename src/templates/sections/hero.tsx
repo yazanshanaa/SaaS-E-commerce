@@ -1,6 +1,7 @@
 import type { SectionConfig } from '@/shared/site-contract';
 import { MediaImage } from '../components/media-image';
 import { st } from '../i18n';
+import { hasContactSection } from '../lib/arrangement';
 import { SECTION_ANCHORS } from '../section-anchors';
 import type { StorefrontContext } from '../view-model';
 
@@ -42,9 +43,12 @@ export function HeroSection({ context, config }: HeroSectionProps) {
         <a className="sf-btn" href={ctaHref}>
           {ctaLabel}
         </a>
-        <a className="sf-btn sf-btn--ghost" href={`#${SECTION_ANCHORS.contact_whatsapp}`}>
-          {st('hero.secondary')}
-        </a>
+        {/* Only when the arrangement has the section it points at — see lib/arrangement.ts. */}
+        {hasContactSection(context) ? (
+          <a className="sf-btn sf-btn--ghost" href={`#${SECTION_ANCHORS.contact_whatsapp}`}>
+            {st('hero.secondary')}
+          </a>
+        ) : null}
       </div>
     </div>
   );

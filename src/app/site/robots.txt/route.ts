@@ -1,4 +1,5 @@
 import { headers } from 'next/headers';
+import { getEnv } from '@/env';
 import { readRequestTenant } from '@/server/tenancy';
 
 /**
@@ -36,7 +37,10 @@ export async function GET(): Promise<Response> {
         // consent endpoint is a POST target, not a page.
         'Disallow: /api/',
         '',
-        `Sitemap: https://${tenant.hostname}/sitemap.xml`,
+        // The same source the sitemap route builds its own `loc` values from. Hardcoding https
+        // here made robots.txt advertise a URL the sitemap would never emit on any deployment
+        // that is not already on TLS.
+        `Sitemap: ${getEnv().PUBLIC_SCHEME}://${tenant.hostname}/sitemap.xml`,
         '',
       ].join('\n');
 

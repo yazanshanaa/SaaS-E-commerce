@@ -2,7 +2,6 @@ import { headers } from 'next/headers';
 import { getEnv } from '@/env';
 import { PUBLIC_ACTOR, tenantDb } from '@/server/db';
 import { readRequestTenant } from '@/server/tenancy';
-import { legalPagesFor } from '@/templates';
 
 /**
  * Per-hostname `sitemap.xml`.
@@ -36,8 +35,7 @@ export async function GET(): Promise<Response> {
   const origin = `${getEnv().PUBLIC_SCHEME}://${tenant.hostname}`;
   const db = tenantDb(tenant.tenantId, PUBLIC_ACTOR);
 
-  const [site, products, pages] = await Promise.all([
-    db.site.findUnique({ where: { tenantId: tenant.tenantId }, select: { sellingEnabled: true } }),
+  const [products, pages] = await Promise.all([
     db.product.findMany({
       where: { tenantId: tenant.tenantId, published: true },
       select: { slug: true, updatedAt: true },
@@ -64,25 +62,27 @@ export async function GET(): Promise<Response> {
   }
 
   /**
-   * The legal pages are listed even before Phase 6 writes their rows.
+   * Only pages whose ROWS exist.
    *
-   * They are a permanent, linked-from-every-page part of the site by law, and the route already
-   * answers 200 with an honest placeholder. A sitemap that omitted them would be describing a
-   * different site from the one the footer links to. `home` is excluded because it is not a
-   * `/p/` page — it is the section source for `/`.
+   * An earlier version also listed the legal slugs Phase 6 has not written yet, reasoning that
+   * they are linked from every page by law so a sitemap omitting them describes a different site.
+   * The reasoning was right about the footer and wrong about the sitemap: until the rows exist
+   * that route answers with the "قيد التجهيز" placeholder, and that placeholder is `noindex`. So
+   * the sitemap was submitting URLs for indexing while the pages themselves refused it — a
+   * contradiction a crawler resolves by trusting neither. The links stay in the footer, which is
+   * what the compliance requirement actually asks for; the sitemap starts describing them the day
+   * `src/server/legal` writes them, with no change here.
+   *
+   * `home` is excluded because it is not a `/p/` page — it is the section source for `/`, and the
+   * route 404s it for the same reason.
    */
-  const legalSlugs = new Set(legalPagesFor(site?.sellingEnabled ?? false).map((page) => page.slug));
   for (const page of pages) {
     if (page.slug === 'home') continue;
-    legalSlugs.delete(page.slug);
     entries.push({
       loc: `${origin}/p/${encodeURIComponent(page.slug)}`,
       lastmod: page.updatedAt,
       priority: '0.3',
     });
-  }
-  for (const slug of legalSlugs) {
-    entries.push({ loc: `${origin}/p/${slug}`, priority: '0.2' });
   }
 
   const body = [

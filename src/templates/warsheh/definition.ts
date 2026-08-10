@@ -39,6 +39,9 @@ export const warsheh: TemplateDefinition = {
       textMuted: '#AEB7C2',
       border: '#3A434F',
       link: '#F59E0B',
+      // Steel on the slate surface is ~4.8:1 — just over the body-text bar, which is exactly why
+      // the badge label needs the guarded token rather than the raw secondary.
+      accent: '#8A93A3',
     },
     radius: { sm: '0', md: '0', lg: '0', pill: '0' },
     space: {

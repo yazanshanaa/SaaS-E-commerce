@@ -1,4 +1,5 @@
 import { st } from '../i18n';
+import { hasContactSection } from '../lib/arrangement';
 import { legalHref, legalPagesFor } from '../lib/legal';
 import { SECTION_ANCHORS } from '../section-anchors';
 import type { StorefrontContext } from '../view-model';
@@ -22,6 +23,7 @@ export function SiteFooter({ context }: { context: StorefrontContext }) {
   const { site, socialLinks } = context;
   const legal = legalPagesFor(site.sellingEnabled);
   const year = new Date().getFullYear();
+  const hasContactDetails = Boolean(site.phone || site.address || site.hours || site.email);
 
   return (
     <footer className="sf-footer" aria-label={st('footer.label')}>
@@ -40,29 +42,42 @@ export function SiteFooter({ context }: { context: StorefrontContext }) {
             <li>
               <a href="/products">{st('nav.products')}</a>
             </li>
-            <li>
-              <a href={`/#${SECTION_ANCHORS.contact_whatsapp}`}>{st('nav.contact')}</a>
-            </li>
+            {/* Only when the home arrangement has the section — see lib/arrangement.ts. */}
+            {hasContactSection(context) ? (
+              <li>
+                <a href={`/#${SECTION_ANCHORS.contact_whatsapp}`}>{st('nav.contact')}</a>
+              </li>
+            ) : null}
           </ul>
         </div>
 
-        <div>
-          <h2>{st('footer.contact')}</h2>
-          <ul>
-            {site.phone ? (
-              <li>
-                <a href={`tel:${site.phone.replace(/\s/g, '')}`}>{site.phone}</a>
-              </li>
-            ) : null}
-            {site.address ? <li>{site.address}</li> : null}
-            {site.hours ? <li>{site.hours}</li> : null}
-            {site.email ? (
-              <li>
-                <a href={`mailto:${site.email}`}>{site.email}</a>
-              </li>
-            ) : null}
-          </ul>
-        </div>
+        {/*
+          The heading is conditional on there being something under it — the same rule the social
+          column already followed one block down, and it has to be, because all four of these
+          fields are optional. An account A1 opens with a name and a template has none of them, so
+          the merchant's first look at their own site was a "معلومات التواصل" heading announcing
+          an empty list. That is precisely the failure `SocialLinks` was written to avoid, sitting
+          in the same file.
+        */}
+        {hasContactDetails ? (
+          <div>
+            <h2>{st('footer.contact')}</h2>
+            <ul>
+              {site.phone ? (
+                <li>
+                  <a href={`tel:${site.phone.replace(/\s/g, '')}`}>{site.phone}</a>
+                </li>
+              ) : null}
+              {site.address ? <li>{site.address}</li> : null}
+              {site.hours ? <li>{site.hours}</li> : null}
+              {site.email ? (
+                <li>
+                  <a href={`mailto:${site.email}`}>{site.email}</a>
+                </li>
+              ) : null}
+            </ul>
+          </div>
+        ) : null}
 
         {socialLinks.length > 0 ? (
           <div>

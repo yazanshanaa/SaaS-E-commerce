@@ -38,13 +38,28 @@ export function storeJsonLd(context: StorefrontContext): JsonLd {
     ...(site.logo ? { logo: site.logo.src } : {}),
     ...(site.phone ? { telephone: site.phone } : {}),
     ...(site.email ? { email: site.email } : {}),
+    /**
+     * `streetAddress` only — no `addressCountry`.
+     *
+     * It used to assert `PS` for every merchant. Nothing in the schema records a country, and
+     * Bartaa sits in the Seam Zone, where the answer genuinely differs between two shops on the
+     * same street. Structured data is a machine-readable ASSERTION about a real business, so a
+     * guessed country is not a harmless default: it is wrong data published under the merchant's
+     * name. `PostalAddress` is valid without it.
+     */
     ...(site.address
-      ? { address: { '@type': 'PostalAddress', streetAddress: site.address, addressCountry: 'PS' } }
+      ? { address: { '@type': 'PostalAddress', streetAddress: site.address } }
       : {}),
     ...(site.mapLat !== null && site.mapLng !== null
       ? { geo: { '@type': 'GeoCoordinates', latitude: site.mapLat, longitude: site.mapLng } }
       : {}),
-    ...(site.hours ? { openingHours: site.hours } : {}),
+    /**
+     * `openingHours` is deliberately NOT emitted. The property has a defined grammar
+     * ("Mo-Sa 09:00-18:00"); `Site.hours` is a free-text Arabic field a merchant fills with
+     * "من الصبح لبعد العشا، والجمعة بعد الصلاة". Publishing that as structured data is not a
+     * partial answer, it is an invalid one — and the hours already render, readably, in the
+     * contact section and the footer, which is where a human looks for them.
+     */
   };
 }
 

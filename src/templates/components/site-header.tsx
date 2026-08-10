@@ -1,4 +1,5 @@
 import { st } from '../i18n';
+import { hasContactSection } from '../lib/arrangement';
 import type { StorefrontContext } from '../view-model';
 import { SECTION_ANCHORS } from '../section-anchors';
 
@@ -51,7 +52,13 @@ export function SiteHeader({ context, current }: SiteHeaderProps) {
           <a href="/products" aria-current={current === 'products' ? 'page' : undefined}>
             {st('nav.products')}
           </a>
-          <a href={`/#${SECTION_ANCHORS.contact_whatsapp}`}>{st('nav.contact')}</a>
+          {/* Only when the home arrangement actually contains the section this points at.
+              Rendered unconditionally, it was a dead anchor on every page of any shop whose
+              arrangement has no contact block — the browser jumps nowhere and the visitor
+              concludes the site is broken. */}
+          {hasContactSection(context) ? (
+            <a href={`/#${SECTION_ANCHORS.contact_whatsapp}`}>{st('nav.contact')}</a>
+          ) : null}
         </nav>
       </div>
     </header>

@@ -57,20 +57,47 @@
 }
 
 /*
- * `:where()` on purpose — it contributes ZERO specificity.
+ * Storefront links take the tenant's colour, never the platform's.
  *
- * Written as `.sf-root a` this rule scores (0,1,1) and silently beats `.sf-btn` at (0,1,0), so
- * every button label inherited the body text colour and sat on a filled brand background at
- * whatever contrast happened to result. That is an axe colour-contrast failure produced by a
- * cascade accident, and it is invisible in review because the rule looks harmless.
+ * This rule has now been wrong in BOTH directions, which is worth recording because the second
+ * mistake was made while fixing the first.
+ *
+ * Written as `.sf-root a` it scores (0,1,1) and silently beats `.sf-btn` at (0,1,0), so every
+ * button label inherited the body text colour over a filled brand background. The fix for that
+ * was `:where(.sf-root a)` — but `:where()` contributes ZERO specificity, so the rule then scored
+ * (0,0,0) and lost to `globals.css`'s bare `a { color: var(--sb-primary) }` at (0,0,1). Every
+ * storefront link with no colour rule of its own — the shop name, the header nav, every footer
+ * link, warsheh's category index — rendered in the PLATFORM's orange #a63d0b, on templates whose
+ * palettes were designed around something else entirely. On warsheh's dark slate that is roughly
+ * 2.7:1, an AA failure; on all three it is the one colour a merchant's site must never contain.
+ *
+ * `a:not([class])` is the shape that survives both. It scores (0,2,1), so it beats the global
+ * rule — and it does not MATCH a classed anchor at all, so `.sf-btn`, `.sf-card__link` and every
+ * other component link keep their own colour by construction rather than by tie-breaking on
+ * source order, which is what made this fragile twice.
  */
-:where(.sf-root a) {
+.sf-root a:not([class]) {
   color: inherit;
 }
 
 .sf-root :focus-visible {
   outline: 3px solid var(--t-primary);
   outline-offset: 3px;
+}
+
+/*
+ * Focus INSIDE a clipping container is drawn inwards.
+ *
+ * An outline paints outside the border box, so `outline-offset: 3px` puts it 3px beyond it — and
+ * `overflow: hidden` on the parent then clips it away entirely. A product card and the quantity
+ * stepper both clip (they round their corners over a child's background), and in both the
+ * focusable child fills the parent, so the ring was cut off completely: a keyboard user tabbing
+ * through the grid saw NOTHING move. axe cannot catch this — the style is present and correct in
+ * the cascade, it is simply not painted — which is why it survived a clean accessibility run.
+ */
+.sf-root .sf-card__link:focus-visible,
+.sf-root .sf-stepper__btn:focus-visible {
+  outline-offset: -3px;
 }
 
 .sf-vh {
@@ -151,6 +178,14 @@
   gap: var(--t-space-sm);
   text-decoration: none;
   min-inline-size: 0;
+  /*
+    Explicit, because `a:not([class])` above deliberately does not match a CLASSED anchor — that
+    exclusion is what stops it overriding `.sf-btn`. The shop name is the largest text in the
+    header and had no colour rule of its own, so it fell through to globals.css's
+    `a { color: var(--sb-primary) }` and rendered in the PLATFORM's orange on every page of every
+    storefront. Any classed anchor that wants the tenant's text colour has to say so.
+  */
+  color: inherit;
 }
 
 .sf-brand__logo {
@@ -658,10 +693,15 @@
   font-style: normal;
 }
 
+/*
+  --t-accent, not the raw --t-secondary. The star row has a visually-hidden text equivalent, so
+  it is decorative to a screen reader — but a sighted visitor reads the rating from the shapes,
+  and they sit on the quote SURFACE, which the raw token's 3:1 check never looked at.
+*/
 .sf-stars {
   display: inline-flex;
   gap: 2px;
-  color: var(--t-secondary);
+  color: var(--t-accent);
 }
 
 .sf-stars svg {
@@ -773,6 +813,25 @@
 .sf-social svg {
   inline-size: 20px;
   block-size: 20px;
+}
+
+/*
+  A row of word-sized chips — the `chips` categories variant.
+
+  It has its own class rather than reusing .sf-social because that row sizes its links to a fixed
+  44x44 icon target. A category is a word ("منتجات الألبان"), not a glyph, so the name overflowed
+  the circle; and because `.sf-social a` scores (0,1,1) against `.sf-btn`'s (0,1,0), the button
+  class already on the anchor could not take the sizing back. These chips declare no sizing at
+  all: the `.sf-btn` padding decides, which is what lets a long Arabic name and a short one sit
+  in the same row without either being clipped.
+*/
+.sf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--t-space-sm);
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 .sf-legal {

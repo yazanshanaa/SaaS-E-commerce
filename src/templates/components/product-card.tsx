@@ -48,7 +48,18 @@ export function ProductCard({
             image={product.image}
             priority={priority}
             fallbackLabel={product.name}
-            sizes="(max-width: 40rem) 50vw, 25vw"
+            /*
+              Three stops, because the grid has three states and the narrowest was missing.
+
+              `.sf-grid` collapses to a SINGLE column at 26rem (storefront.css), where a card is
+              the full content width — but `sizes` still claimed 50vw. With w-descriptor
+              candidates (400 / 800 / 1600) the browser halves its estimate accordingly and picks
+              the 400px thumb for a slot about 360 CSS px wide, which at DPR 2 is a visibly soft
+              image on exactly the device most of this platform's traffic arrives on. `sizes` is
+              not a hint the browser sanity-checks against the real layout; it IS the input to the
+              choice, so a wrong one is a wrong file every time.
+            */
+            sizes="(max-width: 26rem) 100vw, (max-width: 40rem) 50vw, 25vw"
           />
         </div>
 
