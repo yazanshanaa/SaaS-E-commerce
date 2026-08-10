@@ -245,6 +245,8 @@ create, since `isCapabilityVisible()` is fail-closed (raised by A2 at review).
 - [ ] E2E stack needs an adapter minting CDN URLs, or its image assertions run on an empty set — **Phase 7**
 - [ ] Edge cache purge on media delete (currently up to 24h stale) — **Phase 6**, privacy copy must match
 - [ ] `Consent.ipHash` is written by nothing; dropping it is a schema change — **Phase 6**
+- [ ] Lighthouse gate is flaky at its threshold (7 runs: 86–95, median ~90, no regression — machine
+      variance in LCP/SI). Decide best-of-N or median-of-three before CI depends on it — **Phase 7**
 - [ ] `revalidateStorefront()` is not callable from the worker, which is where variants finish — **Group B**
 
 ---

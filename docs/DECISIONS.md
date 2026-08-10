@@ -364,6 +364,16 @@ Still open, and owned by nobody yet:
   mints CDN URLs without serving bytes off the app disk. **Phase 7.**
 - **`Consent.ipHash` is written by nothing.** A2 stopped populating it and no other track writes a
   `Consent` row. Dropping the column is a schema change. **Phase 6.**
+- **The Lighthouse gate is flaky at its own threshold.** Seven runs on the merge machine scored
+  86, 87, 89, 90, 93, 94, 95 against an assertion of ≥ 90 — it passes roughly half the time. This
+  is not a regression: the fast runs land at LCP 2279–2301ms, matching the LCP 2263ms / perf 95
+  A2 measured in its own worktree, and the spread is driven by LCP (1854–3027ms) and Speed Index
+  (3448–4823ms), which move with machine load rather than with anything in the page. A single
+  Lighthouse run is a noisy instrument and this one is being read to one significant figure.
+  **Phase 7 must decide before CI depends on it**: best-of-N, an explicit CPU-throttle multiplier,
+  or asserting the median of three. Lowering the number is the one option that is not on the
+  table — the budget in CLAUDE.md is the product requirement. Until then, treat a single failing
+  run as unproven rather than as a regression, and re-run it on an idle machine.
 
 ### Known gaps at the end of Phase 1
 
