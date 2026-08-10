@@ -384,3 +384,65 @@ Still open, and owned by nobody yet:
   rules do not change when it does.
 - Redis is optional in development and in tests: every cache path degrades to the database, and
   the e2e suite runs with no Redis at all specifically to keep that true.
+
+---
+
+## Group B — settled in the main session before the tracks started
+
+Two things had to land on `main` before three worktrees could be opened against it: one item the
+Group A merge explicitly carried forward with Group B named as its owner, and one contradiction
+in `docs/PHASES.md` that would have had two tracks implementing the same functions on different
+branches.
+
+### The worker can reach the storefront cache now
+
+- **`requestStorefrontRevalidation()` in `src/server/revalidation` is the one door.**
+  `revalidateStorefront()` is `revalidateTag()`, which throws outside a Next-managed context — so
+  the caching contract ("call this after any write that changes what the storefront renders") was
+  uncallable from the queue, which is exactly where A3's image pipeline finishes a variant. Inside
+  the Next server it drops the tag directly; anywhere else it POSTs to `/internal/revalidate`. The
+  runtime is decided by `NEXT_RUNTIME`, not by a try/catch around `revalidateTag` — swallowing that
+  throw would also swallow a real failure and leave a stale storefront nothing reports.
+- **The post-commit position is `createWorker`, not the processor.** A processor runs entirely
+  inside `withTenantTxn`, so a tag it dropped itself would land BEFORE the commit and race a
+  concurrent read that repopulates the cache from the old snapshot — the one outcome the drop
+  exists to prevent. A processor therefore returns `revalidateStorefront: true` and the dispatcher
+  honours it once the transaction is done. Failure there is logged and never rethrown: the write
+  has committed, and retrying the job would redo minutes of image processing to fix a cache entry
+  the five-minute TTL fixes anyway.
+- **`INTERNAL_API_SECRET` is required in production**, where the route answers 503 without it,
+  rather than accepting an unauthenticated cache drop from anything that can reach the container.
+  Optional in development, like `/internal/domain-ask`'s network-only posture.
+- `src/server/revalidation/**` joined the forbidden-shared-files list for the same reason
+  `src/server/storage/**` did: all three B tracks reach for it, and a track fixing it for its own
+  case would rewrite a contract the other two are coding against.
+
+### The demo lifecycle is B1's, the demo content is B3's
+
+`docs/PHASES.md` read two ways. The ownership table gives `src/server/billing/**` to B1 and lists
+`createDemo` / `closeDemo` / `convertDemo` under what B3 **depends on**; the comments Phase 1 left
+in `billing/index.ts` said B3 implements them.
+
+- **The tie was decided mechanically, not by preference.** `tests/unit/guardrails.test.ts` fails
+  the build if any file outside `src/server/billing/` creates a Tenant, writes a subscription
+  lifecycle field, or sets `Tenant.state` to `purging`. All three demo operations do exactly those
+  things. B3 could not have implemented them without disabling the guardrail that enforces
+  invariant 5 — which is the "fix" a worktree reaches for at 2 a.m. The Phase 1 comments were
+  wrong and are corrected in place.
+- **The join is one transaction, through `src/server/billing/demo-content.ts`.** A demo built in
+  two transactions can commit a tenant and fail on its catalogue, and what that leaves behind is a
+  shareable link to an empty shop. So `createDemo` opens the transaction and hands it to
+  `buildDemoContent`, resolved by lazy path from `@/server/demo/build` — the same device
+  `src/server/queues.ts` uses for processors, so neither track edits the other's folder. B3's stub
+  throws until B3 lands, because a builder that returned zeroes would pass every gate that only
+  checks the tenant exists.
+- **`DemoContentResult.afterCommit` exists for the media jobs specifically.** Enqueuing A3's
+  processing inside the transaction races the worker: BullMQ can deliver the job to a process that
+  cannot yet see the `Media` row, and it fails on a demo that is perfectly fine.
+- **The cost of this correction is B3's parallelism.** B3's acceptance criteria are all
+  end-to-end ("button click to a shareable link in under 30 seconds"), and none of them can be
+  proven while `createDemo` throws. So B1 and B2 run in parallel and B3 starts after B1 is merged
+  — which is the merge order `docs/PHASES.md` already prescribed, now load-bearing rather than
+  conventional.
+- `src/server/billing/demo-content.ts` is reserved inside B1's own folder, exactly as the frozen
+  packs are inside B3's.
