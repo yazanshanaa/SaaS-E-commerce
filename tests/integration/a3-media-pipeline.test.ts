@@ -37,7 +37,7 @@ vi.mock('@/server/queues', async (importOriginal) => {
 });
 
 import { getEnv, resetEnvCache } from '@/env';
-import { SYSTEM_ACTOR, withTenantTxn } from '@/server/db';
+import { SYSTEM_ACTOR, withSystemTxn, withTenantTxn } from '@/server/db';
 import {
   LocalStorageAdapter,
   exportsPrefix,
@@ -252,8 +252,7 @@ describe('Tenant.storageBytesUsed', () => {
       fileName: 'counter.jpg',
     });
 
-    // Reserved at upload time, so two concurrent uploads cannot both slip under the last
-    // megabyte of a nearly-full account.
+    // Reserved at upload time, under the row lock the concurrency case below relies on.
     expect(await currentStorageBytes(tenant.id)).toBe(original.byteLength);
 
     const processed = await runQueuedProcessing(tenant.id, uploaded.mediaId);
@@ -340,6 +339,49 @@ describe('the two server-side limit checks', () => {
     expect(thrown?.arabicMessage).toContain('24 ميغابايت');
   }, 120_000);
 
+  it('lets exactly ONE of two concurrent uploads through the last free megabyte', async () => {
+    /**
+     * The claim this measures: "the transactional re-check closes the concurrent-upload race".
+     * It did not. `readTenantStorageBytes` was a plain SELECT, so under READ COMMITTED both
+     * transactions read the same pre-image, both admitted, and both applied their delta — the
+     * account ended up over `storage_mb`. The atomic `GREATEST(0, used + delta)` update prevents
+     * a LOST increment; it says nothing about over-admission. `SELECT ... FOR UPDATE` is what
+     * actually serialises the read-decide-reserve sequence.
+     *
+     * The plan here holds 6MB. Two 4MB uploads are launched together: one must win, the other
+     * must be refused, and the counter must never exceed the quota.
+     */
+    const tenant = await tenantOnPlan('a3-race', { image_max_mb: 5, storage_mb: 6 });
+    const chunk = 4 * 1024 * 1024;
+
+    const bodies = [await jpegPaddedTo(chunk), await jpegPaddedTo(chunk)];
+    const settled = await Promise.allSettled(
+      bodies.map((body, index) =>
+        uploadMedia({
+          tenantId: tenant.id,
+          body,
+          actor: SYSTEM_ACTOR,
+          fileName: `race-${index}.jpg`,
+        }),
+      ),
+    );
+
+    const accepted = settled.filter((result) => result.status === 'fulfilled');
+    const refused = settled.filter((result) => result.status === 'rejected');
+
+    expect(accepted).toHaveLength(1);
+    expect(refused).toHaveLength(1);
+    expect(refused[0]?.reason).toMatchObject({ code: 'storageFull' });
+
+    // The counter holds one file, not two, and the quota was never crossed.
+    const used = await currentStorageBytes(tenant.id);
+    expect(used).toBeLessThanOrEqual(6 * 1024 * 1024);
+    expect(used).toBe(chunk);
+
+    // And the refused upload took its object back with it.
+    expect(await storage().list(mediaPrefix(tenant.id))).toHaveLength(1);
+  }, 120_000);
+
   it('fails CLOSED when the plan carries no limits at all', async () => {
     // A seeding gap must not read as "unlimited": `can()` returning undefined means we could not
     // establish what this tenant is entitled to, and writing bytes on that basis bypasses a plan.
@@ -401,6 +443,85 @@ describe('magic-byte verification', () => {
     const processed = await runQueuedProcessing(tenant.id, ingested.mediaId);
     expect(processed.status).toBe('ready');
     expect(processed.variants).toHaveLength(6);
+  }, 120_000);
+});
+
+describe('a processing run whose transaction did not commit', () => {
+  it('recovers the photo from the variant it already wrote, instead of calling it missing', async () => {
+    /**
+     * `src/server/queues.ts` opens the transaction around the WHOLE processor and is a frozen
+     * shared file, so the original is necessarily discarded before that transaction commits. If
+     * the commit then fails — the 120s budget, a deadlock, a dropped connection — the rows roll
+     * back to `pending` while the delete does not roll back with them.
+     *
+     * That used to be terminal: the retry found no source, and the catch turned ANY failure into
+     * a PERMANENT `sourceMissing`. The merchant's photo was gone (originals are discarded by
+     * design, so there is no second copy), the six variant objects stayed in R2 forever because
+     * their `Media` row still claimed them, and `Media.sizeBytes` still held the upload size.
+     *
+     * Simulated exactly: run the processor inside a transaction that is then rolled back.
+     */
+    const tenant = await tenantOnPlan('a3-rollback', LARGE_PLAN);
+    const uploaded = await uploadMedia({
+      tenantId: tenant.id,
+      body: await smallJpeg(900),
+      actor: SYSTEM_ACTOR,
+      fileName: 'rollback.jpg',
+    });
+
+    const rollback = new Error('commit never happened');
+    await expect(
+      withTenantTxn(
+        tenant.id,
+        async (tx) => {
+          await processMedia({ tenantId: tenant.id, mediaId: uploaded.mediaId, tx });
+          throw rollback;
+        },
+        { timeoutMs: 180_000 },
+      ),
+    ).rejects.toBe(rollback);
+
+    // The row is back to pending and the original is genuinely gone — the delete was not
+    // transactional and could not be.
+    const [pending] = (await listMedia(tenant.id, { limit: 10 })).items;
+    expect(pending?.status).toBe('pending');
+    expect(await storage().exists(uploaded.key)).toBe(false);
+
+    // The retry re-encodes from `full.webp` rather than declaring the photo lost.
+    const retry = await runQueuedProcessing(tenant.id, uploaded.mediaId);
+
+    expect(retry.status).toBe('ready');
+    expect(retry.variants).toHaveLength(6);
+
+    const [item] = (await listMedia(tenant.id, { limit: 10 })).items;
+    expect(item?.status).toBe('ready');
+    expect(item?.failureMessage).toBeNull();
+
+    // No stranded objects, and the counter holds what is actually stored.
+    const objects = await storage().list(mediaPrefix(tenant.id));
+    expect(objects).toHaveLength(6);
+    expect(await currentStorageBytes(tenant.id)).toBe(retry.storedBytes);
+  }, 180_000);
+
+  it('still reports a genuinely absent source as a permanent failure', async () => {
+    // The other half of the same change: narrowing `sourceMissing` must not stop it happening
+    // when it is true. Nothing was ever written for this item, so nothing can recover it.
+    const tenant = await tenantOnPlan('a3-nosource', LARGE_PLAN);
+    const uploaded = await uploadMedia({
+      tenantId: tenant.id,
+      body: await smallJpeg(),
+      actor: SYSTEM_ACTOR,
+    });
+
+    await storage().delete(uploaded.key);
+
+    const result = await runQueuedProcessing(tenant.id, uploaded.mediaId);
+
+    expect(result.status).toBe('failed');
+    expect(result.failureCode).toBe('sourceMissing');
+
+    const [item] = (await listMedia(tenant.id, { limit: 10 })).items;
+    expect(item?.failureMessage).toMatch(ARABIC);
   }, 120_000);
 });
 
@@ -582,6 +703,54 @@ describe('orphan cleanup', () => {
 
     expect(await storage().exists(freshGhost)).toBe(true);
     await storage().delete(freshGhost);
+  }, 120_000);
+
+  it('runs its cross-tenant read as app_system, and refuses to delete anything otherwise', async () => {
+    /**
+     * The destructive half infers "purged" from the ABSENCE of a Tenant row and then acts on that
+     * inference with `deleteByPrefix` — media AND `_exports/`, unrecoverably. Absence is exactly
+     * what a broken read produces for free, so the sweep has to be able to prove the read it is
+     * trusting happened as the role whose grants make a cross-tenant SELECT correct.
+     *
+     * `DATABASE_URL_SYSTEM` is `.optional()` in src/env.ts and falls back to the app_web URL, so
+     * "the system client is not really app_system" is a one-missing-variable deployment away.
+     */
+    const rows = await withSystemTxn(
+      async (tx) => tx.$queryRaw<Array<{ role: string }>>`SELECT current_user::text AS role`,
+    );
+    expect(rows[0]?.role).toBe('app_system');
+
+    // With one live tenant present the sweep behaves normally and is not blocked.
+    const tenant = await tenantOnPlan('a3-role', LARGE_PLAN);
+    await storage().put(`${mediaPrefix(tenant.id)}m1/full.webp`, Buffer.from('live'));
+
+    const summary = await sweepOrphanPrefixes({ dispatch: async () => undefined });
+    expect(summary.rowlessSweepBlocked).toBe(false);
+    expect(summary.tenantsDispatched).toBeGreaterThanOrEqual(1);
+  }, 120_000);
+
+  it('refuses to delete a single prefix when it can see no live tenant at all', async () => {
+    // Storage full of prefixes and not one live tenant is a broken read far more often than it is
+    // an empty platform — and the cost of guessing wrong is every merchant's library at once.
+    await resetTenants();
+
+    const ghostA = 'tenants/tnt_floor_a/media/m1/full.webp';
+    const ghostB = `tenants/tnt_floor_b/_exports/sub_1.zip`;
+    await storage().put(ghostA, Buffer.from('media'));
+    await storage().put(ghostB, Buffer.from('the whole business'));
+    await ageObject(ghostA, 48 * 60 * 60 * 1_000);
+    await ageObject(ghostB, 48 * 60 * 60 * 1_000);
+
+    const summary = await sweepOrphanPrefixes({ dispatch: async () => undefined });
+
+    expect(summary.rowlessSweepBlocked).toBe(true);
+    expect(summary.rowlessPrefixesSwept).toBe(0);
+    expect(summary.objectsDeleted).toBe(0);
+    expect(await storage().exists(ghostA)).toBe(true);
+    expect(await storage().exists(ghostB)).toBe(true);
+
+    await storage().delete(ghostA);
+    await storage().delete(ghostB);
   }, 120_000);
 });
 

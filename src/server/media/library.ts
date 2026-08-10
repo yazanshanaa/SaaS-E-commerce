@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { SYSTEM_ACTOR, withTenantTxn, type Actor } from '@/server/db';
 import { logger } from '@/server/logger';
-import { storage } from '@/server/storage';
+import { mediaStorage } from './storage';
 import { assertProductImageAlt, normaliseAltText } from './alt-text';
 import { MediaError, mediaFailureMessage } from './errors';
 import { mediaObjectPrefix } from './keys';
@@ -49,7 +49,7 @@ function toVariantViews(rows: VariantRow[]): MediaVariantView[] {
     key: row.key,
     // Always the CDN in front of R2 — `publicUrl` throws for anything outside the media
     // segment, so an export key can never reach a template through this path.
-    url: storage().publicUrl(row.key),
+    url: mediaStorage().publicUrl(row.key),
   }));
 }
 
@@ -162,9 +162,18 @@ export async function getMedia(tenantId: string, mediaId: string): Promise<Media
   };
 }
 
+/**
+ * Note what the `altText` field deliberately does NOT carry: `.min(1).max(300)`.
+ *
+ * Those bounds duplicated `assertProductImageAlt()` and ran BEFORE it, so an over-long or empty
+ * description surfaced as a raw ZodError whose issue message is English ("String must contain at
+ * most 300 character(s)") — English reaching a merchant, which the language policy forbids. Every
+ * length rule lives in one place, `alt-text.ts`, and comes back as a `MediaError` carrying the
+ * Arabic sentence and a code B2 can switch on.
+ */
 export const setAltTextSchema = z.object({
   mediaId: z.string().min(1),
-  altText: z.string().min(1).max(300),
+  altText: z.string(),
 });
 
 /**
@@ -286,10 +295,11 @@ export async function deleteMedia(
    * built from a truncated string is exactly how one wrong character removes a whole shop. A
    * failure here leaves objects with no row — which is what the orphan sweep exists to catch.
    */
+  const store = mediaStorage();
   let objectsDeleted = 0;
   for (const key of keys) {
     try {
-      await storage().delete(key);
+      await store.delete(key);
       objectsDeleted += 1;
     } catch (error) {
       logger().error(

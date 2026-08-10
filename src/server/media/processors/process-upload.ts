@@ -3,9 +3,10 @@ import { z } from 'zod';
 import type { TenantTx } from '@/server/db';
 import { logger } from '@/server/logger';
 import type { TenantJob } from '@/server/queues';
-import { storage, StorageError } from '@/server/storage';
+import { StorageError, type StorageAdapter } from '@/server/storage';
 import { MediaError, type MediaFailureCode } from '../errors';
 import { mediaVariantKey, mimeForFormat } from '../keys';
+import { mediaStorage } from '../storage';
 import { adjustTenantStorageBytes } from '../usage';
 import {
   MEDIA_VARIANT_FORMATS,
@@ -28,6 +29,13 @@ import {
  *
  * Retries are safe. A finished item short-circuits, and a partial run is overwritten: variant
  * keys are deterministic and the variant rows are replaced wholesale.
+ *
+ * STORAGE IS RESOLVED THROUGH `mediaStorage()`, NEVER THROUGH A BARE `storage()`. This module is
+ * loaded by the worker through the lazy path in `src/server/queues.ts`, which does not import
+ * `@/server/media` — so nothing here would ever have installed the R2 driver, and with
+ * STORAGE_DRIVER=r2 the registry would throw on the first call. `mediaStorage()` registers first
+ * and then returns the adapter, so the worker is not depending on some other module's import
+ * side effect for the production driver to exist.
  */
 
 const dataSchema = z.object({ mediaId: z.string().min(1) });
@@ -68,6 +76,7 @@ export interface ProcessUploadResult {
 }
 
 async function renderVariants(
+  store: StorageAdapter,
   tenantId: string,
   mediaId: string,
   source: Buffer,
@@ -105,7 +114,7 @@ async function renderVariants(
       }
 
       const key = mediaVariantKey(tenantId, mediaId, kind, format);
-      await storage().put(key, rendered.data, {
+      await store.put(key, rendered.data, {
         contentType: mimeForFormat(format),
         cacheControl: CDN_CACHE_CONTROL,
       });
@@ -124,6 +133,70 @@ async function renderVariants(
   return { variants, sourceWidth, sourceHeight };
 }
 
+/**
+ * Is this object genuinely NOT THERE, as opposed to unreachable?
+ *
+ * The distinction decides whether the merchant is told their file is missing (permanent, never
+ * retried) or the job goes back to the queue. Every driver funnels its failures through
+ * `StorageError`, so the shape of the error cannot answer the question — an unconfigured driver,
+ * an expired credential and a deleted object all arrive looking the same. A HEAD does answer it,
+ * and if the HEAD cannot answer either, "unreachable" is the safe reading.
+ */
+async function isGenuinelyAbsent(store: StorageAdapter, key: string): Promise<boolean> {
+  try {
+    return !(await store.exists(key));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Load the bytes to render from.
+ *
+ * The happy path is the uploaded original. The fallback exists because the original is discarded
+ * at the end of a run that is still INSIDE the transaction `src/server/queues.ts` opened: if that
+ * transaction then fails to commit — a 120s budget, a deadlock, a dropped connection — the rows
+ * roll back to `pending` while the delete does not roll back with them. Without a fallback the
+ * retry would find nothing, mark the item permanently failed, and tell the merchant their photo
+ * was missing; the six variant objects the dead run wrote would sit in R2 forever.
+ *
+ * So the retry re-encodes from `full.webp`, which the previous run wrote before it deleted
+ * anything. That costs one generation of WebP quality and a cap at 1600px — which is the widest
+ * variant the platform keeps anyway, the original being discarded by design. The alternative is
+ * losing the picture.
+ */
+async function loadSource(
+  store: StorageAdapter,
+  sourceKey: string,
+  canonicalKey: string,
+  context: { tenantId: string; mediaId: string },
+): Promise<Buffer> {
+  try {
+    return await store.get(sourceKey);
+  } catch (error) {
+    if (sourceKey !== canonicalKey) {
+      try {
+        const recovered = await store.get(canonicalKey);
+        logger().warn(
+          context,
+          'media source was gone; re-encoding from the delivery variant a previous run left behind',
+        );
+        return recovered;
+      } catch {
+        // No delivery variant either. Fall through to the absent/unreachable question.
+      }
+    }
+
+    if (await isGenuinelyAbsent(store, sourceKey)) {
+      throw new PermanentProcessingError('sourceMissing', error);
+    }
+
+    // Storage is unreachable or misconfigured. Retrying is the whole point of the queue, and
+    // telling the merchant we could not find their file would be a lie about the cause.
+    throw error;
+  }
+}
+
 export interface ProcessMediaInput {
   tenantId: string;
   mediaId: string;
@@ -135,6 +208,10 @@ export async function processMedia({
   mediaId,
   tx,
 }: ProcessMediaInput): Promise<ProcessUploadResult> {
+  // Resolved BEFORE the row is touched: a driver that is not installed must surface as a plain
+  // throw the queue will retry, not as a "failure" recorded against the merchant's image.
+  const store = mediaStorage();
+
   const media = await tx.media.findFirst({
     where: { id: mediaId, tenantId },
     select: { id: true, key: true, status: true, sizeBytes: true },
@@ -151,16 +228,22 @@ export async function processMedia({
 
   await tx.media.update({ where: { id: mediaId }, data: { status: 'processing' } });
 
-  try {
-    let source: Buffer;
-    try {
-      source = await storage().get(media.key);
-    } catch (error) {
-      // The source is gone and this item is not ready: nothing will make it appear.
-      throw new PermanentProcessingError('sourceMissing', error);
-    }
+  /**
+   * `Media.key` moves from the source object to the canonical delivery object. From here on
+   * the row points at something that exists and is public-safe; the upload's own bytes are
+   * about to stop existing.
+   */
+  const canonicalKey = mediaVariantKey(tenantId, mediaId, 'full', 'webp');
 
-    const { variants, sourceWidth, sourceHeight } = await renderVariants(tenantId, mediaId, source);
+  try {
+    const source = await loadSource(store, media.key, canonicalKey, { tenantId, mediaId });
+
+    const { variants, sourceWidth, sourceHeight } = await renderVariants(
+      store,
+      tenantId,
+      mediaId,
+      source,
+    );
     const storedBytes = variants.reduce((sum, variant) => sum + variant.sizeBytes, 0);
 
     // Replaced wholesale so a retry after a partial run cannot leave a stale row behind.
@@ -178,13 +261,6 @@ export async function processMedia({
       })),
     });
 
-    /**
-     * `Media.key` moves from the source object to the canonical delivery object. From here on
-     * the row points at something that exists and is public-safe; the upload's own bytes are
-     * about to stop existing.
-     */
-    const canonicalKey = mediaVariantKey(tenantId, mediaId, 'full', 'webp');
-
     await tx.media.update({
       where: { id: mediaId },
       data: {
@@ -200,9 +276,17 @@ export async function processMedia({
     // The counter tracked the upload; now it tracks what is actually stored.
     await adjustTenantStorageBytes(tx, tenantId, storedBytes - media.sizeBytes);
 
-    // Discard the original LAST: every row that could still need it has been written.
+    /**
+     * Discard the original LAST (invariant 4).
+     *
+     * "Last" is as close to the commit as this module can get: `src/server/queues.ts` opens the
+     * transaction around the whole processor and is a frozen shared file, so there is no
+     * post-commit hook to hang this on. The gap that leaves — delete succeeds, commit does not —
+     * is closed on the retry by `loadSource()`, which re-encodes from `full.webp` instead of
+     * declaring the photo missing.
+     */
     if (media.key !== canonicalKey) {
-      await storage().delete(media.key);
+      await store.delete(media.key);
     }
 
     logger().info(

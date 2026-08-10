@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   BYTES_PER_MEGABYTE,
+  MAX_ALT_LENGTH,
   MEDIA_ERROR_CODES,
   MEDIA_FAILURE_CODES,
   MediaError,
   admitUpload,
   assertProductImageAlt,
   formatPlanMegabytes,
+  formatStorageBytes,
   isArabicText,
   mediaFailureMessage,
   megabytesToBytes,
@@ -39,7 +41,14 @@ describe('every refusal has Arabic copy behind it', () => {
     // `t()` throws outside production on a missing key, so a code added without its Arabic line
     // would surface here rather than as a 500 in front of a merchant.
     for (const code of MEDIA_ERROR_CODES) {
-      const error = new MediaError(code, { size: '1', limit: '2', used: '3', count: 1 });
+      const error = new MediaError(code, {
+        size: '1',
+        limit: '2',
+        remaining: '3',
+        used: '4',
+        count: 1,
+        max: 300,
+      });
       expect(error.arabicMessage, code).toMatch(ARABIC);
       // The English side stays on `message`, which is what a log line and a stack trace carry.
       expect(error.message).toContain(code);
@@ -60,7 +69,7 @@ describe('every refusal has Arabic copy behind it', () => {
 describe('formatPlanMegabytes', () => {
   it('renders a plan limit the way the plan sells it', () => {
     // 3000MB is 2.9 GiB. A merchant comparing that line against the plan they bought would read
-    // it as being short-changed, so whole thousands are rendered as gigabytes.
+    // it as being short-changed, so thousands are rendered as gigabytes.
     expect(formatPlanMegabytes(500)).toBe('500 ميغابايت');
     expect(formatPlanMegabytes(3_000)).toBe('3 غيغابايت');
     expect(formatPlanMegabytes(10_000)).toBe('10 غيغابايت');
@@ -69,6 +78,28 @@ describe('formatPlanMegabytes', () => {
 
   it('uses Western Arabic digits', () => {
     expect(formatPlanMegabytes(500)).toMatch(/\b500\b/);
+  });
+});
+
+describe('one byte convention per sentence', () => {
+  it('renders a byte count and the plan limit it will sit beside identically', () => {
+    // The bug this replaces: `{limit}` came from formatPlanMegabytes (1GB = 1000MB) and `{used}`
+    // from formatBytes (1GB = 1024MB), so a full 3000MB account was described as "3 غيغابايت,
+    // 2.9 غيغابايت used" — roughly 100MB of free space that does not exist, next to a refusal.
+    expect(formatStorageBytes(megabytesToBytes(3_000))).toBe(formatPlanMegabytes(3_000));
+    expect(formatStorageBytes(megabytesToBytes(500))).toBe(formatPlanMegabytes(500));
+    expect(formatStorageBytes(megabytesToBytes(10_000))).toBe(formatPlanMegabytes(10_000));
+  });
+
+  it('rounds free space DOWN and a required size UP, so the two can never meet', () => {
+    // 4.64MB free and a 4.62MB photo would otherwise both render "4.6 ميغابايت", and the refusal
+    // would read as a contradiction.
+    expect(formatStorageBytes(4.64 * BYTES_PER_MEGABYTE, 'down')).toBe('4.6 ميغابايت');
+    expect(formatStorageBytes(4.62 * BYTES_PER_MEGABYTE, 'up')).toBe('4.7 ميغابايت');
+  });
+
+  it('never reports negative free space', () => {
+    expect(formatStorageBytes(-1, 'down')).toBe('0 ميغابايت');
   });
 });
 
@@ -120,8 +151,53 @@ describe('the account limit (storage_mb)', () => {
 
     expect(thrown?.code).toBe('storageFull');
     expect(thrown?.arabicMessage).toContain('500 ميغابايت');
-    // And what is already used, so "احذف صوراً قديمة" is actionable rather than vague.
-    expect(thrown?.arabicMessage).toContain('499 ميغابايت');
+    // And how much room is actually left, so "احذف صوراً قديمة" is actionable rather than vague.
+    expect(thrown?.arabicMessage).toContain('1 ميغابايت');
+    expect(thrown?.arabicMessage).toContain('4 ميغابايت');
+  });
+
+  it('produces a refusal whose own numbers agree with it', () => {
+    // The regression: a 3000MB plan with 3MB of headroom used to be refused with the sentence
+    // "your quota is 3 غيغابايت, 2.9 غيغابايت used, this photo needs 5 ميغابايت" — a merchant
+    // reads ~100MB free and a refusal, and opens a support ticket.
+    const plan = limits(10, 3_000);
+    let thrown: MediaError | undefined;
+    try {
+      admitUpload({
+        limits: plan,
+        usedBytes: plan.storageBytes - 3 * BYTES_PER_MEGABYTE,
+        fileSizeBytes: 5 * BYTES_PER_MEGABYTE,
+      });
+    } catch (error) {
+      thrown = error as MediaError;
+    }
+
+    expect(thrown?.code).toBe('storageFull');
+    expect(thrown?.arabicMessage).toContain('3 غيغابايت');
+    expect(thrown?.arabicMessage).toContain('3 ميغابايت');
+    expect(thrown?.arabicMessage).toContain('5 ميغابايت');
+    // The old copy claimed 2.9 غيغابايت were used, which is the same number in a different
+    // convention and the reason the sentence contradicted itself.
+    expect(thrown?.arabicMessage).not.toContain('2.9');
+  });
+
+  it('names a per-file overage that rounding would otherwise hide', () => {
+    // 10.04MiB on the 10MB plan used to render as "حجم الصورة 10 ميغابايت، والحد المسموح
+    // 10 ميغابايت" — a refusal that names two identical numbers.
+    let thrown: MediaError | undefined;
+    try {
+      admitUpload({
+        limits: limits(10, 10_000),
+        usedBytes: 0,
+        fileSizeBytes: Math.round(10.04 * BYTES_PER_MEGABYTE),
+      });
+    } catch (error) {
+      thrown = error as MediaError;
+    }
+
+    expect(thrown?.code).toBe('fileTooLarge');
+    expect(thrown?.arabicMessage).toContain('10.1 ميغابايت');
+    expect(thrown?.arabicMessage).toContain('10 ميغابايت');
   });
 
   it('lets the last byte in — the check is a ceiling, not a margin', () => {
@@ -165,6 +241,27 @@ describe('alt text', () => {
     expect(() => assertProductImageAlt('')).toThrow(MediaError);
     expect(() => assertProductImageAlt(null)).toThrow(MediaError);
     expect(() => assertProductImageAlt('   ')).toThrow(MediaError);
+  });
+
+  it('refuses an over-long description as TOO LONG, not as too short', () => {
+    // The regression: `alt.length > MAX_ALT_LENGTH` threw `altTooShort`, so a merchant who wrote
+    // four hundred characters was told "الوصف قصير. اكتب جملة..." — go and write more.
+    let thrown: MediaError | undefined;
+    try {
+      assertProductImageAlt('قميص '.repeat(100));
+    } catch (error) {
+      thrown = error as MediaError;
+    }
+
+    expect(thrown?.code).toBe('altTooLong');
+    expect(thrown?.arabicMessage).toMatch(ARABIC);
+    expect(thrown?.arabicMessage).toContain(String(MAX_ALT_LENGTH));
+    expect(thrown?.httpStatus).toBe(422);
+  });
+
+  it('accepts a description exactly at the limit', () => {
+    const atLimit = 'ق'.repeat(MAX_ALT_LENGTH);
+    expect(assertProductImageAlt(atLimit)).toHaveLength(MAX_ALT_LENGTH);
   });
 
   it('refuses a Latin filename pasted into the box', () => {

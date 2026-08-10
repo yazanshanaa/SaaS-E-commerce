@@ -71,6 +71,7 @@ export {
   BYTES_PER_MEGABYTE,
   admitUpload,
   formatPlanMegabytes,
+  formatStorageBytes,
   megabytesToBytes,
   resolveStorageLimits,
   type PlanStorageLimits,
@@ -125,6 +126,14 @@ export {
   mimeForFormat,
   isMediaSourceKey,
 } from './keys';
+
+export {
+  MEDIA_CLEANUP_CRON,
+  MEDIA_CLEANUP_JOB_ID,
+  MEDIA_CLEANUP_TIMEZONE,
+  scheduleMediaCleanup,
+  type ScheduleMediaCleanupOptions,
+} from './schedule';
 
 export {
   ORPHAN_GRACE_MS,

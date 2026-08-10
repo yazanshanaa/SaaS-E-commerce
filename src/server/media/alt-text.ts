@@ -40,7 +40,12 @@ export function assertProductImageAlt(value: string | null | undefined): string 
 
   if (!alt) throw new MediaError('altMissing');
   if (alt.length < MIN_ALT_LENGTH) throw new MediaError('altTooShort');
-  if (alt.length > MAX_ALT_LENGTH) throw new MediaError('altTooShort');
+  // Its own code, and its own sentence. Telling a merchant who wrote four hundred characters
+  // that "the description is short, write a sentence" sends them to write more of the thing
+  // that was refused.
+  if (alt.length > MAX_ALT_LENGTH) {
+    throw new MediaError('altTooLong', { max: MAX_ALT_LENGTH, length: alt.length });
+  }
   if (!isArabicText(alt)) throw new MediaError('altNotArabic');
 
   return alt;

@@ -3,7 +3,7 @@ import { SYSTEM_ACTOR, withTenantTxn, type Actor } from '@/server/db';
 import { randomToken } from '@/server/crypto';
 import { logger } from '@/server/logger';
 import { enqueue, tenantJob } from '@/server/queues';
-import { storage } from '@/server/storage';
+import { mediaStorage } from './storage';
 import type { ClientIpInput } from '@/server/http/get-client-ip';
 import { MediaError } from './errors';
 import { mediaSourceKey } from './keys';
@@ -96,15 +96,17 @@ async function ingest({
   // the limit exists to protect, and on R2 it would be a billable write.
   admitUpload({ limits, usedBytes: await currentStorageBytes(tenantId), fileSizeBytes: sizeBytes });
 
-  await storage().put(key, body, { contentType: mimeType });
+  await mediaStorage().put(key, body, { contentType: mimeType });
 
   try {
     await withTenantTxn(
       tenantId,
       async (tx) => {
-        // Checked AGAIN inside the transaction that reserves the quota, against a row-level read.
-        // Two concurrent uploads would otherwise both see the same "before" value and both slip
-        // under the last megabyte.
+        // Checked AGAIN inside the transaction that reserves the quota, against a LOCKED read of
+        // the tenant row (`SELECT ... FOR UPDATE`). The lock is what actually closes the race:
+        // without it both of two concurrent uploads read the same "before" value under READ
+        // COMMITTED, both admit, and the account lands over its quota. With it the second one
+        // waits for the first to commit and then sees the value that includes it.
         const usedBytes = await readTenantStorageBytes(tx, tenantId);
         admitUpload({ limits, usedBytes, fileSizeBytes: sizeBytes });
 
@@ -129,7 +131,7 @@ async function ingest({
   } catch (error) {
     // The object exists and the row does not. Take the object back rather than leaving it for
     // the sweep — the sweep is a backstop, not a cleanup strategy.
-    await storage()
+    await mediaStorage()
       .delete(key)
       .catch(() => undefined);
     throw error;
@@ -161,7 +163,7 @@ async function rollbackIngest(
       await tx.media.deleteMany({ where: { id: mediaId, tenantId } });
       await adjustTenantStorageBytes(tx, tenantId, -sizeBytes);
     });
-    await storage().delete(key);
+    await mediaStorage().delete(key);
   } catch (error) {
     // The orphan sweep is the backstop for exactly this: an object with no row, which it will
     // find and remove on its next run.

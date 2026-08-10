@@ -1,8 +1,9 @@
 import { withSystemTxn, type TenantTx } from '@/server/db';
 import { logger } from '@/server/logger';
 import { enqueue, tenantJob, type Job } from '@/server/queues';
-import { isExportKey, isMediaKey, storage, tenantPrefix } from '@/server/storage';
+import { isExportKey, isMediaKey, tenantPrefix } from '@/server/storage';
 import { mediaIdFromKey, isMediaSourceKey } from '../keys';
+import { mediaStorage } from '../storage';
 
 /**
  * A3 — periodic orphan cleanup on object storage.
@@ -31,6 +32,11 @@ import { mediaIdFromKey, isMediaSourceKey } from '../keys';
  * with no matching Tenant row is precisely what a purge that raced against an in-flight upload
  * leaves behind: objects nothing will ever look for again, under an id no query returns. Walking
  * live tenants would step straight past them.
+ *
+ * ── Storage is resolved through `mediaStorage()` ────────────────────────────────────────────
+ * The worker reaches this module through the lazy path in `src/server/queues.ts`, which never
+ * imports `@/server/media` — so a bare `storage()` would find no R2 adapter registered and throw
+ * on the first list. `mediaStorage()` installs the driver and then answers.
  */
 
 /** Bounded so one run cannot pull an entire bucket's key space into memory. */
@@ -61,7 +67,15 @@ export interface SystemSweepSummary {
   tenantsDispatched: number;
   rowlessPrefixesSwept: number;
   objectsDeleted: number;
+  /**
+   * True when the destructive half refused to run because it could not trust its own view of
+   * which tenants are alive. Fan-out still happened; nothing was deleted.
+   */
+  rowlessSweepBlocked: boolean;
 }
+
+/** The database role a cross-tenant read must be running as. See `withSystemTxn`. */
+const SYSTEM_DB_ROLE = 'app_system';
 
 function isOlderThan(lastModified: Date | undefined, ageMs: number): boolean {
   if (!lastModified) return true;
@@ -79,7 +93,8 @@ export async function sweepTenantOrphans(
   tenantId: string,
   tx: TenantTx,
 ): Promise<TenantSweepSummary> {
-  const objects = await storage().list(tenantPrefix(tenantId), MAX_KEYS_PER_RUN);
+  const store = mediaStorage();
+  const objects = await store.list(tenantPrefix(tenantId), MAX_KEYS_PER_RUN);
 
   const media = await tx.media.findMany({
     where: { tenantId },
@@ -126,7 +141,7 @@ export async function sweepTenantOrphans(
 
     if (!orphaned) continue;
 
-    await storage().delete(object.key);
+    await store.delete(object.key);
     summary.deleted += 1;
   }
 
@@ -150,7 +165,7 @@ async function defaultDispatch(tenantId: string): Promise<void> {
 export async function collectStoragePrefixes(): Promise<
   Map<string, { objects: number; newest?: Date }>
 > {
-  const objects = await storage().list('tenants/', MAX_KEYS_PER_RUN);
+  const objects = await mediaStorage().list('tenants/', MAX_KEYS_PER_RUN);
   const prefixes = new Map<string, { objects: number; newest?: Date }>();
 
   for (const object of objects) {
@@ -176,10 +191,27 @@ export async function collectStoragePrefixes(): Promise<
  * artifact along with everything else. There is nothing under that prefix left to protect — but
  * it still waits out a full day first, so a purge that is merely SLOW is never mistaken for one
  * that finished.
+ *
+ * ── Why this half needs guards the tenant half does not ─────────────────────────────────────
+ * `sweepTenantOrphans` is fail-safe by construction: it reads through RLS, so a bug that pointed
+ * it at the wrong tenant would see an empty set and delete nothing. This half has the opposite
+ * shape. It infers "purged" from ABSENCE of a row, and it acts on that inference with
+ * `deleteByPrefix` — media and `_exports/` together, unrecoverably, since originals are discarded
+ * by design. Absence is the one signal a broken query produces for free.
+ *
+ * So the destructive half refuses to run unless it can prove two things about the read it is
+ * about to trust:
+ *   1. it happened as `app_system` — the only role whose grants make a cross-tenant SELECT
+ *      correct, and the role a production deployment gets only by setting DATABASE_URL_SYSTEM
+ *      (which is optional in env.ts and falls back to the app_web URL);
+ *   2. it found at least one live tenant. A platform with storage prefixes and zero live tenants
+ *      is either a genuine full purge — rare enough to be worth a human — or a broken read.
+ * Fan-out is unaffected either way: dispatching a per-tenant sweep is safe on its own.
  */
 export async function sweepOrphanPrefixes(
   options: SystemSweepOptions = {},
 ): Promise<SystemSweepSummary> {
+  const store = mediaStorage();
   const dispatch = options.dispatch ?? defaultDispatch;
   const prefixes = await collectStoragePrefixes();
   const ids = [...prefixes.keys()];
@@ -189,16 +221,33 @@ export async function sweepOrphanPrefixes(
     tenantsDispatched: 0,
     rowlessPrefixesSwept: 0,
     objectsDeleted: 0,
+    rowlessSweepBlocked: false,
   };
 
   if (ids.length === 0) return summary;
 
   // Read-only, as `app_system`: this role has no write grant on any tenant-owned table, so the
   // "a SystemJob must not write tenant data" rule is enforced by Postgres and not by review.
-  const live = await withSystemTxn(async (tx) =>
-    tx.tenant.findMany({ where: { id: { in: ids } }, select: { id: true } }),
-  );
+  const { live, role } = await withSystemTxn(async (tx) => {
+    const roleRows = await tx.$queryRaw<Array<{ role: string }>>`SELECT current_user::text AS role`;
+    const rows = await tx.tenant.findMany({ where: { id: { in: ids } }, select: { id: true } });
+    return { live: rows, role: roleRows[0]?.role ?? '' };
+  });
   const liveIds = new Set(live.map((tenant) => tenant.id));
+
+  if (role !== SYSTEM_DB_ROLE) {
+    logger().error(
+      { role, expected: SYSTEM_DB_ROLE, prefixes: ids.length },
+      'orphan sweep is not running as the system role; refusing to delete any prefix. Set DATABASE_URL_SYSTEM.',
+    );
+    summary.rowlessSweepBlocked = true;
+  } else if (liveIds.size === 0) {
+    logger().error(
+      { prefixes: ids.length },
+      'orphan sweep found storage prefixes and not one live tenant; refusing to delete. This is a broken read far more often than it is an empty platform.',
+    );
+    summary.rowlessSweepBlocked = true;
+  }
 
   for (const tenantId of ids) {
     if (liveIds.has(tenantId)) {
@@ -207,10 +256,12 @@ export async function sweepOrphanPrefixes(
       continue;
     }
 
+    if (summary.rowlessSweepBlocked) continue;
+
     const entry = prefixes.get(tenantId);
     if (!isOlderThan(entry?.newest, ROWLESS_PREFIX_GRACE_MS)) continue;
 
-    const deleted = await storage().deleteByPrefix(tenantPrefix(tenantId));
+    const deleted = await store.deleteByPrefix(tenantPrefix(tenantId));
     summary.rowlessPrefixesSwept += 1;
     summary.objectsDeleted += deleted;
 
