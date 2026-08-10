@@ -3,7 +3,23 @@ import { QUEUE_NAMES, closeQueues, createWorker, queue, systemJob } from '@/serv
 import { closeRedis } from '@/server/redis';
 import { disconnectAll } from '@/server/db';
 import { logger } from '@/server/logger';
+import { registerMediaStorage } from '@/server/media/storage';
+import { scheduleMediaCleanup } from '@/server/media/schedule';
 import { getEnv } from '@/env';
+
+/**
+ * Install the R2 adapter before anything can ask for one — A3 sync point 3.
+ *
+ * `src/server/media/storage` is the only module in the repository allowed to build an R2 client
+ * (the lint rule and `tests/unit/a3-s3-containment.test.ts` both enforce it), so no other folder's
+ * bootstrap can do this no matter who owns it. Everything outside the media folder — the export
+ * jobs, `src/server/billing` — calls the bare `storage()`, which THROWS under STORAGE_DRIVER=r2
+ * when nothing has registered an adapter. It used to work only if a media job happened to run in
+ * this process first, which is worse than failing outright.
+ *
+ * Idempotent, and a no-op unless STORAGE_DRIVER=r2, so a development checkout is unaffected.
+ */
+registerMediaStorage();
 
 /**
  * The worker process — a SEPARATE container from the web server.
@@ -43,6 +59,15 @@ async function registerRepeatables(): Promise<void> {
     repeat: { every: 30_000 },
     jobId: 'webhook-dispatch',
   });
+
+  /**
+   * A3 sync point 1 — the orphan sweep. The schedule itself is A3's
+   * (`scheduleMediaCleanup`, pinned by `tests/unit/a3-cleanup-schedule.test.ts`); only the call
+   * was outside its write scope. Until it ran, the source object of every failed or rolled-back
+   * upload accumulated in R2 forever, and the `_exports/` protection the sweep was written around
+   * was never exercised in production.
+   */
+  await scheduleMediaCleanup();
 }
 
 async function shutdown(signal: string): Promise<void> {
