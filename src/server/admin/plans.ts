@@ -203,8 +203,26 @@ export async function savePlan(
     });
   }
 
+  /**
+   * On CREATE every capability gets a row, whether or not the caller supplied one.
+   *
+   * `isCapabilityVisible()` is fail-closed, so a missing `PlanCapability` reads as hidden — and a
+   * plan created with a partial matrix would produce storefronts with no announcement bar, no
+   * offers board, no social links and no map, silently, with nothing in the panel to explain it.
+   * Raised by A2 at merge review. The panel's own form always posts all six, so this is the guard
+   * for every other caller: a script, a seed, a later track.
+   *
+   * The default renders the content and reserves editing for the platform owner, which is the
+   * أساسي posture and the safe direction — a plan that shows too little is a silently broken shop,
+   * a plan that grants too much editing is a visible mistake an admin can correct.
+   *
+   * On UPDATE an omitted capability is still skipped: a partial matrix there is a partial edit,
+   * not a new plan, and overwriting an unmentioned row would discard a deliberate setting.
+   */
   for (const capabilityKey of CAPABILITY_KEYS) {
-    const value = matrix.capabilities[capabilityKey];
+    const supplied = matrix.capabilities[capabilityKey];
+    const value =
+      supplied ?? (existing ? undefined : { visible: true, editableBy: 'admin' as const });
     if (value === undefined) continue;
 
     await ctx.db.planCapability.upsert({

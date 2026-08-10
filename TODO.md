@@ -146,8 +146,8 @@ Recorded in full in `docs/PHASES.md` → **Resolved decisions**. Nothing here bl
 
 ## Group A (parallel — start only after the Phase 1 gate is green and merged)
 
-- [ ] Worktrees created: `sb-a1` / `sb-a2` / `sb-a3`
-- [ ] Each worktree bootstrapped: `pnpm install`, `.env` copied, isolated database + Redis db index
+- [x] Worktrees created: `sb-a1` / `sb-a2` / `sb-a3`
+- [x] Each worktree bootstrapped: `pnpm install`, `.env` copied, isolated database + Redis db index
 
 ### A1 — Super Admin panel (owns `src/app/(admin)` **except `(admin)/demos`**, `src/server/admin`)
 - [x] Overview dashboard: accounts by status, revenue, latest events
@@ -176,59 +176,76 @@ Recorded in full in `docs/PHASES.md` → **Resolved decisions**. Nothing here bl
 - [x] Gate: feature toggle reflected immediately by `can()`; `editable_by` → admin locks the merchant field immediately; monthly account records the setup fee and annual does not; no account creation path outside this panel
 
 ### A2 — Storefront and templates (owns `src/templates`, `src/app/(storefront)`)
-- [ ] Template registry + tokens + section renderer driven by `site-contract` zod schemas
-- [ ] Section types: hero, products_grid, categories, about, gallery, testimonials, announcements, contact_whatsapp, map, custom_html (flagged)
-- [ ] Announcement bar: text + optional link + scheduling + visitor-dismissible
-- [ ] Social links in footer and contact section — only populated ones render, zero-links case handled
-- [ ] Permanent legal footer with the five page links (placeholders for Phase 6) + "إلغاء معاملة" when selling is enabled
-- [ ] Consent banner gating all tracking
-- [ ] **Umami loads only when `can(tenantId,'analytics')` AND consent exists** — أساسي sites are never tracked
-- [ ] WhatsApp ordering builds the Arabic message client-side — **no order persisted, no visitor name/phone collected**
-- [ ] Map section: Google Maps + Waze deep links from coordinates, with the free-text query fallback
-- [ ] Announcements section cards carry **start and end** scheduling, matching the bar
-- [ ] Template `diwan` — cream / burnt orange / olive — Zain
-- [ ] Template `neon-souq` — near-black / rose / gold — Alexandria
-- [ ] Template `warsheh` — dark slate / amber / steel — IBM Plex Sans Arabic
-- [ ] Arabic fonts subset, self-hosted, preloaded
-- [ ] Demo presentation driven by the `isDemo` context flag: watermark, full noindex, Arabic rejection page
-- [ ] Color customization through the contrast guard in both modes (preset and custom)
-- [ ] **Baseline SEO on every plan** (meta, OG, sitemap, robots, JSON-LD); `seo_tools` gates only the editable fields UI
-- [ ] Suspended-account page: polite Arabic "الموقع متوقف مؤقتاً", noindex
-- [ ] ISR/caching keyed by hostname with tenantId in the cache key and invalidation on domain reassignment
-- [ ] Images via variants only
-- [ ] `messages/ar/storefront.json`
-- [ ] `docs/decisions/a2.md`
-- [ ] Gate: axe-core no serious/critical; Lighthouse mobile ≥ 90 with 30 products; templates verified with long and short real Arabic strings; first visit without consent issues zero tracking requests; an أساسي site issues zero tracking requests even with consent; a basic-plan site still emits complete metadata
+- [x] Template registry + tokens + section renderer driven by `site-contract` zod schemas
+- [x] Section types: hero, products_grid, categories, about, gallery, testimonials, announcements, contact_whatsapp, map, custom_html (flagged)
+- [x] Announcement bar: text + optional link + scheduling + visitor-dismissible
+- [x] Social links in footer and contact section — only populated ones render, zero-links case handled
+- [x] Permanent legal footer with the five page links (placeholders for Phase 6) + "إلغاء معاملة" when selling is enabled
+- [x] Consent banner gating all tracking
+- [x] **Umami loads only when `can(tenantId,'analytics')` AND consent exists** — أساسي sites are never tracked
+- [x] WhatsApp ordering builds the Arabic message client-side — **no order persisted, no visitor name/phone collected**
+- [x] Map section: Google Maps + Waze deep links from coordinates, with the free-text query fallback
+- [x] Announcements section cards carry **start and end** scheduling, matching the bar
+- [x] Template `diwan` — cream / burnt orange / olive — Zain
+- [x] Template `neon-souq` — near-black / rose / gold — Alexandria
+- [x] Template `warsheh` — dark slate / amber / steel — IBM Plex Sans Arabic
+- [x] Arabic fonts subset, self-hosted, preloaded
+- [x] Demo presentation driven by the `isDemo` context flag: watermark, full noindex, Arabic rejection page
+- [x] Color customization through the contrast guard in both modes (preset and custom)
+- [x] **Baseline SEO on every plan** (meta, OG, sitemap, robots, JSON-LD); `seo_tools` gates only the editable fields UI
+- [x] Suspended-account page: polite Arabic "الموقع متوقف مؤقتاً", noindex
+- [x] ISR/caching keyed by hostname with tenantId in the cache key and invalidation on domain reassignment
+- [x] Images via variants only
+- [x] `messages/ar/storefront.json`
+- [x] `docs/decisions/a2.md`
+- [x] Gate: axe-core no serious/critical; Lighthouse mobile ≥ 90 with 30 products; templates verified with long and short real Arabic strings; first visit without consent issues zero tracking requests; an أساسي site issues zero tracking requests even with consent; a basic-plan site still emits complete metadata
 
 ### A3 — Media pipeline (owns `src/server/media`)
-- [ ] `StorageAdapter` interface: R2 driver (production) + local-disk driver (dev only)
-- [ ] **`deleteByPrefix(prefix)` on the interface** — B1's purge and B3's close-demo both need it
-- [ ] **`delete(key)` on the interface** — B1's reactivation removes exactly one object on a **live** tenant, where `deleteByPrefix` would destroy every product image
-- [ ] **`signedUrl(key, ttl)` on the interface**, ttl ≤ 1h, minted per request — document the SigV4 7-day ceiling so nobody offers it as a durable link
-- [ ] Object layout: media under `tenants/{id}/media/`, billing exports under `tenants/{id}/_exports/`; **CDN origin restricted to the media segment**
-- [ ] **Orphan cleanup skips `_exports/`** — those objects have no `Media` row by design; sweeping them would delete a suspended merchant's copy mid-window. A3 merges before B1 exists, so this must be written now
-- [ ] Orphan cleanup enumerates **R2 prefixes**, not only live tenants, so a prefix with no Tenant row is swept (backstop for anything a purge raced)
-- [ ] Public URLs always from the CDN in front of R2
-- [ ] Lint rule: no S3 client import outside `src/server/media/storage`
-- [ ] Upload endpoint: magic-byte allow-list (jpeg/png/webp — uploaded SVG never accepted)
-- [ ] Rejection above the plan's `image_max_mb` (2 / 5 / 10)
-- [ ] **Rejection when `storageBytesUsed + fileSize` would exceed `storage_mb` (500MB / 3GB / 10GB)**
-- [ ] Both rejections return a clear Arabic error naming the limit that was hit
-- [ ] Rate limiting via `getClientIp()`
-- [ ] Queue processing as a `TenantJob`: Sharp → WebP + AVIF at 400/800/1600, strip metadata, discard the original
-- [ ] Merchant media library: grid, delete, mandatory Arabic alt text, storage counter
-- [ ] Media jobs own `Tenant.storageBytesUsed`
-- [ ] Orphan cleanup on R2 as a `SystemJob` that fans out per tenant
-- [ ] `messages/ar/media.json`
-- [ ] `docs/decisions/a3.md`
-- [ ] Gate: 8MB upload → variants 70%+ smaller via CDN URLs; counter updates; both limit rejections work with clear Arabic errors; `deleteByPrefix` removes every object under a tenant prefix; **`delete(key)` removes exactly one object and leaves the rest intact**; `signedUrl` resolves only its own key and stops after its TTL; **an `_exports/` object is not fetchable through the CDN unsigned and survives a full orphan-cleanup run**; dev works offline on the local driver
+- [x] `StorageAdapter` interface: R2 driver (production) + local-disk driver (dev only)
+- [x] **`deleteByPrefix(prefix)` on the interface** — B1's purge and B3's close-demo both need it
+- [x] **`delete(key)` on the interface** — B1's reactivation removes exactly one object on a **live** tenant, where `deleteByPrefix` would destroy every product image
+- [x] **`signedUrl(key, ttl)` on the interface**, ttl ≤ 1h, minted per request — document the SigV4 7-day ceiling so nobody offers it as a durable link
+- [x] Object layout: media under `tenants/{id}/media/`, billing exports under `tenants/{id}/_exports/`; **CDN origin restricted to the media segment**
+- [x] **Orphan cleanup skips `_exports/`** — those objects have no `Media` row by design; sweeping them would delete a suspended merchant's copy mid-window. A3 merges before B1 exists, so this must be written now
+- [x] Orphan cleanup enumerates **R2 prefixes**, not only live tenants, so a prefix with no Tenant row is swept (backstop for anything a purge raced)
+- [x] Public URLs always from the CDN in front of R2
+- [x] Lint rule: no S3 client import outside `src/server/media/storage`
+- [x] Upload endpoint: magic-byte allow-list (jpeg/png/webp — uploaded SVG never accepted)
+- [x] Rejection above the plan's `image_max_mb` (2 / 5 / 10)
+- [x] **Rejection when `storageBytesUsed + fileSize` would exceed `storage_mb` (500MB / 3GB / 10GB)**
+- [x] Both rejections return a clear Arabic error naming the limit that was hit
+- [x] Rate limiting via `getClientIp()`
+- [x] Queue processing as a `TenantJob`: Sharp → WebP + AVIF at 400/800/1600, strip metadata, discard the original
+- [x] Merchant media library: grid, delete, mandatory Arabic alt text, storage counter
+- [x] Media jobs own `Tenant.storageBytesUsed`
+- [x] Orphan cleanup on R2 as a `SystemJob` that fans out per tenant
+- [x] `messages/ar/media.json`
+- [x] `docs/decisions/a3.md`
+- [x] Gate: 8MB upload → variants 70%+ smaller via CDN URLs; counter updates; both limit rejections work with clear Arabic errors; `deleteByPrefix` removes every object under a tenant prefix; **`delete(key)` removes exactly one object and leaves the rest intact**; `signedUrl` resolves only its own key and stops after its TTL; **an `_exports/` object is not fetchable through the CDN unsigned and survives a full orphan-cleanup run**; dev works offline on the local driver
 
 ### Group A merge (main session, Fable 5 / Opus)
-- [ ] Review + merge `phase-a1`, gates green
-- [ ] Review + merge `phase-a2`, gates green (incl. axe + Lighthouse)
-- [ ] Review + merge `phase-a3`, gates green (incl. the 8MB upload check)
-- [ ] Track decision files folded into `docs/DECISIONS.md`
-- [ ] Worktrees and branches removed
+- [x] Review + merge `phase-a1`, gates green
+- [x] Review + merge `phase-a2`, gates green (incl. axe + Lighthouse)
+- [x] Review + merge `phase-a3`, gates green (incl. the 8MB upload check)
+- [x] Track decision files folded into `docs/DECISIONS.md`
+- [x] Worktrees and branches removed
+
+**A1 was built twice** — on `phase-a1` and in the main session. The main-session build was kept
+(it solves the cross-host impersonation handoff the branch left open); the branch's two findings
+were ported into it first and `phase-a1` was dropped unmerged. See `docs/DECISIONS.md`.
+
+**Sync points serviced at merge:** the language gate now walks `src/templates` (A2 #6);
+`registerMediaStorage()` runs at boot in both containers (A3 #3, the declared merge blocker) and
+the orphan sweep is scheduled (A3 #1); A1's plan CRUD writes all six `PlanCapability` rows on
+create, since `isCapabilityVisible()` is fail-closed (raised by A2 at review).
+
+**Still open, carried forward** — full detail in `docs/DECISIONS.md`:
+- [ ] `DATABASE_URL_SYSTEM` set in production; no production compose exists yet — **Phase 7**
+- [ ] CDN origin restricted to the `media/` segment, or a separate bucket for `_exports/` — **Phase 7**
+- [ ] E2E stack needs an adapter minting CDN URLs, or its image assertions run on an empty set — **Phase 7**
+- [ ] Edge cache purge on media delete (currently up to 24h stale) — **Phase 6**, privacy copy must match
+- [ ] `Consent.ipHash` is written by nothing; dropping it is a schema change — **Phase 6**
+- [ ] `revalidateStorefront()` is not callable from the worker, which is where variants finish — **Group B**
 
 ---
 

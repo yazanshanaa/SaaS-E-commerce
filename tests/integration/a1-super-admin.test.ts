@@ -23,6 +23,7 @@ import {
   suspendAccount,
 } from '@/server/admin';
 import { can, canEdit, remainingChangeRequests } from '@/server/entitlements';
+import { CAPABILITY_KEYS } from '@/shared/features';
 import { superAdminDb, verifiedActor } from '@/server/db';
 import { jerusalemDateKey } from '@/server/time';
 import * as billing from '@/server/billing';
@@ -825,6 +826,51 @@ describe('plan management', () => {
     expect('state' in result && result.state.fieldErrors?.[0]?.messageKey).toBe(
       'admin:plans.keyTaken',
     );
+  });
+
+  /**
+   * Raised by A2 at merge review. `isCapabilityVisible()` is fail-closed, so a plan created with
+   * a partial capability matrix produces storefronts with no announcement bar, no offers board,
+   * no social links and no map — silently, with nothing in the panel that explains it.
+   */
+  it('gives a newly created plan all six capability rows, even from a partial matrix', async () => {
+    const key = `partial-${nextSuffix()}`;
+
+    const result = await savePlan(
+      ctx,
+      {
+        key,
+        name: 'باقة اختبار',
+        description: '',
+        priceMonthlyAgorot: '99',
+        priceYearlyAgorot: '990',
+        setupFeeAgorot: '0',
+        hidden: false,
+        active: true,
+        sortOrder: 9,
+      },
+      // Deliberately partial: only one of the six is supplied.
+      { features: {}, capabilities: { colors: { visible: false, editableBy: 'merchant' } } },
+      { create: true },
+    );
+
+    expect('planKey' in result).toBe(true);
+
+    const plan = await adminDb().plan.findUnique({
+      where: { key },
+      select: { capabilities: { select: { capabilityKey: true, visible: true, editableBy: true } } },
+    });
+
+    expect(plan!.capabilities).toHaveLength(CAPABILITY_KEYS.length);
+
+    // What the caller asked for is honoured verbatim...
+    const colors = plan!.capabilities.find((row) => row.capabilityKey === 'colors');
+    expect(colors).toMatchObject({ visible: false, editableBy: 'merchant' });
+
+    // ...and everything omitted renders, with editing reserved to the platform owner.
+    for (const row of plan!.capabilities.filter((c) => c.capabilityKey !== 'colors')) {
+      expect(row).toMatchObject({ visible: true, editableBy: 'admin' });
+    }
   });
 });
 

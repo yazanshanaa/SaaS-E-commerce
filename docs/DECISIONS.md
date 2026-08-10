@@ -263,6 +263,108 @@ Full record in `docs/decisions/a1.md`. The four that another track has to know a
   resolves to a 404. A1 ships the admin-host equivalents so the platform owner is never locked
   out of their own panel.
 
+### Two holes closed in A1 at merge review
+
+A1 was built twice — once on `phase-a1`, once in the main session. The main-session build was
+kept, because it solves the cross-host impersonation handoff that the branch declared unsolved,
+and the branch's two concrete findings were ported into it before it was dropped:
+
+- **The offered-plan restriction is re-checked server-side.** The creation form's `<select>` is
+  filtered to `!hidden && active`, but `planKey` is free-form text in the POST body and nothing
+  downstream stopped it — `assertPeriodEndAllowed` only rejects a NULL period end on a *visible*
+  plan, and `billing.createAccount` sets `isDemo: plan.hidden`. Posting `demo` opened a **paying**
+  account behind proxy.ts's demo-token gate, force-noindexed, the ₪350 skipped, and eligible for
+  B3's close-demo, which deletes it outright. Invariant 2: a filtered dropdown is not a check.
+- **A failed `billing.createAccount` no longer strands the owner's email.** The owner `User` is
+  written before billing and outside its transaction, so a failure left it holding the merchant's
+  address and the `emailTaken` pre-check refused the operator's own retry forever, on a row no
+  screen shows. `discardOrphanOwner` deletes only a user belonging to **no** tenant.
+
+## A2 — Storefront and templates
+
+Full record in `docs/decisions/a2.md`. What another track has to know:
+
+- **`src/templates/lib/legal.ts` owns the legal footer list**, and Phase 6's whole storefront job
+  is to write the `Page` rows behind it — no template file changes, no new route. Until they
+  exist a known legal slug renders a short Arabic "قيد التجهيز" page, noindex, because a link
+  compliance forces onto every page must not lead to a 404. `sitemap.xml` lists them regardless.
+- **Baseline SEO ships on every plan.** Nothing in `_data/metadata.ts` asks what plan a tenant is
+  on; `seo_tools` gates only the editable title/description UI B2 builds. A merchant downgraded
+  from احترافي keeps the title they already wrote. Structured data is withheld from demo and
+  suspended sites — a rich snippet outlives crawlability.
+- **`isCapabilityVisible()` is fail-closed**, so a plan missing a `PlanCapability` row produces a
+  storefront with no announcement bar, offers board, social links or map, silently. A1's plan CRUD
+  now writes all six rows on create even from a partial matrix (default: visible, `editable_by`
+  admin), which is the safe direction — a plan that shows too little is a broken shop, a plan that
+  grants too much editing is a visible mistake. `sections_layout` is deliberately not consulted by
+  the storefront: it governs who may reorder, not whether anything renders.
+- **There is no `custom_html` feature key** — `src/shared/features.ts` is frozen, so the section
+  is gated on `seo_tools` through the single constant `CUSTOM_HTML_FEATURE_KEY`, failing closed.
+  Its sanitiser is hand-written (a worktree cannot add a dependency) and Phase 6 should replace it
+  with a vetted library, keeping the attack-list tests.
+
+## A3 — Media pipeline
+
+Full record in `docs/decisions/a3.md`. What another track has to know:
+
+- **`StorageAdapter` carries `deleteByPrefix`, `delete(key)` and `signedUrl(key, ttl)`** because a
+  later track cannot add a method to a merged folder. `signedUrl` is capped at 1h and documents
+  the SigV4 seven-day ceiling: it must never be offered as Q18's thirty-day link, which is kept by
+  a platform route instead.
+- **`deleteByPrefix` reads `DeleteObjects`' per-key `Errors` and raises when a prefix did not
+  empty.** The API is partial-success — HTTP 200 with failures in a list — so counting the batch
+  meant B1's purge would certify a tenant erased while their images stayed fetchable.
+- **Orphan cleanup skips `_exports/`, and sweeps a rowless prefix only when a `TenantTombstone`
+  proves a purge happened.** Inferring "purged" from a missing Tenant row would delete a live
+  bucket wholesale after any Q10 restore, where the database returns from a 14-day-old dump and R2
+  does not. Until B1 writes tombstones, nothing is swept — the correct direction to fail.
+- **The fan-out comes from the database; the bucket scan only finds rowless prefixes.** A listing
+  capped at 100k keys stopped mid-bucket in lexicographic order, and cuids ascend with creation
+  time, so it was always the newest tenants that silently fell off the end.
+
+## Group A merge — sync points serviced, and what is still open
+
+Serviced here (all are files a track may not write):
+
+- **The language gate walked `src/app` only**, so every storefront component was exempt from the
+  one check that forbids a hardcoded sentence in a component. It now walks `src/templates` too,
+  with a case asserting each root yields files — otherwise a folder rename turns both checks into
+  assertions about an empty list, passing while measuring nothing.
+- **`registerMediaStorage()` now runs at boot in both containers** — `src/worker/index.ts` and a
+  new `src/instrumentation.ts`. A3's declared merge blocker, and correctly so: only
+  `/api/media/upload` pulled `@/server/media` into a bundle, so on a fresh web container a
+  suspended merchant opening `app.{DOMAIN}/export/{token}` got a 500 unless a photo happened to
+  have been uploaded through that process first. Intermittent is worse than broken.
+- **The orphan sweep is scheduled** in `registerRepeatables()`. Until it ran, the source object of
+  every failed upload accumulated in R2 forever.
+
+Still open, and owned by nobody yet:
+
+- **`DATABASE_URL_SYSTEM` must be set in production.** It is optional in `src/env.ts` and falls
+  back to `DATABASE_URL`; only the dev compose wires it, and there is no production compose in the
+  repository yet. Unset, every cross-tenant sweep reads through the wrong role's grants. B1's
+  lifecycle sweep will depend on the same variable. **Phase 7.**
+- **The CDN origin must be restricted to the `media/` segment.** Attaching a Cloudflare custom
+  domain to the bucket publishes *every* key, including `_exports/{subscriptionId}-{suspendedAt}.zip`
+  — a whole business in one file, at a key B1 makes deterministic. Either a rule matching
+  `^tenants/[^/]+/media/` or, better because it is structural, a separate bucket for exports.
+  `publicUrl()` refuses to mint a non-media URL, and that is all it can enforce. **Phase 7.**
+- **Deleting a photo does not purge the edge.** Media is served `max-age=86400,
+  stale-while-revalidate=604800`, so a deleted image can serve from the CDN for up to a day and
+  B1's purge inherits that window. Bounded and statable, but Phase 6's privacy copy has to match
+  whichever zone fronts the bucket. **Phase 6.**
+- **`revalidateStorefront()` cannot be called from the worker.** `revalidateTag` throws outside a
+  Next-managed context, so the documented contract — call it after any write that changes what the
+  storefront renders — is not callable from the queue, which is exactly where A3's image pipeline
+  finishes a variant. Needs a revalidation endpoint the worker posts to. **Group B.**
+- **The e2e stack asserts images over an empty set.** It has no `CDN_PUBLIC_BASE_URL`, and
+  `storage()` correctly refuses to mint a public URL from the local driver under
+  `NODE_ENV=production`, so `toStorefrontImage` returns null and no `<img>` is emitted. The guard
+  is on the driver, so an env value alone is not enough — the stack needs a registered adapter that
+  mints CDN URLs without serving bytes off the app disk. **Phase 7.**
+- **`Consent.ipHash` is written by nothing.** A2 stopped populating it and no other track writes a
+  `Consent` row. Dropping the column is a schema change. **Phase 6.**
+
 ### Known gaps at the end of Phase 1
 
 - `pnpm e2e` covers login, password reset and hostname resolution. Storefront, dashboard and
