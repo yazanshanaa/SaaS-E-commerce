@@ -1,14 +1,16 @@
 import type { SystemJob } from '@/server/queues';
+import { sweepSubscriptions, type SweepCounts } from './lifecycle-sweep';
 
 /**
- * PLACEHOLDER — owned by B1 — Billing lifecycle.
+ * The daily repeatable, registered in `src/worker/index.ts` at 03:00 Asia/Jerusalem.
  *
- * Daily 03:00 Asia/Jerusalem sweep. Selects ids only, then fans out into TenantJobs.
+ * A fixed UTC hour would drift by an hour twice a year with Israeli DST and eventually run during
+ * business hours, which for a job that suspends storefronts is not a cosmetic problem.
  *
- * Phase 1 registers this path in src/server/queues.ts so the owning track can implement it
- * without editing a shared file. Until then the job fails loudly: a processor that silently
- * did nothing would look like a working queue.
+ * The body lives in `./lifecycle-sweep` so it can be called with an injected clock: proving that
+ * a subscription lapses, warns, and is purged on the right days needs fake timers, and a
+ * processor that reads `new Date()` internally cannot be tested that way at all.
  */
-export default async function process(_ctx: { job: SystemJob }): Promise<never> {
-  throw new Error('Processor not implemented yet — owned by B1 — Billing lifecycle.');
+export default async function process(_ctx: { job: SystemJob }): Promise<SweepCounts> {
+  return sweepSubscriptions();
 }

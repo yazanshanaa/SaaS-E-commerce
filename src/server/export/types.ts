@@ -20,6 +20,8 @@
  * we hand them on the way out.
  */
 
+import type { TenantTx } from '@/server/db';
+
 export const EXPORT_MODES = ['suspension', 'self_serve'] as const;
 export type ExportMode = (typeof EXPORT_MODES)[number];
 
@@ -33,8 +35,18 @@ export interface ExportOptions {
   suspendedAt?: Date;
   /** Who asked. Recorded in the audit row for a self-serve export. */
   actorUserId?: string | null;
-  /** B1 completes the images half; Phase 1 ships products CSV only. */
+  /** Defaults to true since B1. Set false only for a catalogue-only export. */
   includeImages?: boolean;
+  /**
+   * The caller's own transaction, when it already holds one.
+   *
+   * The `build-export` processor runs inside the transaction `createWorker` opens for every
+   * TenantJob. Without this, `exportTenantData` would open a SECOND transaction on a second
+   * connection for reads that the caller's transaction could already answer — and the two would
+   * see different snapshots, so a catalogue could change between the CSV and the image
+   * inventory. Passing the transaction in makes the export one consistent read of one moment.
+   */
+  tx?: TenantTx;
 }
 
 export interface ExportArtifact {
@@ -46,7 +58,14 @@ export interface ExportArtifact {
   contents: {
     products: number;
     categories: number;
+    /** Image FILES in the archive, not ProductImage rows. */
     images: number;
+    /**
+     * Images the archive does not contain: still processing, or past the in-memory budget in
+     * `images.ts`, or unreadable from storage. Written into the README the merchant opens —
+     * a cap nobody is told about reads as "we gave you everything".
+     */
+    imagesOmitted: number;
   };
 }
 
