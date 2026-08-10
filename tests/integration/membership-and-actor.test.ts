@@ -63,6 +63,42 @@ describe('cross-tenant membership reads', () => {
     const found = await authDb().user.findUnique({ where: { id: beta.ownerUserId } });
     expect(found?.id).toBe(beta.ownerUserId);
   });
+
+  /**
+   * The test above proves the POLICY. This one proves the WIRING, and the difference is not
+   * academic: `member_self` was correct from day one, but `authDb()` never set `app.user_id`,
+   * so `getSession()` resolved `memberRole = null` for every merchant on every request. Not a
+   * race and not a cache — permanent. Every dashboard screen would have refused its own owner,
+   * and A1's impersonation (the Q17 sales path) with it.
+   *
+   * It survived Phase 1 because the only membership test drove the RAW client and set the GUC
+   * by hand, which is exactly the shape of a test that verifies a policy nobody can reach.
+   */
+  it('authDb resolves the caller’s OWN membership — the path getSession actually takes', async () => {
+    const membership = await authDb(alpha.ownerUserId).member.findFirst({
+      where: { tenantId: alpha.id, userId: alpha.ownerUserId },
+      select: { role: true, tenantId: true },
+    });
+
+    expect(membership, 'authDb(userId) must resolve the caller’s own membership').not.toBeNull();
+    expect(membership!.tenantId).toBe(alpha.id);
+    expect(membership!.role).toBe('owner');
+  });
+
+  it('authDb without a user id resolves nothing — the bug, pinned', async () => {
+    // Kept as a test rather than a comment: it is the difference between the two calls, and it
+    // is what makes the argument above non-optional to a future reader who sees `authDb()` and
+    // assumes the parameter is a nicety.
+    expect(
+      await authDb().member.findFirst({ where: { tenantId: alpha.id, userId: alpha.ownerUserId } }),
+    ).toBeNull();
+  });
+
+  it('authDb with one user’s id never reveals another user’s membership', async () => {
+    expect(
+      await authDb(alpha.ownerUserId).member.findFirst({ where: { userId: beta.ownerUserId } }),
+    ).toBeNull();
+  });
 });
 
 describe('a client cannot spoof app.actor_role', () => {

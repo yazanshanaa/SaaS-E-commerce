@@ -394,9 +394,15 @@ Copy-Item ..\souq-bartaa\.env .env            # .env is untracked — copying is
 
 | Track | Owns | Also | Depends on |
 |---|---|---|---|
-| **A1** Super Admin panel | `src/app/admin` **except `admin/demos`**, `src/server/admin` | `messages/ar/admin.json`, `docs/decisions/a1.md`, its own TODO section | Phase 1 (consumes `site-contract`, `billing`, `entitlements` read-only) |
-| **A2** Storefront + templates | `src/templates`, `src/app/site` | `messages/ar/storefront.json`, `docs/decisions/a2.md`, its own TODO section | Phase 1 (`site-contract`) |
-| **A3** Media pipeline | `src/server/media` (incl. `storage/` and its processors) | `messages/ar/media.json`, `docs/decisions/a3.md`, its own TODO section | Phase 1 (`queues.ts` pre-registers its path) |
+| **A1** Super Admin panel | `src/app/admin` **except `admin/demos`**, `src/app/api/admin`, `src/server/admin` | `messages/ar/admin.json`, `docs/decisions/a1.md` | Phase 1 (consumes `site-contract`, `billing`, `entitlements` read-only) |
+| **A2** Storefront + templates | `src/templates`, `src/app/site`, `src/app/api/storefront`, `public/fonts` | `messages/ar/storefront.json`, `docs/decisions/a2.md` | Phase 1 (`site-contract`) |
+| **A3** Media pipeline | `src/server/media` (incl. `storage/` and its processors), `src/app/api/media` | `messages/ar/media.json`, `docs/decisions/a3.md` | Phase 1 (`queues.ts` pre-registers its path) |
+
+> **`/api/**` is namespaced per track and is UNPREFIXED.** Unlike `src/app/admin`, an `/api` route
+> answers on *every* hostname — platform surfaces and merchant custom domains alike — because the
+> surface rewrite deliberately skips it. A handler there cannot infer its surface from its path:
+> it reads the resolved context and checks the session itself. Each track keeps to its own
+> segment so two tracks cannot collide on a route name.
 
 > `src/app/admin/demos/**` is reserved for **B3**, which owns the whole demo surface — the pack picker, the request inbox and the close action. A1 must not build demo screens: demo creation lives in `src/server/demo`, which does not exist until Group B, so an approve button in A1 would be a dead button that still passes A1's gate.
 

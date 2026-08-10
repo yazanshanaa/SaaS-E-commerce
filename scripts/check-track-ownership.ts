@@ -252,6 +252,44 @@ function changedFiles(cwd: string, base: string): string[] {
   return [...out].sort();
 }
 
+/**
+ * The blind spot in every `main...HEAD` diff: commits made TO main.
+ *
+ * A track that edits a forbidden file inside its worktree is caught by the check above. A track
+ * that walks into the main checkout and commits there is not — the commit becomes the baseline
+ * every other diff is measured against, so it vanishes from all of them. That is the failure
+ * mode with the worst blast radius, because the whole point of the forbidden list is that these
+ * files change only under main-session review.
+ *
+ * This cannot be decided automatically: the main session commits to main legitimately all the
+ * time, and it shares a git identity with every agent. So the check reports rather than judges —
+ * it prints what main has accumulated since the group started, and the reviewer confirms each
+ * one was theirs. Set the baseline with a tag (`group-a-base`) or OWNERSHIP_GROUP_BASE.
+ */
+function reportMainHistory(cwd: string): void {
+  const baseline = process.env.OWNERSHIP_GROUP_BASE ?? 'group-a-base';
+
+  let log: string;
+  try {
+    log = git(cwd, ['log', '--oneline', '--no-decorate', `${baseline}..main`]);
+  } catch {
+    console.log(`main history: baseline '${baseline}' not found — skipping`);
+    console.log("  create it when a parallel group starts: git tag group-a-base main");
+    return;
+  }
+
+  const commits = log.split('\n').filter((line) => line.trim());
+
+  console.log(`main history since ${baseline}: ${commits.length} commit(s)`);
+  if (commits.length === 0) return;
+
+  for (const commit of commits) {
+    console.log(`    ${commit}`);
+  }
+  console.log('  ^ every one of these must be main-session work that was reviewed.');
+  console.log('    A commit here from a track agent is a forbidden-file edit that no diff shows.');
+}
+
 function main(): void {
   assertMatcherWorks();
 
@@ -284,6 +322,7 @@ function main(): void {
   }
 
   console.log(`ownership check: ${track}  (${cwd})  base=${base}  files=${files.length}`);
+  reportMainHistory(cwd);
 
   if (files.length === 0) {
     // Reported distinctly from "clean". A branch with no changes passes every rule trivially,

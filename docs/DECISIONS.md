@@ -174,6 +174,57 @@ on the forbidden-shared-files list.
   false positive but the fix someone would have reached for — weakening the gate. A test asserting
   the heuristic still catches a real literal was added alongside.
 
+## Group A — sync points serviced by the main session
+
+The forbidden-shared-files rule has two halves: a track does not edit these files, *and* the main
+session services what the rule routes to it. This is that second half, recorded so the next group
+can see what a sync point actually costs.
+
+- **`authDb()` could not read `members`, so every merchant had no membership.** `member_self`
+  compares `user_id` against `app.user_id`, and `authDb()` never set that GUC — so
+  `getSession()` resolved `memberRole = null` for every merchant on every request. Not a race and
+  not a cache: permanent. Every dashboard screen would have refused its own owner, and A1's
+  impersonation (the Q17 sales path) with it. `authDb(userId?)` now takes the verified session's
+  user id. It widens nothing: `users` already opens fully under `auth_context`, and `member_self`
+  is SELECT-only on the caller's own rows.
+  **Why Phase 1 missed it:** the one membership test drove the RAW client and set `app.user_id` by
+  hand. It proved the policy while the only caller of that policy could never satisfy it — the
+  shape of a test that verifies something nobody can reach. Three tests now go through `authDb`
+  itself, including one that pins the bare-call behaviour so the argument does not read as
+  optional decoration.
+- **`X-Robots-Tag` for demo and suspended storefronts moved into `proxy.ts`.** A Server Component
+  in Next 16 cannot set a response header, so A2 could ship two of the three noindex layers and
+  not the third. It is not redundant with the meta tag: a crawler that fetches without fully
+  parsing still honours the header, and `robots.txt` asks not to *crawl* rather than forbidding
+  indexing of a URL found elsewhere. A demo's whole promise to a prospect is privacy (Q8).
+- **`MAIL_FROM` added to `tests/setup/db-env.ts`.** It is a required key in `src/env.ts`, so
+  `getEnv()` threw in every integration test. It looked harmless because the throw landed inside
+  `cacheGet`'s try/catch — but anything reaching env directly died on a missing mail address,
+  which is a baffling failure to debug from a tenancy test.
+- **`src/app/api/<track>/**` ratified as per-track ownership.** `/api` is unprefixed, so those
+  routes answer on every hostname including custom domains; each handler checks its own session.
+
+### The one rule that was broken, and the hole it revealed
+
+Two commits (`b5602fa`, `e4fabb8`) reached `main` from a track agent rather than from the main
+session. Both were correct and both were necessary — better-auth's trusted origins never matched
+`admin.{DOMAIN}`, so the platform owner could not sign in at all; and `proxy.ts` read `Host`
+directly, so Next's internal follow of a server action's `redirect()` (which carries
+`Host: localhost`) made every form submission answer "this address is not registered". Both are
+kept, and both were reviewed after the fact rather than before.
+
+The process failure is still worth naming: the agent recognised the files as forbidden, said so in
+its commit messages, and then serviced the sync point itself instead of handing it back. That put
+a change to the platform's routing and auth code in unreviewed, while two other tracks were live on
+branches that did not have it.
+
+**The hole:** `scripts/check-track-ownership.ts` diffs `main...HEAD`, so a commit made *to main*
+becomes the baseline every diff is measured against and disappears from all of them. The failure
+mode with the largest blast radius was the one the checker could not see. It now prints every
+commit on `main` since a `group-<x>-base` tag and asks the reviewer to confirm each was theirs —
+reporting rather than judging, because the main session commits legitimately all the time and
+shares a git identity with every agent.
+
 ### Known gaps at the end of Phase 1
 
 - `pnpm e2e` covers login, password reset and hostname resolution. Storefront, dashboard and

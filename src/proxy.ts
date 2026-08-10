@@ -118,6 +118,27 @@ function intoSurface(
   return NextResponse.rewrite(url, { request: { headers } });
 }
 
+/**
+ * The third noindex layer: `X-Robots-Tag` on the HTML document itself.
+ *
+ * A2 ships the other two — `<meta name="robots">` and a per-hostname `robots.txt` — but a
+ * Server Component in Next 16 has no way to set a response header, so this one can only be set
+ * here. It is not redundant with the meta tag: a crawler that fetches a page without executing
+ * or fully parsing it still honours the header, and `robots.txt` is a request not to crawl
+ * rather than a rule against indexing a URL discovered elsewhere. A demo tenant's whole promise
+ * to a prospect is that their showcase site is private (Q8), and a suspended merchant's pause
+ * page has no business ranking for their own shop name.
+ */
+function withRobotsTag(
+  response: NextResponse,
+  tenant: { isDemo: boolean; isSuspended: boolean },
+): NextResponse {
+  if (tenant.isDemo || tenant.isSuspended) {
+    response.headers.set('x-robots-tag', 'noindex, nofollow');
+  }
+  return response;
+}
+
 export default async function proxy(request: NextRequest): Promise<NextResponse> {
   const headers = sanitisedHeaders(request);
   // NOT `request.headers.get('host')`. Next follows a server action's redirect() with an internal
@@ -198,7 +219,7 @@ export default async function proxy(request: NextRequest): Promise<NextResponse>
       return NextResponse.rewrite(url, { request: { headers } });
     }
 
-    const response = intoSurface(request, headers, 'storefront');
+    const response = withRobotsTag(intoSurface(request, headers, 'storefront'), tenant);
 
     // Remember the token so the prospect can browse the demo without carrying ?token= on
     // every link. Scoped to this hostname, http-only, and it dies with the demo.
@@ -214,5 +235,5 @@ export default async function proxy(request: NextRequest): Promise<NextResponse>
     return response;
   }
 
-  return intoSurface(request, headers, 'storefront');
+  return withRobotsTag(intoSurface(request, headers, 'storefront'), tenant);
 }

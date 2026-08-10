@@ -23,3 +23,8 @@ process.env.ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString('base64');
 process.env.BETTER_AUTH_SECRET ??= Buffer.alloc(32, 9).toString('base64');
 process.env.WEBHOOK_HMAC_SECRET ??= Buffer.alloc(32, 11).toString('base64');
 process.env.REDIS_URL ??= 'redis://127.0.0.1:6379';
+// `MAIL_FROM` is a REQUIRED key in src/env.ts, so leaving it unset made getEnv() throw in every
+// integration test. It looked harmless because the throw happened inside cacheGet's try/catch —
+// but anything reaching for env directly (storefrontHost, isReservedSlug, absoluteUrl) died on a
+// missing mail address, which is a baffling failure to debug from a tenancy test.
+process.env.MAIL_FROM ??= 'no-reply@souqbartaa.test';

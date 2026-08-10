@@ -76,9 +76,12 @@ export async function getSession(source?: HeaderSource): Promise<ResolvedSession
 
   let memberRole: MemberRole | null = null;
   if (tenantId && platformRole !== 'super_admin') {
-    // Read through the auth client: `members` carries the narrow self policy, so this
-    // resolves the caller's OWN membership and nothing else.
-    const membership = await authDb().member.findFirst({
+    // Read through the auth client, passing the VERIFIED user id: `members` carries the narrow
+    // `member_self` policy, which compares against `app.user_id`. Calling `authDb()` bare here
+    // left that GUC empty, so the policy matched nothing and every merchant resolved to
+    // `memberRole = null` — permanently. The id comes from better-auth's own session lookup
+    // above, never from anything the client sent.
+    const membership = await authDb(user.id).member.findFirst({
       where: { tenantId, userId: user.id },
       select: { role: true },
     });

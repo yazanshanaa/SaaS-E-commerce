@@ -116,7 +116,19 @@ export function publicDb(): ScopedDb {
  * better-auth's client. It sets `app.auth_context`, and the auth tables answer to that flag
  * and nothing else — so a code path that merely forgot to scope itself still cannot read a
  * session token.
+ *
+ * `userId` is what makes the `member_self` policy usable, and it is not optional decoration.
+ * That policy reads `user_id = current_setting('app.user_id')`; without this argument the GUC
+ * is the empty string, so it matches no row, and `members` is ALSO under generic tenant
+ * isolation — which `authDb` cannot satisfy either, since resolving a membership is precisely
+ * what happens BEFORE a tenant context exists. The result was that `getSession()` resolved
+ * `memberRole = null` for every merchant on every request: not a race, not a cache, permanent.
+ * Every dashboard screen would have refused its own owner.
+ *
+ * Pass ONLY a user id that came out of a verified session. It widens nothing else: the `users`
+ * policy already opens fully under `auth_context`, and `member_self` is SELECT-only and scoped
+ * to the caller's own rows by construction.
  */
-export function authDb(): ScopedDb {
-  return buildScoped({ authContext: true });
+export function authDb(userId?: string): ScopedDb {
+  return buildScoped({ authContext: true, userId: userId ?? null });
 }
