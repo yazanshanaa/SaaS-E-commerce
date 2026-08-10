@@ -56,14 +56,46 @@ const platformRoles = {
   super_admin: accessControl.newRole({ ...adminAc.statements }),
 };
 
+/**
+ * The two platform origins, in EXACTLY the form a browser puts in an `Origin` header.
+ *
+ * This is not cosmetic. better-auth compares a trusted origin with `pattern === new URL(o).origin`,
+ * and an origin never carries a trailing slash — so `absoluteUrl(host)`, which returns
+ * `https://admin.{DOMAIN}/`, can never match anything. Passing it produced a list that looked
+ * complete and matched nothing, leaving only the origin derived from `baseURL` (the APP host)
+ * actually trusted. The visible symptom was the super admin being unable to sign in on
+ * `admin.{DOMAIN}` at all: `/sign-in/email` runs better-auth's CSRF check, which force-validates
+ * the origin whenever the browser sends `Sec-Fetch-*` headers, and answered 403 INVALID_ORIGIN.
+ *
+ * The port comes from `baseURL` rather than being assumed absent. In production there is none and
+ * these are the bare origins; in dev and in the e2e stack the platform answers on a port, and an
+ * origin without it matches nothing — which is the same failure one layer down.
+ */
+export function platformOrigins(baseURL: string): string[] {
+  const scheme = getEnv().PUBLIC_SCHEME;
+
+  let port = '';
+  try {
+    port = new URL(baseURL).port;
+  } catch {
+    // A malformed baseURL is better-auth's problem to report; here it just means "no port".
+  }
+
+  const suffix = port ? `:${port}` : '';
+  return [
+    `${scheme}://${platformHost('app')}${suffix}`,
+    `${scheme}://${platformHost('admin')}${suffix}`,
+  ];
+}
+
 export function createAuth() {
   const env = getEnv();
   const appHost = platformHost('app');
-  const adminHost = platformHost('admin');
+  const baseURL = env.BETTER_AUTH_URL ?? absoluteUrl(appHost);
 
   return betterAuth({
     appName: 'Souq Bartaa',
-    baseURL: env.BETTER_AUTH_URL ?? absoluteUrl(appHost),
+    baseURL,
     secret: env.BETTER_AUTH_SECRET,
 
     // The auth layer gets its own client, which sets `app.auth_context`. The auth tables
@@ -147,7 +179,9 @@ export function createAuth() {
       defaultCookieAttributes: { sameSite: 'lax', httpOnly: true },
     },
 
-    trustedOrigins: [absoluteUrl(appHost), absoluteUrl(adminHost)],
+    // Both platform hosts, as real origins. See platformOrigins() for why absoluteUrl() is wrong
+    // here — it was, and it cost admin.{DOMAIN} its sign-in.
+    trustedOrigins: platformOrigins(baseURL),
 
     user: {
       modelName: 'user',
