@@ -52,7 +52,7 @@ export interface LighthouseScores {
    * nothing about the storefront. Naming them is what lets a reviewer tell that apart from a
    * defect in ten seconds instead of re-running Lighthouse by hand.
    */
-  failures: Array<{ category: string; id: string; title: string }>;
+  failures: Array<{ category: string; id: string; title: string; detail: string }>;
 }
 
 export async function runLighthouse(url: string): Promise<LighthouseScores> {
@@ -151,11 +151,39 @@ function collectFailures(
     for (const ref of category.auditRefs) {
       const audit = audits[ref.id];
       if (!audit || typeof audit.score !== 'number' || audit.score >= 1) continue;
-      failures.push({ category: key, id: ref.id, title: audit.title });
+      failures.push({ category: key, id: ref.id, title: audit.title, detail: detailOf(audit) });
     }
   }
 
   return failures;
+}
+
+/**
+ * The first few offending items of a failing audit, flattened to one line.
+ *
+ * "Browser errors were logged to the console" is not actionable; the URL and the message are.
+ * Lighthouse's `details.items` shape differs per audit, so this reads the handful of fields that
+ * carry meaning across all of them rather than modelling each type.
+ */
+function detailOf(audit: Lhr['audits'][string]): string {
+  const details = audit.details as { items?: Array<Record<string, unknown>> } | undefined;
+  const items = details?.items;
+  if (!Array.isArray(items) || items.length === 0) return '';
+
+  const described = items.slice(0, 3).map((item) => {
+    const parts = ['description', 'source', 'url', 'label', 'reason', 'failureType']
+      .map((field) => item[field])
+      .filter((value): value is string => typeof value === 'string' && value.length > 0);
+
+    const fallback = typeof item.node === 'object' && item.node !== null
+      ? String((item.node as { snippet?: unknown }).snippet ?? '')
+      : '';
+
+    return (parts.join(' — ') || fallback || JSON.stringify(item)).slice(0, 220);
+  });
+
+  const more = items.length > described.length ? ` (+${items.length - described.length} more)` : '';
+  return described.join(' | ') + more;
 }
 
 export function formatScores(url: string, scores: LighthouseScores): string {
@@ -164,6 +192,10 @@ export function formatScores(url: string, scores: LighthouseScores): string {
     `Lighthouse (mobile) ${url}`,
     `  performance ${scores.performance} · a11y ${scores.accessibility} · best-practices ${scores.bestPractices} · seo ${scores.seo}`,
     `  FCP ${Math.round(m.firstContentfulPaintMs)}ms · LCP ${Math.round(m.largestContentfulPaintMs)}ms · TBT ${Math.round(m.totalBlockingTimeMs)}ms · CLS ${m.cumulativeLayoutShift} · SI ${Math.round(m.speedIndexMs)}ms`,
-    ...scores.failures.map((failure) => `  - ${failure.category}/${failure.id}: ${failure.title}`),
+    ...scores.failures.map(
+      (failure) =>
+        `  - ${failure.category}/${failure.id}: ${failure.title}` +
+        (failure.detail ? `\n      ${failure.detail}` : ''),
+    ),
   ].join('\n');
 }
