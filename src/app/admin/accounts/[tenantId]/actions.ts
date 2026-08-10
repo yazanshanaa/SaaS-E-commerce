@@ -1,0 +1,114 @@
+'use server';
+
+import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
+import {
+  clearFeatureOverride,
+  getAccount,
+  parseFeatureValue,
+  provisionAccountAnalytics,
+  sendOwnerPasswordLink,
+  setFeatureOverride,
+  startImpersonation,
+  text,
+  textList,
+} from '@/server/admin';
+import { isFeatureKey } from '@/shared/features';
+import { requireAdminPage } from '../../_components/guard';
+
+/**
+ * Account-level actions.
+ *
+ * These are one-click controls rather than long forms, so their outcome comes back as a query
+ * parameter on a redirect instead of through `useActionState` — the page re-reads the value it
+ * just changed and the notice explains what happened. That keeps the feature matrix free of
+ * client JavaScript entirely: a toggle is a submit button in its own tiny form.
+ */
+
+function back(tenantId: string, result: { ok?: string; error?: string }): never {
+  const query = result.error
+    ? `?error=${encodeURIComponent(result.error)}`
+    : result.ok
+      ? `?ok=${encodeURIComponent(result.ok)}`
+      : '';
+  redirect(`/accounts/${tenantId}${query}`);
+}
+
+export async function setFeatureAction(form: FormData): Promise<void> {
+  const ctx = await requireAdminPage();
+  const tenantId = text(form, 'tenantId');
+  const featureKey = text(form, 'featureKey');
+
+  if (!isFeatureKey(featureKey)) back(tenantId, { error: 'admin:errors.unknownFeature' });
+
+  const parsed = parseFeatureValue(featureKey, {
+    boolean: text(form, 'value') === 'on',
+    text: text(form, 'value'),
+    list: textList(form, 'value'),
+    unlimited: text(form, 'unlimited') === 'on',
+  });
+
+  if (!parsed.ok) back(tenantId, { error: parsed.messageKey });
+
+  const state = await setFeatureOverride(ctx, tenantId, featureKey, parsed.value);
+  revalidatePath(`/accounts/${tenantId}`);
+  back(tenantId, state ? { error: state.messageKey } : { ok: 'admin:account.saved' });
+}
+
+export async function clearFeatureAction(form: FormData): Promise<void> {
+  const ctx = await requireAdminPage();
+  const tenantId = text(form, 'tenantId');
+
+  const state = await clearFeatureOverride(ctx, tenantId, text(form, 'featureKey'));
+  revalidatePath(`/accounts/${tenantId}`);
+  back(tenantId, state ? { error: state.messageKey } : { ok: 'admin:account.saved' });
+}
+
+export async function provisionAnalyticsAction(form: FormData): Promise<void> {
+  const ctx = await requireAdminPage();
+  const tenantId = text(form, 'tenantId');
+
+  const done = await provisionAccountAnalytics(ctx, tenantId);
+  revalidatePath(`/accounts/${tenantId}`);
+  back(
+    tenantId,
+    done
+      ? { ok: 'admin:account.analyticsProvisioned' }
+      : { error: 'admin:account.analyticsFailed' },
+  );
+}
+
+export async function sendPasswordLinkAction(form: FormData): Promise<void> {
+  const ctx = await requireAdminPage();
+  const tenantId = text(form, 'tenantId');
+
+  const account = await getAccount(ctx, tenantId);
+  if (!account?.owner) back(tenantId, { error: 'admin:impersonation.noOwner' });
+
+  const sent = await sendOwnerPasswordLink(ctx, tenantId, account.owner.email);
+  back(
+    tenantId,
+    sent ? { ok: 'admin:account.passwordLinkSent' } : { error: 'admin:errors.unexpected' },
+  );
+}
+
+/**
+ * Start an impersonation and hand off to the app host.
+ *
+ * The redirect leaves this hostname on purpose — see src/server/admin/impersonation.ts for why
+ * the session has to be minted here and replayed there.
+ */
+export async function impersonateAction(form: FormData): Promise<void> {
+  const ctx = await requireAdminPage();
+  const tenantId = text(form, 'tenantId');
+
+  const cookie = (await headers()).get('cookie');
+  const result = await startImpersonation(ctx, tenantId, cookie);
+
+  if ('state' in result) {
+    back(tenantId, { error: result.state.messageKey ?? 'admin:errors.unexpected' });
+  }
+
+  redirect(result.redirectUrl);
+}

@@ -203,6 +203,18 @@ can see what a sync point actually costs.
   which is a baffling failure to debug from a tenancy test.
 - **`src/app/api/<track>/**` ratified as per-track ownership.** `/api` is unprefixed, so those
   routes answer on every hostname including custom domains; each handler checks its own session.
+- **The language gate now PARSES TSX instead of pattern-matching it.** Its two JSX text-node
+  checks were regexes over `>…<`, and that heuristic cannot tell a text node from ordinary code
+  sitting between two JSX blocks: `searchParams: Promise<Record<string, string>>` followed by a
+  `return (` and a tag reads as a text node containing the word "return", and so does every
+  `case 'x': return (` between two rendered fragments. It reported seventeen such "sentences" in
+  A1, none of them strings — and the danger was not the noise but the fix it invites, which is to
+  loosen the pattern. `typescript` is already a devDependency, so `ts.createSourceFile` costs no
+  new package and is strictly stronger: comments are no longer text (the comment-stripping
+  workaround from the previous fix is gone), and a hardcoded string in a JSX **attribute** — a
+  hole the regex never saw at all — is now caught. Structural attributes (`className`, `href`, …)
+  are exempt from the ENGLISH scan only; Arabic in any attribute is still a failure. A2 and B2
+  would each have hit this on their first screen.
 
 ### The one rule that was broken, and the hole it revealed
 
@@ -224,6 +236,32 @@ mode with the largest blast radius was the one the checker could not see. It now
 commit on `main` since a `group-<x>-base` tag and asks the reviewer to confirm each was theirs —
 reporting rather than judging, because the main session commits legitimately all the time and
 shares a git identity with every agent.
+
+## A1 — Super Admin panel
+
+Full record in `docs/decisions/a1.md`. The four that another track has to know about:
+
+- **The revenue rule is three separate figures, plus a forward-looking one**, and the panel says
+  so on screen. Yearly payments amortise across twelve months; `setup_fee` and
+  `change_request_addon` are excluded from every recurring figure and shown on their own line;
+  "collected" is all kinds together and is deliberately NOT the recurring number. Amortisation
+  reads the subscription's current `billingPeriod`, because a `Payment` row does not record the
+  period it bought and adding a column would be a schema change.
+- **Impersonation mints the session on `admin.*` and replays its `Set-Cookie` headers on `app.*`**
+  through a single-use 60-second handoff, because session cookies are host-only by design. Both
+  cookies travel — the merchant session and better-auth's `admin_session` — or `stopImpersonating`
+  would strand the admin inside the merchant account. **B2 owns the dashboard banner** (the copy
+  is already `admin.impersonation.banner`) and points its exit at `POST
+  /api/admin/impersonation/stop`, which A1 ships.
+- **`src/server/admin/capability-payloads.ts` is the change-request payload contract.** A1 merges
+  first, so it defines the shape B2's "اطلب تعديل" must store — one zod schema per managed
+  capability, JSON shapes rather than form shapes. A payload that does not parse is never
+  applied; the queue says so and leaves the request open.
+- **B2 still owes `/sign-in`, `/forgot-password` and `/reset-password` on `app.{DOMAIN}`.** A1
+  creates merchant owners with no credential account and emails a set-password link;
+  `resetPassword` creates the credential row on first use. Until those pages exist the link
+  resolves to a 404. A1 ships the admin-host equivalents so the platform owner is never locked
+  out of their own panel.
 
 ### Known gaps at the end of Phase 1
 

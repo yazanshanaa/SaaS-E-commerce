@@ -1,4 +1,7 @@
 import type { Metadata } from 'next';
+import { optionalAdminContext } from '@/server/admin';
+import { AdminNav } from './_components/nav';
+import './admin.css';
 
 /**
  * The Super Admin surface root — everything under `admin.{DOMAIN}`.
@@ -7,12 +10,14 @@ import type { Metadata } from 'next';
  * appears in the URL bar, so every `href` in this subtree is written as the public path
  * (`/accounts`, not `/admin/accounts`). See SURFACE_ROOT in src/server/tenancy.
  *
- * OWNED BY A1 (docs/PHASES.md calls this folder `src/app/(admin)`). B1 adds `lifecycle/` and
- * B3 adds `demos/` in Group B. Phase 1 ships only the shell and the two contracts every
- * surface honours:
- *   - `data-surface` — what the shared e2e suite asserts on, so it does not have to be
- *     rewritten every time a track changes its chrome,
- *   - exactly one `<main id="main">` inside, matching the skip link in the root layout.
+ * OWNED BY A1. B1 adds `lifecycle/` and B3 adds `demos/` in Group B — this layout wraps those
+ * too, which is why the rail is data-driven rather than hardcoded per screen.
+ *
+ * Two contracts every surface honours and this file keeps: `data-surface`, which the shared
+ * e2e suite asserts on, and EXACTLY ONE `<main id="main">`, which the root layout's skip link
+ * targets. Both branches below render one main — the signed-out branch is the sign-in card,
+ * rendered in place on `/` rather than behind a redirect, because the same shared suite asserts
+ * that the admin root never moves off `/`.
  */
 export const metadata: Metadata = {
   title: 'إدارة المنصة',
@@ -20,6 +25,27 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true },
 };
 
-export default function AdminSurfaceLayout({ children }: { children: React.ReactNode }) {
-  return <div data-surface="admin">{children}</div>;
+export default async function AdminSurfaceLayout({ children }: { children: React.ReactNode }) {
+  const ctx = await optionalAdminContext();
+
+  if (!ctx) {
+    return (
+      <div data-surface="admin">
+        <main id="main" className="sba-auth">
+          {children}
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div data-surface="admin">
+      <div className="sba-shell">
+        <AdminNav userName={ctx.session.user.name} />
+        <main id="main" className="sba-main">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
 }

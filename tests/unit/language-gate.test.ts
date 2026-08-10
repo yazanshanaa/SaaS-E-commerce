@@ -1,6 +1,7 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { t, messageExists, formatAgorot, LOCALE, DIRECTION } from '@/shared/i18n';
 import { resetPasswordTemplate, verifyEmailTemplate } from '@/server/mail';
@@ -189,32 +190,84 @@ describe('user-facing source strings', () => {
   }
 
   /**
-   * Both checks below are source-text heuristics, not a JSX parser — so a comment that merely
-   * TALKS about markup ("does not wrap children in `<main>` … renders one `<main id=main>`")
-   * puts a `>` and a `<` around ordinary English prose and reads as a text node.
+   * This gate PARSES the file rather than pattern-matching its text.
    *
-   * Stripping comments first is what keeps the gate honest. The alternative — every author
-   * avoiding angle brackets in prose — trains people to work around the gate, and a gate people
-   * work around eventually gets weakened instead of obeyed. Only block comments and whole-line
-   * `//` comments are removed, so a `//` inside a URL cannot swallow the rest of a real line.
+   * It used to be a regex for `>…<` with the comments stripped first, and that heuristic cannot
+   * tell a JSX text node from ordinary code sitting between two JSX blocks: `searchParams:
+   * Promise<Record<string, string>>` followed by a `return (` and a tag reads as a text node
+   * containing the word "return", and so does every `case 'x': return (` between two rendered
+   * fragments. It reported seventeen such "sentences" in A1, none of them strings — and the
+   * dangerous part was not the noise but the fix it invites, which is to loosen the pattern.
+   *
+   * `typescript` is already a devDependency, so an exact parse costs nothing and is strictly
+   * stronger: comments are no longer text (nothing needs stripping), and a hardcoded string in
+   * a JSX ATTRIBUTE — a hole the regex never saw at all — is now caught too.
    */
-  function withoutComments(source: string): string {
-    return source
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .split('\n')
-      .filter((line) => !/^\s*\/\//.test(line))
-      .join('\n');
+  interface JsxLiteral {
+    text: string;
+    /** The attribute it came from, or null for a text node / `{'…'}` expression. */
+    attribute: string | null;
   }
+
+  function jsxLiterals(file: string): JsxLiteral[] {
+    const source = ts.createSourceFile(
+      file,
+      readFileSync(file, 'utf8'),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+
+    const out: JsxLiteral[] = [];
+    const push = (text: string, attribute: string | null) => {
+      const trimmed = text.trim();
+      if (trimmed) out.push({ text: trimmed, attribute });
+    };
+
+    const visit = (node: ts.Node): void => {
+      if (ts.isJsxText(node)) {
+        push(node.text, null);
+      } else if (
+        ts.isJsxAttribute(node) &&
+        node.initializer &&
+        ts.isStringLiteral(node.initializer)
+      ) {
+        push(node.initializer.text, node.name.getText(source));
+      } else if (ts.isJsxExpression(node) && node.expression && ts.isStringLiteral(node.expression)) {
+        push(node.expression.text, null);
+      }
+
+      ts.forEachChild(node, visit);
+    };
+
+    visit(source);
+    return out;
+  }
+
+  /**
+   * Attributes that carry COPY. `className`, `href` and friends are structural and full of
+   * Latin by design; scanning them for English would flag every stylesheet hook in the panel.
+   * Arabic, by contrast, is checked in EVERY attribute — it has no business in any of them.
+   */
+  const COPY_ATTRIBUTES = new Set([
+    'placeholder',
+    'title',
+    'alt',
+    'aria-label',
+    'aria-description',
+    'aria-placeholder',
+    'label',
+    'summary',
+    'content',
+  ]);
 
   it('has no hardcoded Arabic sentence inside a JSX component', () => {
     const offenders: string[] = [];
 
     for (const file of tsxFiles(path.join(repoRoot, 'src', 'app'))) {
-      const source = withoutComments(readFileSync(file, 'utf8'));
-      // JSX text nodes: >…< with Arabic inside, excluding interpolations.
-      for (const match of source.matchAll(/>([^<>{}]*[؀-ۿ][^<>{}]*)</g)) {
-        const text = match[1]!.trim();
-        if (text.length > 1) offenders.push(`${path.relative(repoRoot, file)}: ${text}`);
+      for (const literal of jsxLiterals(file)) {
+        if (!ARABIC.test(literal.text)) continue;
+        offenders.push(`${path.relative(repoRoot, file)}: ${literal.text}`);
       }
     }
 
@@ -225,25 +278,41 @@ describe('user-facing source strings', () => {
     const offenders: string[] = [];
 
     for (const file of tsxFiles(path.join(repoRoot, 'src', 'app'))) {
-      const source = withoutComments(readFileSync(file, 'utf8'));
-      for (const match of source.matchAll(/>([^<>{}]{8,})</g)) {
-        const text = match[1]!.trim();
-        if (LATIN_WORD.test(text) && text.split(/\s+/).length > 2) {
-          offenders.push(`${path.relative(repoRoot, file)}: ${text}`);
-        }
+      for (const literal of jsxLiterals(file)) {
+        if (literal.attribute && !COPY_ATTRIBUTES.has(literal.attribute)) continue;
+        if (!LATIN_WORD.test(literal.text)) continue;
+        if (literal.text.split(/\s+/).length <= 2) continue;
+        offenders.push(`${path.relative(repoRoot, file)}: ${literal.text}`);
       }
     }
 
     expect(offenders).toEqual([]);
   });
 
-  it('still catches a hardcoded sentence once comments are stripped', () => {
-    // The stripper must not become an escape hatch: a real literal in real markup is still a
-    // failure, and this is the test that proves the previous two can fail at all.
-    const arabic = '<p>هذا نص مكتوب مباشرة في المكوّن</p>';
-    const english = '<p>this sentence was hardcoded</p>';
+  it('still catches a hardcoded sentence, and no longer trips over ordinary code', () => {
+    // The parser must not become an escape hatch: this is the test that proves the two above
+    // can fail at all, and that the false positive they used to produce is genuinely gone.
+    const file = path.join(repoRoot, 'tests', '.language-gate-fixture.tsx');
+    const fixture = [
+      'export function Bad({ items }: { items: Promise<Record<string, string>> }) {',
+      '  void items;',
+      '  return (',
+      '    <p title="this attribute was hardcoded">هذا نص مكتوب مباشرة في المكوّن</p>',
+      '  );',
+      '}',
+    ].join('\n');
 
-    expect([...withoutComments(arabic).matchAll(/>([^<>{}]*[؀-ۿ][^<>{}]*)</g)]).toHaveLength(1);
-    expect([...withoutComments(english).matchAll(/>([^<>{}]{8,})</g)]).toHaveLength(1);
+    writeFileSync(file, fixture, 'utf8');
+    try {
+      const literals = jsxLiterals(file);
+      expect(literals.map((literal) => literal.text)).toEqual([
+        'this attribute was hardcoded',
+        'هذا نص مكتوب مباشرة في المكوّن',
+      ]);
+      // `Promise<Record<string, string>>` … `return (` is code, not a text node.
+      expect(literals.some((literal) => literal.text.includes('return'))).toBe(false);
+    } finally {
+      rmSync(file, { force: true });
+    }
   });
 });

@@ -150,29 +150,30 @@ Recorded in full in `docs/PHASES.md` → **Resolved decisions**. Nothing here bl
 - [ ] Each worktree bootstrapped: `pnpm install`, `.env` copied, isolated database + Redis db index
 
 ### A1 — Super Admin panel (owns `src/app/(admin)` **except `(admin)/demos`**, `src/server/admin`)
-- [ ] Overview dashboard: accounts by status, revenue, latest events
-- [ ] Revenue rule stated in UI + DECISIONS: yearly amortised over twelve months; setup fees and add-ons excluded from recurring revenue and shown separately
-- [ ] **Account creation lives here and only here** — tenant, plan, billing period, first period end, all via `src/server/billing`
-- [ ] ₪350 recorded as a `setup_fee` payment on monthly, skipped on annual
-- [ ] Basic-plan onboarding sets the single allowed template as a per-tenant `templates_allowed` override
-- [ ] Umami website provisioned per tenant at account creation, websiteId stored on `Site`
-- [ ] Account management: suspend / reactivate / extend / extend-retention / purge
-- [ ] Search and filters
-- [ ] Account page: subscription, usage (products / storage / Umami visits), `priority_support` badge, feature matrix as instant toggles
-- [ ] Entitlement cache invalidated immediately on every toggle
-- [ ] "Site content" tab: social links, map location, announcement bar, announcements board, section visibility — all audited
-- [ ] "Who edits what" matrix: visible/hidden + admin/merchant, plus `color_mode` (writes an Entitlement, not a CapabilityOverride)
-- [ ] Change requests queue: prefilled payload, remaining quota, apply / reject; rejection refunds the slot; over-quota creates a ₪25 `change_request_addon` payment linked to the request
-- [ ] Plan management CRUD over features, limits and both prices
-- [ ] Manual payment records (amount, method, note, attachment) linked to subscription extension
-- [ ] Audit log viewer with filters
-- [ ] Merchant impersonation with a clear banner, fully audited — **also the sales path**: a demo issues no merchant login, so the dashboard tour happens by impersonating the demo tenant
-- [ ] **No demo screens built here** — `(admin)/demos` belongs to B3
-- [ ] Colors / sections_layout editing consumes `src/shared/site-contract` only (never `src/templates`)
-- [ ] All UI Arabic, RTL, no default shadcn look
-- [ ] `messages/ar/admin.json`
-- [ ] `docs/decisions/a1.md`
-- [ ] Gate: feature toggle reflected immediately by `can()`; `editable_by` → admin locks the merchant field immediately; monthly account records the setup fee and annual does not; no account creation path outside this panel
+- [x] Overview dashboard: accounts by status, revenue, latest events
+- [x] Revenue rule stated in UI + DECISIONS: yearly amortised over twelve months; setup fees and add-ons excluded from recurring revenue and shown separately
+- [x] **Account creation lives here and only here** — tenant, plan, billing period, first period end, all via `src/server/billing`
+- [x] ₪350 recorded as a `setup_fee` payment on monthly, skipped on annual
+- [x] Basic-plan onboarding sets the single allowed template as a per-tenant `templates_allowed` override — keyed on the plan permitting exactly one template, never on the plan key
+- [x] Umami website provisioned per tenant at account creation, websiteId stored on `Site` — non-fatal on failure, with a retry on the account page
+- [x] Account management: suspend / reactivate / extend / extend-retention / purge — purge calls `billing.purgeTenant()` and reports honestly until B1 implements it
+- [x] Search and filters
+- [x] Account page: subscription, usage (products / storage / Umami visits), `priority_support` badge, feature matrix as instant toggles
+- [x] Entitlement cache invalidated immediately on every toggle
+- [x] "Site content" tab: social links, map location, announcement bar, announcements board, section visibility — all audited
+- [x] "Who edits what" matrix: visible/hidden + admin/merchant, plus `color_mode` (writes an Entitlement, not a CapabilityOverride)
+- [x] Change requests queue: prefilled payload, remaining quota, apply / reject; rejection refunds the slot; over-quota creates a ₪25 `change_request_addon` payment linked to the request
+- [x] Plan management CRUD over features, limits and both prices
+- [x] Manual payment records (amount, method, note, attachment) linked to subscription extension
+- [x] Audit log viewer with filters — tenant-owned and platform-level logs, switchable
+- [x] Merchant impersonation, fully audited — **also the sales path**: a demo issues no merchant login, so the dashboard tour happens by impersonating the demo tenant. Minted on `admin.*`, replayed on `app.*` through a single-use handoff, because session cookies are host-only
+- [ ] The impersonation banner itself — **B2 owns it** (`src/app/dashboard`); the copy and the stop endpoint ship with A1
+- [x] **No demo screens built here** — `(admin)/demos` belongs to B3
+- [x] Colors / sections_layout editing consumes `src/shared/site-contract` only (never `src/templates`)
+- [x] All UI Arabic, RTL, no default shadcn look
+- [x] `messages/ar/admin.json`
+- [x] `docs/decisions/a1.md`
+- [x] Gate: feature toggle reflected immediately by `can()`; `editable_by` → admin locks the merchant field immediately; monthly account records the setup fee and annual does not; no account creation path outside this panel
 
 ### A2 — Storefront and templates (owns `src/templates`, `src/app/(storefront)`)
 - [ ] Template registry + tokens + section renderer driven by `site-contract` zod schemas
