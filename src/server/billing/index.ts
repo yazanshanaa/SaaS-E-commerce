@@ -19,6 +19,11 @@ import { assertPeriodEndAllowed, assertTransition, NullPeriodEndError } from './
  * Phase 1 ships the signatures, the state transitions and the guards. B1 fills in the heavy
  * orchestration (the suspension export job's retry policy, the reminder sweep, the purge
  * choreography) — against these signatures, which A1, B1 and B3 all code to.
+ *
+ * That includes the three DEMO operations, which Phase 1's comments mis-assigned to B3. They
+ * create a Tenant and write subscription lifecycle fields, and `tests/unit/guardrails.test.ts`
+ * fails the build when that happens outside this folder. B3 supplies the CONTENT through the
+ * builder in `./demo-content.ts`.
  */
 
 export class NotImplementedInPhaseError extends Error {
@@ -554,22 +559,43 @@ export interface CreateDemoInput {
   demoRequestId?: string;
 }
 
-/** B3 implements this against the frozen packs in src/server/demo/packs. */
+/**
+ * B1 implements this. Phase 1's comment said B3 did, and that was wrong — see
+ * `./demo-content.ts`. `tests/unit/guardrails.test.ts` fails the build if a Tenant is created,
+ * a subscription lifecycle field written, or `Tenant.state` set to `purging` anywhere outside
+ * this folder, and all three demo operations do exactly that. So the LIFECYCLE is B1's and the
+ * CONTENT is B3's, joined inside one transaction through `DemoContentBuilder`.
+ *
+ * The shape, so neither track re-derives it:
+ *   - Tenant `isDemo: true`, slug `{slugPrefix}-{shortId}`, on the hidden `demo` plan with
+ *     `status: active` and `currentPeriodEnd: null` (the one case the period-end trigger allows),
+ *   - a Site carrying the pack's identity but the REQUESTER's address and WhatsApp when the demo
+ *     came from a DemoRequest,
+ *   - a LOGIN-DISABLED owner: a User with no credential Account and a `members` row (Q17). It
+ *     exists so the tenant has a valid owner and so A1's impersonation can give a dashboard tour
+ *     on a sales call. There is no demo login, no temporary password and no dashboard magic link,
+ *   - `buildDemoContent()` inside the SAME transaction — a half-built demo is a shareable link to
+ *     a broken shop,
+ *   - a DemoLink token with NO expiry by default (Q2 — the admin controls the lifetime).
+ */
 export async function createDemo(_input: CreateDemoInput): Promise<never> {
-  throw new NotImplementedInPhaseError('createDemo', 'B3 — Demo generator');
+  throw new NotImplementedInPhaseError('createDemo', 'B1 — Billing lifecycle');
 }
 
 /**
- * B3 implements this: the quiesce + R2-sweep + cascade steps of the purge machinery, plus
+ * B1 implements this: the quiesce + R2-sweep + cascade steps of the purge machinery, plus
  * deleting the originating DemoRequest row.
  *
  * It writes NO TenantTombstone. A demo has no retention promise to defend, and the tombstone
  * would preserve a slug hash derived from the prospect's own requested prefix after B3's
  * public form told them their data is deleted when the demo closes. It emits `demo.closed` and
  * writes the super-admin audit row on the GLOBAL side instead.
+ *
+ * `exportKey` is always null on this path — demos are never swept, so never suspended, so never
+ * exported.
  */
 export async function closeDemo(_tenantId: string, _actor: Actor): Promise<never> {
-  throw new NotImplementedInPhaseError('closeDemo', 'B3 — Demo generator');
+  throw new NotImplementedInPhaseError('closeDemo', 'B1 — Billing lifecycle');
 }
 
 export interface ConvertDemoInput {
@@ -581,12 +607,12 @@ export interface ConvertDemoInput {
 }
 
 /**
- * B3 implements this: isDemo=false, off the demo plan onto a real one, set currentPeriodEnd,
+ * B1 implements this: isDemo=false, off the demo plan onto a real one, set currentPeriodEnd,
  * drop the watermark and noindex, disable the token — with ZERO data loss (same tenant, same
- * rows, no copying).
+ * rows, no copying). B3 drives it from the demo screens it owns.
  */
 export async function convertDemo(_input: ConvertDemoInput): Promise<never> {
-  throw new NotImplementedInPhaseError('convertDemo', 'B3 — Demo generator');
+  throw new NotImplementedInPhaseError('convertDemo', 'B1 — Billing lifecycle');
 }
 
 // -----------------------------------------------------------------------------

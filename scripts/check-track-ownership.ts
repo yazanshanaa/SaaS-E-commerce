@@ -163,6 +163,11 @@ const OWNERSHIP: Record<string, readonly string[]> = {
  */
 const RESERVED_WITHIN: Record<string, readonly string[]> = {
   a1: ['src/app/admin/demos/**', 'src/app/admin/lifecycle/**'],
+  // The B1/B3 seam. B1 implements the demo LIFECYCLE (it creates a Tenant and writes
+  // subscription state, which guardrails.test.ts allows in src/server/billing and nowhere
+  // else) and B3 implements the CONTENT. The interface between them is frozen in the main
+  // session for the same reason src/server/demo/types.ts is: both tracks code to it literally.
+  b1: ['src/server/billing/demo-content.ts'],
   b3: ['src/server/demo/types.ts', 'src/server/demo/placeholder.ts', 'src/server/demo/packs/**'],
 };
 
