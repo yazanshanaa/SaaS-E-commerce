@@ -213,7 +213,49 @@ export function createAuth() {
               throw new Error(t('common', 'auth.accountDisabled'));
             }
 
-            return { data: session };
+            /**
+             * RESOLVE THE ACTIVE TENANT HERE, at session creation, and nowhere else.
+             *
+             * better-auth never sets `activeOrganizationId` on sign-in — the organization plugin
+             * writes it only from `POST /organization/set-active`. Left alone, every merchant
+             * session carried `activeTenantId = null`, so `getSession()` resolved
+             * `tenantId = null` AND `memberRole = null`, and everything downstream that asks
+             * "which shop is this?" refused its own owner: `requireMerchant()`, every dashboard
+             * screen, and `/api/media/upload`, which reads `session.tenantId` directly. The same
+             * hole swallowed impersonation, because `impersonateUser` mints a fresh session for
+             * the merchant and inherits nothing from the admin's — so A1's handoff landed on a
+             * dashboard that could not tell whose it was.
+             *
+             * Doing it in the hook rather than in a client call after sign-in is what makes it
+             * true for EVERY door into a session: the password form, the impersonation handoff,
+             * and anything later phases add. A client-side `set-active` would have to be
+             * remembered at each one, and the failure mode is silent.
+             *
+             * `organizationLimit: 1` makes the answer unambiguous — a merchant belongs to exactly
+             * one tenant. A super admin belongs to none, so this resolves to null for them and
+             * their cross-tenant power keeps coming from `platformRole`, never from a membership
+             * (docs/PHASES.md item 3). `findFirst` with an explicit order is deterministic rather
+             * than "whatever the planner returned" if a user ever holds two.
+             *
+             * Read through `authDb(userId)`: `members` carries the narrow `member_self` policy,
+             * which compares against `app.user_id`. The id is better-auth's own verified session
+             * subject, never anything the client sent.
+             *
+             * THE FIELD IS WRITTEN UNDER ITS MODEL NAME, `activeOrganizationId`, not the column
+             * name below it. A database hook runs BEFORE the adapter's `transformInput`, which is
+             * the step that applies `schema.session.fields` and turns `activeOrganizationId` into
+             * our `activeTenantId` column. Writing the column name here would land a key the
+             * transform does not recognise, and it would be dropped in silence.
+             */
+            const membership = await authDb(session.userId).member.findFirst({
+              where: { userId: session.userId },
+              orderBy: { createdAt: 'asc' },
+              select: { tenantId: true },
+            });
+
+            return {
+              data: { ...session, activeOrganizationId: membership?.tenantId ?? null },
+            };
           },
         },
       },

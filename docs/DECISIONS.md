@@ -561,3 +561,37 @@ was firing every night.
   from the prospect's own requested prefix would survive. The payload shape is Phase 1's,
   `demo.created` has the same property, and the stated payload rule permits identifiers, so this is
   a vocabulary change plus a deliveries-retention decision. **Phase 6** privacy pass.
+
+---
+
+## Group B — sync point serviced mid-flight (main session)
+
+### A merchant's session never knew which shop it was in
+
+Raised by B2 on its first screen, fixed on `main` because `src/server/auth/**` is forbidden to a
+track.
+
+- **better-auth does not set `activeOrganizationId` at sign-in.** The organization plugin writes it
+  from `POST /organization/set-active` and from nowhere else, and nothing on this platform called
+  it. Every merchant session therefore carried a null active tenant, so `getSession()` resolved
+  BOTH `tenantId` and `memberRole` as null and every consumer refused the merchant it belonged to:
+  the whole B2 dashboard, `requireMerchant()`, and A3's `/api/media/upload`, which reads
+  `session.tenantId` directly. Impersonation went with it — `impersonateUser` mints a fresh session
+  for the merchant and inherits nothing from the admin's, so A1's Q17 sales tour would have landed
+  on a dashboard that could not name the tenant it was showing.
+- **Resolved in the session-create hook, not in a client call after sign-in.** `organizationLimit: 1`
+  makes the answer unambiguous (a merchant belongs to exactly one tenant), and the hook is the one
+  place every door into a session passes through — the password form, the impersonation handoff, and
+  whatever Phase 4 adds. A `set-active` call from B2's sign-in form would have fixed one door and
+  left the other silently broken. A super admin has no membership, so it resolves to null for them
+  and their reach keeps coming from `platformRole`.
+- **The hook writes `activeOrganizationId`, the MODEL field name — not `activeTenantId`, the
+  column.** Database hooks run before the adapter's `transformInput`, which is the step that applies
+  `schema.session.fields`. Writing the column name lands a key the transform does not recognise and
+  it is dropped in silence — the failure looks identical to no hook at all.
+- **`getSession()` was reading the column name too**, so it would have resolved `undefined` even
+  once the hook was right. It now reads `activeOrganizationId` with the column name as a fallback:
+  the two spellings are one value and neither should be a bug.
+- **Pinned by an integration test that drives the real API** (`membership-and-actor.test.ts`),
+  because the bug lived exactly in the gap between a hand-built session object and a real one — the
+  existing suite asserted the RLS policy and the `authDb(userId)` call and was green throughout.

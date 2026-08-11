@@ -66,13 +66,22 @@ export async function getSession(source?: HeaderSource): Promise<ResolvedSession
     twoFactorEnabled?: boolean;
   };
 
+  /**
+   * `activeOrganizationId` is the MODEL field name; `activeTenantId` is only the Prisma column
+   * it is mapped onto in `config.ts`. The adapter's `transformOutput` maps back on the way out,
+   * so a session that comes from better-auth — from the database or from its 60-second cookie
+   * cache — carries the model name. Reading only the column name resolved `undefined` for every
+   * merchant, which is `tenantId = null`, which is a dashboard that refuses its own owner.
+   * Both are read because the two names are one value and neither spelling should be a bug.
+   */
   const session = result.session as unknown as {
+    activeOrganizationId?: string | null;
     activeTenantId?: string | null;
     impersonatedBy?: string | null;
   };
 
   const platformRole = user.platformRole === 'super_admin' ? 'super_admin' : 'user';
-  const tenantId = session.activeTenantId ?? null;
+  const tenantId = session.activeOrganizationId ?? session.activeTenantId ?? null;
 
   let memberRole: MemberRole | null = null;
   if (tenantId && platformRole !== 'super_admin') {

@@ -1,6 +1,7 @@
+import { hash as argon2Hash } from '@node-rs/argon2';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { authDb, publicDb, tenantDb, verifiedActor } from '@/server/db';
-import { actorFromSession } from '@/server/auth';
+import { actorFromSession, auth, getSession } from '@/server/auth';
 import { createTenant, rawWebClient, resetTenants, type SeededTenant } from '../helpers/factories';
 
 /**
@@ -98,6 +99,86 @@ describe('cross-tenant membership reads', () => {
     expect(
       await authDb(alpha.ownerUserId).member.findFirst({ where: { userId: beta.ownerUserId } }),
     ).toBeNull();
+  });
+});
+
+/**
+ * THE WHOLE SIGN-IN PATH, end to end, because every unit above it can be green while the thing
+ * a merchant actually does is broken.
+ *
+ * better-auth does not set `activeOrganizationId` at sign-in — the organization plugin writes it
+ * only from `POST /organization/set-active`, which nothing on this platform calls. So every
+ * merchant session carried a null active tenant, `getSession()` resolved `tenantId = null` AND
+ * `memberRole = null`, and everything that asks "which shop is this?" refused its owner: the
+ * whole B2 dashboard, `requireMerchant()`, and `/api/media/upload`, which reads
+ * `session.tenantId` directly. Impersonation went the same way, since `impersonateUser` mints a
+ * fresh session that inherits nothing from the admin's.
+ *
+ * The fix is a session-create hook in `src/server/auth/config.ts`. This is the test that can
+ * fail if it is removed — and it drives the real API rather than a hand-built session object,
+ * because the bug lived precisely in the gap between the two.
+ */
+describe('a merchant’s session resolves its tenant', () => {
+  const PASSWORD = 'merchant-password-2026';
+
+  async function givePassword(userId: string, email: string): Promise<void> {
+    // The same argon2id parameters the auth config hashes with. A1 never sets a password
+    // directly — it emails a reset link — so there is no production path to borrow here.
+    await authDb(userId).account.create({
+      data: {
+        userId,
+        accountId: email,
+        providerId: 'credential',
+        password: await argon2Hash(PASSWORD, { memoryCost: 19_456, timeCost: 2, parallelism: 1 }),
+      },
+    });
+  }
+
+  async function signIn(email: string): Promise<Headers> {
+    const response = await auth().api.signInEmail({
+      body: { email, password: PASSWORD },
+      asResponse: true,
+    });
+
+    expect(response.ok, `sign-in failed: ${response.status}`).toBe(true);
+
+    const cookies = response.headers
+      .getSetCookie()
+      .map((cookie) => cookie.split(';')[0])
+      .join('; ');
+
+    expect(cookies, 'sign-in issued no session cookie').not.toBe('');
+    return new Headers({ cookie: cookies });
+  }
+
+  it('signs a merchant in and lands them inside their own tenant', async () => {
+    const email = `signin-owner-${alpha.slug}@souqbartaa.test`;
+    await authDb().user.update({ where: { id: alpha.ownerUserId }, data: { email } });
+    await givePassword(alpha.ownerUserId, email);
+
+    const session = await getSession(await signIn(email));
+
+    expect(session, 'no session resolved after a successful sign-in').not.toBeNull();
+    expect(session!.tenantId, 'the session did not resolve an active tenant').toBe(alpha.id);
+    expect(session!.memberRole).toBe('owner');
+    expect(actorFromSession(session).role).toBe('owner');
+  });
+
+  it('leaves a user with no membership outside every tenant', async () => {
+    // A super admin belongs to no tenant, and their cross-tenant power comes from
+    // `platformRole` — never from a membership the hook might invent for them.
+    const email = 'no-membership@souqbartaa.test';
+    const stranger = await authDb().user.create({
+      data: { email, name: 'بلا انتماء', emailVerified: true },
+      select: { id: true },
+    });
+    await givePassword(stranger.id, email);
+
+    const session = await getSession(await signIn(email));
+
+    expect(session!.tenantId).toBeNull();
+    expect(session!.memberRole).toBeNull();
+    expect(actorFromSession(session).role).toBe('public');
   });
 });
 
