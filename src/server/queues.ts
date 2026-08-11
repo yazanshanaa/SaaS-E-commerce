@@ -104,6 +104,20 @@ export async function enqueue(
  * Remove a tenant's pending jobs. B1's purge calls this BEFORE sweeping storage: anything
  * still queued would otherwise write fresh objects into a prefix that is about to vanish,
  * and with the Tenant row gone nothing would ever find them again.
+ *
+ * IT MATCHES ON THE PAYLOAD'S `tenantId`, NOT ON THE SCOPE — a Group B correction.
+ *
+ * Phase 1 filtered on `scope === 'tenant'`, which was complete at the time: every job that named
+ * a tenant was a TenantJob. B1 then made `suspend-tenant` and `purge-tenant` SystemJobs carrying
+ * `tenantId` in their payload — forced, because a billing transition opens and closes its own
+ * transactions and cannot run inside the one `createWorker` wraps a TenantJob in. The scope test
+ * silently stopped covering the two jobs most worth draining: a queued suspension export is
+ * precisely the thing that writes a full catalogue ZIP into the prefix a purge is about to sweep.
+ *
+ * The purging-state guard in `withTenantTxn` still fails such a job closed if it starts after the
+ * quiesce commits, so this is defence in depth rather than the only layer — but leaving them
+ * queued means five doomed attempts with backoff per job, and a `jobsDropped` count that under-
+ * reports what the purge actually found.
  */
 export async function removeTenantJobs(tenantId: string): Promise<number> {
   let removed = 0;
@@ -112,8 +126,8 @@ export async function removeTenantJobs(tenantId: string): Promise<number> {
     const q = queue(name);
     const jobs = await q.getJobs(['waiting', 'delayed', 'prioritized', 'paused']);
     for (const job of jobs) {
-      const data = job.data as Partial<TenantJob> | undefined;
-      if (data?.scope === 'tenant' && data.tenantId === tenantId) {
+      const data = job.data as { tenantId?: unknown } | undefined;
+      if (data?.tenantId === tenantId) {
         await job.remove();
         removed += 1;
       }

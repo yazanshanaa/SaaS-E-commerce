@@ -324,9 +324,25 @@ function main(): void {
   for (const file of files) {
     if (matches(reserved, file)) {
       violations.push([file, 'reserved for another track inside your own folder']);
+    } else if (matches(owned, file)) {
+      // OWNERSHIP BEATS FORBIDDEN, and the order is what makes the FORBIDDEN comment true.
+      //
+      // The two documented Group B exceptions (B1 fills in `src/server/billing` and the images
+      // half of `src/server/export`, and owns `src/server/jobs`) are expressed as ownership
+      // entries rather than as holes in FORBIDDEN, precisely so the default stays "forbidden"
+      // for every other track. Checking FORBIDDEN first threw that away: B1's own folders came
+      // back as sixteen violations, and a wall of false positives on the one branch that is
+      // supposed to touch them is how a reviewer learns to run this check and ignore it.
+      //
+      // Safe for the other five tracks: RESERVED_WITHIN is still evaluated first, so B3 still
+      // cannot touch `src/server/demo/types.ts` and B1 still cannot touch
+      // `src/server/billing/demo-content.ts`; and no other track lists a forbidden path in its
+      // ownership, so `src/server/queues.ts`, `src/server/storage/**` and
+      // `src/server/revalidation/**` remain forbidden to everyone — nobody owns them.
+      continue;
     } else if (matches(forbidden, file)) {
       violations.push([file, 'FORBIDDEN shared file — this is a sync point, not an edit']);
-    } else if (!matches(owned, file)) {
+    } else {
       violations.push([file, `outside ${track}'s ownership`]);
     }
   }
