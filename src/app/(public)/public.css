@@ -1,0 +1,197 @@
+/*
+ * The public surface's stylesheet — one page, one job.
+ *
+ * Scoped to `[data-surface='public']` for the reason every other surface scopes its own: four route
+ * trees share one document tree and a stray global rule from one landing on another is a merge
+ * conflict nobody sees until it renders.
+ *
+ * The look is a SINGLE CALM COLUMN on the platform's own paper, not a marketing page and not a
+ * dashboard. The person reading it is a shop owner who followed a link from a WhatsApp message,
+ * probably on a phone, and has one thing to do — so there is no hero, no feature grid, no second
+ * call to action competing with the form, and nothing to scroll past before the first field. The
+ * one piece of visual weight is the retention notice, because it is the sentence that has to be
+ * read before the decision to submit rather than after it.
+ *
+ * CLAUDE.md's forbidden list is avoided by construction: no gradient, no glass, no shadow soup, no
+ * emoji standing in for an icon. It reuses the platform tokens from globals.css rather than
+ * inventing a palette, so the page looks like it belongs to the same product as the dashboard the
+ * merchant will get.
+ *
+ * RTL IS THE STARTING POINT. Every offset below is a logical property (`inset-inline`,
+ * `border-inline-start`, `padding-inline`), so the layout is correct in Arabic first — the two
+ * fields that are genuinely Latin-by-content, the phone number and the link prefix, carry
+ * `dir="ltr"` on the input itself and nowhere else.
+ */
+
+[data-surface='public'] {
+  --sbp-ink: #241c14;
+  --sbp-ink-soft: #6b5d4d;
+  --sbp-paper: #faf7f1;
+  --sbp-panel: #ffffff;
+  --sbp-rule: #e3d9c8;
+  --sbp-rule-strong: #c9bda6;
+  /*
+   * The FIELD boundary, darker than the decorative rules above and not the same token.
+   *
+   * WCAG 1.4.11 wants 3:1 for the visual boundary of a control, and `--sbp-rule-strong` against the
+   * field fill measures 1.7:1 — the box is visible to me and not to someone reading this form in
+   * sunlight on a phone, which is most of the people it is for. #8a7c62 gives 3.8:1 on the same
+   * fill and still reads as a warm hairline rather than a black outline.
+   */
+  --sbp-field-border: #8a7c62;
+  --sbp-accent: #a63d0b;
+  --sbp-accent-soft: #f6e9df;
+  --sbp-danger: #9c1c2c;
+  --sbp-danger-soft: #f9e4e6;
+
+  color: var(--sbp-ink);
+  background: var(--sbp-paper);
+  min-height: 100dvh;
+}
+
+.sbp-main {
+  display: block;
+  padding: var(--sb-space-8) var(--sb-space-4) var(--sb-space-12);
+}
+
+.sbp-page {
+  max-width: 34rem;
+  margin-inline: auto;
+}
+
+.sbp-head {
+  margin-block-end: var(--sb-space-6);
+}
+
+.sbp-title {
+  font-size: var(--sb-text-2xl);
+  line-height: 1.25;
+  margin: 0 0 var(--sb-space-2);
+}
+
+.sbp-lead {
+  margin: 0;
+  color: var(--sbp-ink-soft);
+}
+
+.sbp-card,
+.sbp-form {
+  background: var(--sbp-panel);
+  border: 1px solid var(--sbp-rule);
+  border-radius: var(--sb-radius-lg);
+  padding: var(--sb-space-6);
+}
+
+.sbp-card .sbp-title {
+  font-size: var(--sb-text-xl);
+}
+
+/* --- Fields ---------------------------------------------------------------- */
+
+.sbp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-block-end: var(--sb-space-6);
+}
+
+.sbp-label {
+  font-weight: 600;
+}
+
+.sbp-input,
+.sbp-select {
+  font: inherit;
+  color: inherit;
+  background: var(--sbp-paper);
+  border: 1px solid var(--sbp-field-border);
+  border-radius: var(--sb-radius);
+  /* 16px minimum, or iOS Safari zooms the whole page on focus and the form jumps under the thumb. */
+  font-size: max(1rem, var(--sb-text-base));
+  padding: 10px 12px;
+  width: 100%;
+}
+
+.sbp-input:focus-visible,
+.sbp-select:focus-visible,
+.sbp-btn:focus-visible {
+  outline: 3px solid var(--sbp-accent);
+  outline-offset: 2px;
+}
+
+/* The browser's own invalid styling is suppressed: `noValidate` means the server decides, and a
+   field marked red before it has been submitted is a lie about what actually failed. */
+.sbp-input[aria-invalid='true'],
+.sbp-select[aria-invalid='true'] {
+  border-color: var(--sbp-danger);
+}
+
+.sbp-hint {
+  font-size: var(--sb-text-sm);
+  color: var(--sbp-ink-soft);
+}
+
+/* --- Notices --------------------------------------------------------------- */
+
+.sbp-notice {
+  border: 1px solid var(--sbp-rule);
+  border-inline-start: 3px solid var(--sbp-accent);
+  background: var(--sbp-accent-soft);
+  border-radius: var(--sb-radius);
+  padding: var(--sb-space-4);
+  margin-block-end: var(--sb-space-6);
+}
+
+.sbp-notice p {
+  margin: 0;
+}
+
+.sbp-notice-title {
+  font-size: var(--sb-text-base);
+  margin: 0 0 var(--sb-space-2);
+}
+
+.sbp-notice--error {
+  border-inline-start-color: var(--sbp-danger);
+  background: var(--sbp-danger-soft);
+}
+
+.sbp-notice--error ul {
+  margin: var(--sb-space-2) 0 0;
+  padding-inline-start: var(--sb-space-4);
+}
+
+/* --- Action ---------------------------------------------------------------- */
+
+.sbp-actions {
+  display: flex;
+  gap: var(--sb-space-3);
+}
+
+.sbp-btn {
+  font: inherit;
+  font-weight: 600;
+  background: var(--sbp-accent);
+  color: #ffffff;
+  border: 1px solid var(--sbp-accent);
+  border-radius: var(--sb-radius);
+  /* 44px of target, because this is a one-handed phone form. */
+  padding: 12px var(--sb-space-6);
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.sbp-btn[disabled] {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sbp-btn {
+    transition: background-color 120ms ease;
+  }
+}
+
+.sbp-btn:hover:not([disabled]) {
+  background: #8d3409;
+}
