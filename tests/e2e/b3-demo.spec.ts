@@ -183,7 +183,23 @@ test.describe('the approve → link → storefront → close chain', () => {
     const row = page.getByRole('row').filter({ hasText: BUSINESS });
     await row.getByRole('button', { name: 'وافق وجهّز النسخة' }).click();
 
-    await expect(page.getByText('تمت الموافقة وتجهّزت النسخة التجريبية.')).toBeVisible();
+    /**
+     * THE ACCEPTANCE CLOCK, not Playwright's default patience.
+     *
+     * This one click builds a whole shop inside a single transaction — theme, home page, five
+     * categories, fifteen products, fifteen generated images written to storage, seven sections —
+     * and then races a five-second timer per queue dispatch against a broker this stack
+     * deliberately leaves dead. It finishes in about 200ms on an idle machine and took 20.8s here
+     * on the tail of a full suite run, against `expect`'s 5s default: a real demo, correctly
+     * built, reported as a missing element.
+     *
+     * 30 seconds because that is the criterion the feature is held to — "from button click to a
+     * shareable link in under 30 seconds" (docs/PHASES.md) — so the assertion now fails when the
+     * PRODUCT misses its budget rather than when a loaded CI box is slower than a default.
+     */
+    await expect(page.getByText('تمت الموافقة وتجهّزت النسخة التجريبية.')).toBeVisible({
+      timeout: 30_000,
+    });
 
     await page.goto(`${ADMIN}/demos`);
     const demoRow = page.getByRole('row').filter({ hasText: PREFIX });
