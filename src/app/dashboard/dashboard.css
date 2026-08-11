@@ -715,3 +715,91 @@
   font-size: var(--sb-text-xl);
   margin-block-end: var(--sb-space-3);
 }
+
+/* --- Phase 4: domains, PWA and push ---------------------------------------- */
+
+/*
+ * A DNS record has three named parts, and every registrar's form asks for them in the same
+ * order. A definition list is the shape a merchant can match field by field; a table would put
+ * three headers over three cells and read as data rather than as instructions.
+ */
+.sbd-kv {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--sb-space-2) var(--sb-space-4);
+  margin: 0 0 var(--sb-space-4);
+  align-items: baseline;
+}
+
+.sbd-kv dt {
+  color: var(--sbd-ink-soft);
+  font-size: var(--sb-text-sm);
+}
+
+.sbd-kv dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.sbd-kv dd .sbd-hint {
+  display: block;
+}
+
+@media (max-width: 40rem) {
+  /* One column on a phone: a `max-content` label column beside a long hostname forces a
+     horizontal scroll on the whole page, and this is a screen merchants read on a phone. */
+  .sbd-kv {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0 0;
+  }
+
+  .sbd-kv dd {
+    margin-block-end: var(--sb-space-3);
+  }
+}
+
+/*
+ * A value to be COPIED, character for character, into someone else's form.
+ *
+ * `direction: ltr` is not cosmetic on an RTL page: a hostname or a token rendered in an RTL
+ * context has its trailing punctuation reordered by the bidi algorithm, so the merchant copies
+ * something subtly different from what is stored. `user-select: all` makes one tap select the
+ * whole value on a phone, which is where this is read.
+ */
+.sbd-code {
+  display: inline-block;
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: start;
+  font-family: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', monospace;
+  font-size: var(--sb-text-sm);
+  background: var(--sbd-panel-alt);
+  border: 1px solid var(--sbd-rule);
+  border-radius: 6px;
+  padding: 0.15em 0.45em;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.sbd-notice--warn {
+  background: var(--sbd-locked-soft);
+  border-color: var(--sbd-locked);
+  color: #4a2a08;
+}
+
+.sbd-notice--warn p {
+  margin: var(--sb-space-2) 0 0;
+}
+
+/*
+ * The domain list wraps rather than compressing. Each row carries a hostname, a status tag and
+ * two buttons; on a phone that is two lines, and squeezing it onto one truncates the hostname —
+ * the one string on the row the merchant needs to read exactly.
+ */
+.sbd-sortable li {
+  flex-wrap: wrap;
+}
+
+.sbd-sortable li form {
+  margin: 0;
+}

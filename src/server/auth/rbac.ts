@@ -25,6 +25,8 @@ export const MERCHANT_SCOPES = [
   'export',
   'staff',
   'analytics',
+  /** Phase 4 — the Web Push compose screen and its history. احترافي only. */
+  'notifications',
 ] as const;
 
 export type MerchantScope = (typeof MERCHANT_SCOPES)[number];
@@ -57,6 +59,13 @@ const FEATURE_GATED: Partial<Record<MerchantScope, Parameters<typeof canBool>[1]
   staff: 'staff_accounts',
   domain: 'custom_domain',
   analytics: 'analytics',
+  /**
+   * Phase 4's acceptance criterion in one line: *a متجر-plan tenant never sees the compose screen
+   * and receives a server-side refusal from the send action*. Both halves come from this entry —
+   * the nav is built from `checkMerchantAccess`, the page guard 404s on it, and the send service
+   * checks `push_notifications` again for itself.
+   */
+  notifications: 'push_notifications',
 };
 
 export async function checkMerchantAccess(

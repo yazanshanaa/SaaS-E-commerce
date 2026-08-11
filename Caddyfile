@@ -1,24 +1,43 @@
 # Souq Bartaa — reverse proxy.
 #
-# Phase 1 ships the shape; Phase 4 fills in the domain lifecycle (docs/DOMAINS.md).
-# Listed as a forbidden shared file in docs/PHASES.md, so it has to exist now — a parallel
-# track discovering it is missing would have to create it, which is exactly the collision
-# the forbidden list prevents.
-#
 # Two certificate strategies, deliberately different:
 #   - platform hostnames ({slug}.$DOMAIN, admin, app) use ONE wildcard certificate obtained
 #     through the Cloudflare DNS challenge (caddy-dns/cloudflare). Platform DNS lives on
-#     Cloudflare for exactly this reason.
+#     Cloudflare for exactly this reason: an HTTP challenge cannot answer for a wildcard, and
+#     issuing one certificate per storefront subdomain would burn the Let's Encrypt account
+#     quota that every merchant on this box shares.
 #   - merchant custom domains use on-demand TLS, gated by /internal/domain-ask so a stranger
-#     pointing a CNAME at us cannot make us mint certificates and burn the Let's Encrypt quota.
+#     pointing a CNAME at us cannot make us mint certificates and spend that same quota.
 #
 # Consequence for invariant 9: platform hostnames arrive through the Cloudflare proxy
 # (CF-Connecting-IP is meaningful), merchant custom domains hit this server directly
 # (only the socket IP is trustworthy). getClientIp() branches on precisely that.
+#
+# The full runbook — what the merchant types at their registrar, the Cloudflare grey-cloud rule,
+# why apex is documented rather than supported, and how to read a failed issuance — is in
+# docs/DOMAINS.md.
 
 {
 	email {$ACME_EMAIL}
 
+	# --- on-demand TLS: the brake, not the door --------------------------------
+	#
+	# `ask` is consulted before Caddy will obtain a certificate for a hostname it has never seen.
+	# The endpoint answers 200 only for a verified or active Domain row on a tenant that is not
+	# being purged; a SUSPENDED tenant still passes, because its polite Arabic pause page has to
+	# be served over valid HTTPS. See src/server/domains/ask.ts.
+	#
+	# `interval` and `burst` are the SECOND layer and they bound the damage from a bug in the
+	# first: even if the ask endpoint were to start answering yes for everything — a schema
+	# mistake, a database restored with the wrong rows — Caddy would still attempt at most 5 new
+	# issuances per 2 minutes. Let's Encrypt's per-account limits are counted per week, so an
+	# unbounded loop exhausts them long before anyone notices, and the recovery is measured in
+	# days for EVERY merchant, not just the one that caused it.
+	#
+	# Caddy's `ask` takes a URL and nothing else — there is no header to carry a shared secret —
+	# so the endpoint's protection is that it is not published outside the compose network. It is
+	# written to be safe if reached anyway: it accepts only a hostname, reveals only what DNS
+	# already does, and its single write is an idempotent status promotion.
 	on_demand_tls {
 		ask http://web:3000/internal/domain-ask
 		interval 2m
@@ -29,15 +48,37 @@
 # --- platform hostnames: one wildcard cert via DNS challenge -------------------
 *.{$DOMAIN}, {$DOMAIN} {
 	tls {
+		# Scoped token: Zone:DNS:Edit on this zone and nothing else. It can write the
+		# _acme-challenge TXT record and cannot touch anything a compromise would want.
 		dns cloudflare {$CLOUDFLARE_API_TOKEN}
 		resolvers 1.1.1.1
 	}
 
 	encode zstd gzip
 
-	reverse_proxy web:3000 {
-		header_up Host {host}
-		header_up X-Real-IP {remote_host}
+	# The internal endpoints are not published, and THIS is what makes that true.
+	#
+	# Caddy matches a host-specific site block ahead of the port-only `:443` block below, so a
+	# `handle /internal/*` written only down there covers merchant custom domains and nothing
+	# else — leaving `/internal/domain-ask` and `/internal/revalidate` answering on
+	# admin.$DOMAIN, app.$DOMAIN and every storefront subdomain. proxy.ts passes `/internal/*`
+	# through without resolving a tenant or a session (it has to: the ask arrives for a hostname
+	# we may not know yet), and the ask endpoint has no shared secret because Caddy's `ask`
+	# directive sends no headers. So this block is not defence in depth for those two routes on
+	# platform hostnames — it is the only layer they have.
+	#
+	# What was reachable without it: a status-code oracle over the whole `domains` table for any
+	# hostname a stranger cares to name, and — for a row sitting at `verified` — an unauthenticated
+	# GET that promotes it to `active` with no certificate ever issued.
+	handle /internal/* {
+		respond 404
+	}
+
+	handle {
+		reverse_proxy web:3000 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+		}
 	}
 }
 
@@ -49,8 +90,30 @@
 
 	encode zstd gzip
 
-	reverse_proxy web:3000 {
-		header_up Host {host}
-		header_up X-Real-IP {remote_host}
+	# Same block as the platform site above, and it has to be repeated rather than shared: Caddy
+	# matches one site block per request, so a directive in the other one does not reach here.
+	# `/internal/domain-ask` is how Caddy asks US a question; a visitor arriving on a merchant's
+	# domain must not be able to ask it too, and `/internal/revalidate` would let anyone drop a
+	# tenant's storefront cache.
+	handle /internal/* {
+		respond 404
 	}
+
+	handle {
+		reverse_proxy web:3000 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+}
+
+# --- plain HTTP on a custom domain ---------------------------------------------
+#
+# Caddy redirects http -> https automatically for names it holds a certificate for. A custom
+# domain that has NOT been verified holds none, so without this block the ACME HTTP-01 challenge
+# and the merchant's own "why is my site down" visit both land on Caddy's default 404 with no
+# explanation. Redirecting to HTTPS is the honest answer: either the certificate exists and the
+# site loads, or it does not and the browser says so, which is a diagnosable state.
+:80 {
+	redir https://{host}{uri} 308
 }

@@ -41,6 +41,24 @@ const ALLOWED_LATIN = new Set([
   'neon',
   'souq',
   'warsheh',
+  /**
+   * Phase 4's DNS vocabulary. These four are not untranslated English — they are the LITERAL
+   * strings a merchant has to find in their registrar's own control panel, which is in English
+   * whatever language we write in. Translating «سجل اسم مستعار» for CNAME would leave a shop
+   * owner hunting a menu item that does not exist under that name, which is the opposite of
+   * helping. CLAUDE.md allows exactly this: technical words Arabic speakers use as-is.
+   *
+   * `Cloudflare` is a company name, and the warning it appears in is the single most common
+   * failure of the whole domain flow (docs/DOMAINS.md §1).
+   *
+   * What is NOT here, deliberately: example hostnames. `shop.example.com` is a placeholder, not
+   * vocabulary, so it travels as an i18n PARAMETER from the page rather than living in the copy —
+   * the gate strips `{name}` before scanning, and a future locale gets to change the example.
+   */
+  'CNAME',
+  'TXT',
+  'DNS',
+  'Cloudflare',
 ]);
 
 function collectStrings(node: unknown, trail: string[] = []): Array<[string, string]> {

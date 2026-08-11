@@ -23,7 +23,7 @@ Recorded in full in `docs/PHASES.md` → **Resolved decisions**. Nothing here bl
 - [ ] Demo plan still disables `priority_support` (a human SLA, not a code path) — veto if you disagree
 
 ### Scope added by those answers — tracked in the phases below
-- [ ] Web Push (احترافي only) — `PushSubscription` + `PushMessage` + VAPID env in Phase 1, feature in Phase 4
+- [x] Web Push (احترافي only) — `PushSubscription` + `PushMessage` + VAPID env in Phase 1, feature in Phase 4
 - [ ] Public demo-request form → `DemoRequest` → admin approval — Phase 1 schema + proxy allow-list, surface in B3
 - [x] Annual billing period + ₪350 setup fee — Phase 1 schema, A1, B1
 - [x] Metered change requests (2 / 5 / unlimited, ₪25 over-quota) — `ChangeRequest` in Phase 1, A1, B2
@@ -407,38 +407,60 @@ create, since `isCapabilityVisible()` is fail-closed (raised by A2 at review).
 ## Phase 4 — Domains, PWA and Push (sequential, main session)
 
 ### Domains
-- [ ] Domain entry + Arabic CNAME instructions with the explicit Cloudflare DNS-only warning
-- [ ] Verify button: CNAME target match or `TXT souq-verify={token}`
-- [ ] Status flow pending → verified → active
-- [ ] **CNAME only in V1**; apex documented in `docs/DOMAINS.md` as advanced instructions with the ALIAS/ANAME and IP-change reasoning
-- [ ] `domains_limit` (0 / 1 / 1) enforced server-side behind `custom_domain`
-- [ ] Caddy on-demand TLS + `/internal/domain-ask`: 200 only for a verified/active domain on a live account; **suspended still passes** (the pause page needs valid HTTPS); **purged refuses cleanly, no 5xx**
-- [ ] Ask endpoint internal to the docker network + `on_demand` rate limiting in the Caddy config
-- [ ] Wildcard via caddy-dns/cloudflare with a scoped Zone:DNS:Edit token
-- [ ] `docs/DOMAINS.md` including the proxied-platform vs direct-custom-domain distinction `getClientIp()` depends on
+- [x] Domain entry + Arabic CNAME instructions with the explicit Cloudflare DNS-only warning — an instructions PAGE with a form on it (`/settings/domain`), not a field with help text: the merchant does this once, at a registrar we have never heard of, at 11pm
+- [x] Verify button: CNAME target match or `TXT souq-verify={token}` — the TXT accepted on the hostname **and** on `_souq-verify.{hostname}`, because a provider will refuse a TXT beside a CNAME on the same name
+- [x] Status flow pending → verified → active — `active` is stamped by the ask endpoint on Caddy's first request, the only signal that a certificate was actually issued; the promotion is a conditional `updateMany`, so renewals change nothing and emit nothing
+- [x] **CNAME only in V1**; apex documented in `docs/DOMAINS.md` as advanced instructions with the ALIAS/ANAME and IP-change reasoning
+- [x] `domains_limit` (0 / 1 / 1) enforced server-side behind `custom_domain` — an absent or non-numeric limit resolves to ZERO, never "unlimited": the resource is a Let's Encrypt quota shared with every other merchant on the box
+- [x] Caddy on-demand TLS + `/internal/domain-ask`: 200 only for a verified/active domain on a live account; **suspended still passes** (the pause page needs valid HTTPS); **purged refuses cleanly, no 5xx** — plus 404 for any hostname under the platform domain, which the wildcard certificate already covers
+- [x] Ask endpoint internal to the docker network + `on_demand` rate limiting in the Caddy config — and the `:443` block now returns 404 for `/internal/*`, so a visitor on a merchant's domain cannot reach it either
+- [x] Wildcard via caddy-dns/cloudflare with a scoped Zone:DNS:Edit token
+- [x] `docs/DOMAINS.md` including the proxied-platform vs direct-custom-domain distinction `getClientIp()` depends on
 
 ### PWA
-- [ ] Behind the `pwa` feature: dynamic Arabic manifest, service worker, Arabic offline page
-- [ ] Icons generated from `Site.logoMediaId` via the A3 pipeline
+- [x] Behind the `pwa` feature: dynamic Arabic manifest, service worker, Arabic offline page — the manifest needs the feature AND `Site.pwaEnabled`; the WORKER is served on `pwa` **or** `push_notifications`, because a push cannot be received without one in any browser
+- [x] Icons generated from `Site.logoMediaId` via the A3 pipeline — from the `full.webp` variant (never the discarded upload), squared with Sharp because a wordmark handed to a launcher is squashed or cropped; `maskable` is inset to 60% and declared as its own entry
+- [x] Routes carry no file extension (`/icons/192`, not `/icon-192.png`) — `proxy.ts` excludes `.png` from its matcher, so an icon at that path would arrive with no tenant context at all
 
 ### Web Push (احترافي only)
-- [ ] VAPID keys read from env
-- [ ] Service-worker push handler
-- [ ] Subscription capture into `PushSubscription` with an opt-in timestamp
-- [ ] Subscribe prompt offered only after the consent banner has been answered
-- [ ] Visitor-facing unsubscribe that deletes the row
-- [ ] Arabic compose screen writing `PushMessage` (title, body, target URL)
-- [ ] Delivery as a `TenantJob`; 410/404 responses delete the dead subscription and are counted
-- [ ] Send history read from `PushMessage`
-- [ ] Per-tenant send rate limit
+- [x] VAPID keys read from env — unconfigured is a first-class state: the subscribe control never appears rather than taking a real permission it can never deliver on
+- [x] Service-worker push handler — plus `notificationclick` (same-origin only) and `pushsubscriptionchange` (re-subscribe, so a rotated endpoint does not silently bleed the audience away)
+- [x] Subscription capture into `PushSubscription` with an opt-in timestamp — and a `Consent` row of kind `push` beside it; `consentAt` is never refreshed on a repeat visit, because it is the moment permission was given, not a "last seen"
+- [x] Subscribe prompt offered only after the consent banner has been answered — expressed as "no banner is on screen", so a tenant with push but without analytics is not locked out forever
+- [x] Visitor-facing unsubscribe that deletes the row — the ROW, not a flag: a disabled subscription is still a stored per-device identifier for someone who asked to be left alone. The `Consent` record of the withdrawal survives it
+- [x] Arabic compose screen writing `PushMessage` (title, body, target URL) — the target is stored as a PATH always, so a compromised merchant account cannot turn a trusted notification into an open redirect
+- [x] Delivery as a `TenantJob`; 410/404 responses delete the dead subscription and are counted — batched 500 at a time with a cursor, because the whole processor runs inside one 120s transaction; a 500 does NOT delete, it is the push service having a bad minute
+- [x] Send history read from `PushMessage`
+- [x] Per-tenant send rate limit — counted off `PushMessage` ROWS, not Redis. Every other throttle here degrades open; this one must not, because a notification cannot be taken back and an over-pushing shop is muted at the OS level forever
 
 ### Gate
-- [ ] E2E: certificate issuance refused for an unverified domain
-- [ ] E2E: a second domain above the cap is rejected
-- [ ] Integration: ask endpoint in every state — pending / verified / active / suspended / **purged**
-- [ ] A push to an expired endpoint removes the subscription instead of retrying
-- [ ] **A متجر-plan tenant gets a server-side refusal from the send action and never sees the compose screen**
-- [ ] Exceeding the per-tenant send limit is rejected server-side with an Arabic error
+- [x] E2E: certificate issuance refused for an unverified domain
+- [x] E2E: a second domain above the cap is rejected
+- [x] Integration: ask endpoint in every state — pending / verified / active / suspended / **purged** (plus unknown, malformed, and a platform hostname)
+- [x] A push to an expired endpoint removes the subscription instead of retrying
+- [x] **A متجر-plan tenant gets a server-side refusal from the send action and never sees the compose screen**
+- [x] Exceeding the per-tenant send limit is rejected server-side with an Arabic error
+- [x] typecheck + lint + **816 unit and integration tests** + `next build` + the full **102-spec e2e** (incl. axe and Lighthouse), all green in the main checkout
+- [x] `docs/DECISIONS.md` updated; `docs/DOMAINS.md` written
+
+**Seven defects found and fixed before the commit — two by the gate, five by an adversarial review:**
+
+The gate:
+- `addDomainAction` returned `{status:'ok'}`, so `useActionState` re-rendered the form while the list and the cap around it stayed stale — «أضفنا الدومين» printed directly above «ما ربطت دومين بعد.», with the add form still offering a second domain the cap had just spent. It redirects now. Only the e2e layer renders the page and the action together.
+- `checkDomainOwnership` compared the CNAME target without normalising what the lookup returned, so any `DnsLookup` implementation handing back an FQDN with its trailing dot would have failed verification for everyone, silently. Both sides are normalised at the comparison now.
+
+The review (three reviewers, each finding then handed to a separate agent told to refute it; five of eleven survived) — full reasoning in `docs/DECISIONS.md`:
+- **`/internal/*` was publicly reachable on every platform hostname.** The edge block went into the `:443` custom-domain site only, and Caddy matches a host-specific block first — so the on-demand-TLS ask answered anyone on `admin.`, `app.` and every storefront subdomain. It is the ONLY layer those routes have (no session, no tenant, and Caddy's `ask` sends no headers), so this exposed a status-code oracle over the `domains` table and an unauthenticated GET that promoted a `verified` row to `active` with no certificate issued. Mirrored into the platform block; a unit test now counts the directive in both, with comments stripped
+- **The push subscribe endpoint appended a `Consent` row per REQUEST**, not per decision — one visitor could produce hundreds of duplicate compliance rows. It now writes only when the visitor's last answer changed, the same guard `removeSubscription` already used
+- **`sendNotification` had no timeout**, and Node's HTTPS client has no default — one unresponsive endpoint would have burned the 120s transaction budget and lost the counts for every subscriber already reached in that batch. 10s per request now
+- **The `/settings/advanced` link was gated on `custom_domain`** — correct until Phase 4 moved domains out, after which a tenant with `pwa` or `seo_tools` and no domain lost the only route to panels that render perfectly
+- **The TXT verification value was a phantom before a domain row existed** — regenerated on every render, stored nowhere, beside copy telling the merchant to publish it. The block is not rendered until a row exists
+
+**Still open, carried forward** — full detail in `docs/DECISIONS.md`:
+- [ ] A tenant's push subscriptions survive an admin turning `push_notifications` off — nothing can send to them and nothing new can subscribe, but the rows remain. The sweep belongs with **Phase 6**'s consent/DSR work
+- [ ] A continuation batch that fails after sending double-counts on retry; the enqueue is inside the transaction because a processor has no post-commit hook (`createWorker` owns the only one). An imperfect count beats an undelivered notification
+- [ ] PWA icons render per request behind a 256-entry in-process cache. If install-prompt traffic shows up in a profile, the answer is a queued generation job — not built now, because it would add bytes the storage counter does not know about
+- [ ] `/internal/domain-ask` carries no shared secret; Caddy's `ask` takes a URL and nothing else. The network boundary is the control, and the endpoint is written to be safe if reached anyway
 
 ---
 

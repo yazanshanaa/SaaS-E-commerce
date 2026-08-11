@@ -3,6 +3,7 @@ import { hasContactSection } from '../lib/arrangement';
 import { legalHref, legalPagesFor } from '../lib/legal';
 import { SECTION_ANCHORS } from '../section-anchors';
 import type { StorefrontContext } from '../view-model';
+import { PushToggle } from './push-toggle';
 import { SocialLinks } from './social-links';
 
 /**
@@ -19,7 +20,17 @@ import { SocialLinks } from './social-links';
  * why the contact column carries the weight and the follow column simply does not appear,
  * rather than leaving a heading floating over blank space.
  */
-export function SiteFooter({ context }: { context: StorefrontContext }) {
+export function SiteFooter({
+  context,
+  showPush = false,
+}: {
+  context: StorefrontContext;
+  /**
+   * Decided by the shell, because it is the only component that knows whether the consent banner
+   * is currently on screen — and the push offer waits for that to be answered (Phase 4).
+   */
+  showPush?: boolean;
+}) {
   const { site, socialLinks } = context;
   const legal = legalPagesFor(site.sellingEnabled);
   const year = new Date().getFullYear();
@@ -84,6 +95,28 @@ export function SiteFooter({ context }: { context: StorefrontContext }) {
             <h2>{st('social.title')}</h2>
             <SocialLinks links={socialLinks} />
           </div>
+        ) : null}
+
+        {/*
+          Push lives here rather than in a pinned bar: a permission request has to be tied to a
+          user gesture to work reliably at all, and the UNSUBSCRIBE has to be findable on every
+          page forever — not only in the moment a prompt happened to appear. Labels are resolved
+          here because the control is a client component and must not import the i18n layer.
+        */}
+        {showPush && context.pushPublicKey ? (
+          <PushToggle
+            publicKey={context.pushPublicKey}
+            labels={{
+              heading: st('push.heading'),
+              hint: st('push.hint'),
+              subscribe: st('push.subscribe'),
+              unsubscribe: st('push.unsubscribe'),
+              working: st('push.working'),
+              subscribed: st('push.subscribed'),
+              denied: st('push.denied'),
+              failed: st('push.failed'),
+            }}
+          />
         ) : null}
       </div>
 

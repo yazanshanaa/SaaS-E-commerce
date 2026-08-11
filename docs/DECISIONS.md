@@ -848,3 +848,280 @@ back over a broker blink would be strictly worse.
   owns. Either the ownership table needs a line or the `.gitignore` comment is out of date. When
   real photos are added, `next.config.ts` needs an `outputFileTracingIncludes` entry or the
   standalone build silently keeps drawing placeholders.
+
+---
+
+## Phase 4 — Domains, PWA and Web Push
+
+Sequential, main session. No schema change: `Domain`, `PushSubscription` and `PushMessage` all
+shipped in Phase 1, and Phase 4 is the first code to write them.
+
+### Custom domains
+
+**The CNAME target is per tenant, never a shared `cname.{DOMAIN}`.** A merchant points
+`shop.example.com` at their own `{slug}.{DOMAIN}`. A single shared target would carry no
+information about *who* is asking, so the certificate gate could only ever answer "yes, this is one
+of ours" — and any stranger pointing a CNAME at it would be indistinguishable from the tenant that
+holds the row. Per tenant, the DNS record *is* the proof of control, which is what makes the CNAME
+path a verification method rather than a convenience.
+
+**TXT is a second proof, and it proves something weaker.** Providers refuse a TXT beside a CNAME on
+the same name — correctly, RFC 1034 says a CNAME must be alone — so `souq-verify={token}` is
+accepted on the hostname or on `_souq-verify.{hostname}`. It establishes control of the name, not
+that traffic reaches us. Both land in `verified`, because `verified` is the state the certificate
+gate needs; a certificate for a name that does not resolve here is simply never requested.
+
+**`verified -> active` is stamped by the ask endpoint, not by a button.** Verification proves a DNS
+record exists; it does not prove the domain is *serving*. The only party that ever learns a
+certificate was issued is Caddy, and `/internal/domain-ask` is where it tells us. Asking the
+merchant to press a second button would leave every domain at `verified` forever, because from
+their side it already works. The promotion is a conditional `updateMany`, so Caddy's renewals —
+which ask again — change nothing and emit nothing. The write never fails the ask: the certificate
+decision has already been made, and refusing HTTPS to a merchant's customers because a status
+column did not update would be the wrong trade by a wide margin.
+
+**A failed check never demotes a working domain.** DNS is not always reachable. Only a `pending`
+domain can become `failed`; taking a live site's certificate away because a resolver timed out is a
+self-inflicted outage.
+
+**Verification asks public resolvers (1.1.1.1, 8.8.8.8), not the container's.** A merchant adds the
+record and clicks verify a minute later; a caching resolver that already answered NXDOMAIN keeps
+answering it for the whole negative TTL. The person who did everything right would be told their
+DNS is wrong. `DNS_RESOLVERS` is env so a deployment can change it.
+
+**The proxied-Cloudflare case has its own failure code and its own sentence.** No CNAME but the
+name resolves to addresses is almost always the orange cloud: the record is flattened, so the CNAME
+is invisible to every resolver *and* the ACME challenge never arrives. It is the most common
+failure of the whole flow, so the warning sits above the form rather than in a troubleshooting page
+nobody reaches. `docs/DOMAINS.md` section 1.
+
+**The cap fails closed.** `resolveDomainCap` reads both `custom_domain` and `domains_limit`, and an
+absent or non-numeric limit resolves to **zero**, never "unlimited". This is not packaging: every
+hostname is a certificate requested against per-account Let's Encrypt limits *shared with every
+other merchant on the box*, so one tenant adding fifty domains takes everyone else's certificates
+down with them. The Caddyfile's `interval 2m` / `burst 5` is the second layer, bounding the damage
+from a bug in the first.
+
+**B2's "request a domain" stub is gone.** It wrote an audit row and nothing else, honestly labelled
+as a placeholder. Leaving it beside the real screen would have given a merchant two boxes for one
+job, one of which did nothing.
+
+**Apex is documented, not supported (Q7).** A CNAME is illegal at the apex, the ALIAS/ANAME
+substitutes differ at every provider, and an A record means one server IP change breaks every apex
+domain on the platform at the same moment, silently. `docs/DOMAINS.md` section 2 carries the
+advanced instructions and the reasoning.
+
+### PWA
+
+**Nothing is static.** The manifest carries the merchant's own name, tagline, colours and icons; a
+shared file would install one shop on another shop's customer's home screen under the platform's
+name. `start_url` and `scope` are **relative** so an install made today still opens the right
+origin after a custom domain is connected — an absolute URL baked from either hostname would leave
+every already-installed customer landing on the other one, forever, with nothing to notice.
+
+**The PWA needs BOTH the `pwa` feature and `Site.pwaEnabled`.** A shop that never asked for an
+install prompt should not get one because they upgraded their plan for a different reason. The
+service worker is gated more loosely — `pwa` **or** `push_notifications` — because a push cannot be
+received without a worker in any browser, and gating it on the PWA alone would make a احترافي
+feature depend on an unrelated متجر one.
+
+**Icons are generated from `Site.logoMediaId` through A3's variants, and squared here.** The source
+is `full.webp` (or the next widest that exists) — never the upload, which the pipeline discards by
+design. What this phase adds is the one thing the pipeline cannot do: make the result square. A
+shop's logo is almost always a wide wordmark, and Android and iOS both render an icon in a fixed
+square, so a 3:1 mark handed to them is squashed or cropped to three letters. `maskable` is a
+genuinely different picture — inset to 60% so a circular launcher crop keeps all of it — which is
+why it is declared as its own entry rather than `purpose: 'any maskable'`.
+
+**The icon routes carry no file extension.** `proxy.ts`'s matcher excludes `.png` so Next's static
+assets never pay for tenant resolution — which means a route at `/icon-192.png` would arrive with
+no tenant context and could not know whose shop it belongs to. Hence `/icons/192`, with the content
+type set by the handler. The variant list is a closed set checked before anything renders: a
+free-form size parameter would be a resize bomb in a process that also serves storefronts.
+
+**The service worker caches exactly one document: `/offline`.** Prices change hourly, three surfaces
+share one origin pattern, and an offer that ended is worse than a page that is slow. Navigations are
+network-first, and the fallback is used only when the network genuinely failed — a 4xx or 5xx is a
+real answer (a suspended shop's pause page, a deleted product) and replacing it with "you are
+offline" would tell the visitor something untrue about their own connection.
+
+### Web Push (احترافي only)
+
+**The subscribe control lives in the FOOTER, in normal flow.** Three reasons, and the third is the
+one that decides it: a pinned bar would be a third fixed element fighting the consent banner and the
+demo watermark for the bottom of a phone (the shell already carries a comment about losing that
+fight once); browsers penalise — and Chrome silently blocks — a permission request not tied to a
+user gesture; and the **unsubscribe has to be findable forever**, not only in the moment a prompt
+happened to appear.
+
+**The offer waits for the consent banner, expressed as "no banner is on screen".** Not "the visitor
+has answered": a tenant with push but without analytics never shows a banner, so `consentAnswered`
+would stay false forever and the control would never appear. What the rule protects against is
+stacking two permission asks on one screen.
+
+**Two records per decision.** The `PushSubscription` row is the working object; a `Consent` row of
+kind `push` is the audit and **survives the unsubscribe**. The endpoint is deleted — not flagged,
+not soft-deleted, because a disabled subscription is still a stored per-device identifier for
+someone who asked to be left alone — and what remains carries the rotating `visitorHash`, never the
+endpoint. Enough to show the withdrawal happened; not enough to find the person again.
+
+**`consentAt` is never refreshed on an update.** It is the moment permission was given. The subscribe
+control is on every page and a browser hands back the same endpoint each visit, so refreshing it
+would turn a compliance record into a "last seen" timestamp — which is what `lastSeenAt` is for.
+
+**The send limit is counted off `PushMessage` rows, not off Redis.** Every other throttle on this
+platform degrades open when the cache blinks, deliberately. This one must not: a notification cannot
+be taken back, and a shop that pushes six times in an evening is muted at the OS level where no
+merchant wins the permission back. `draft` and `failed` do not count — the customers never saw them.
+
+**A send with no audience is refused, not silently succeeded.** A merchant who writes an offer and
+presses send should not be told it went out to nobody, and the daily quota should not be spent on it.
+
+**The notification target is stored as a PATH, always.** A merchant pastes a link from their own
+address bar — that is the ordinary input — and only the path survives. If an absolute URL could be
+stored this would be an open redirect wearing a shop's name, arriving as a notification the customer
+already trusted; one compromised merchant account would be a phishing channel with an install base.
+The service worker refuses a cross-origin target as well, because the payload crosses a system we do
+not own.
+
+**Delivery batches with a cursor.** A TenantJob runs inside one interactive transaction opened by
+`createWorker` (120s budget, not negotiable from the processor), so a shop with four thousand
+subscribers would hold a connection open for the whole fan-out and lose both the delivery and the
+counts. Each job takes 500 endpoints in id order and enqueues its own continuation if it filled the
+batch; the message stays `sending` until a batch comes back short, which is also what makes the
+dashboard's «جاري الإرسال» truthful. The first job claims `queued -> sending` with a conditional
+`updateMany`; continuations carry a cursor and skip the claim. Without that claim a re-delivered
+BullMQ job sends every subscriber the same offer twice.
+
+**404 and 410 delete the subscription; 500 does not.** Both of the first two mean the endpoint is
+gone for good. Retrying is how a merchant's audience count becomes a number that only rises while
+the real one falls. A 500 is the push service having a bad minute, and deleting on it would throw
+away a live subscriber.
+
+**`pushsubscriptionchange` re-subscribes.** When a push service rotates an endpoint it stops
+answering for the old one and never returns 410 either, so the delivery job's own cleanup never
+fires — the audience bleeds away silently. The worker re-subscribes and tells the server which
+endpoint it replaces.
+
+### Cross-cutting
+
+- **`src/server/rate-limit.ts`** generalises A3's upload limiter (atomic Lua INCR+EXPIRE, in-process
+  fallback) because Phase 4 needed the same shape twice more. Copying the script a third time meant
+  three places to get the atomicity wrong.
+- **The language gate gained four allowed Latin words** — `CNAME`, `TXT`, `DNS`, `Cloudflare`. They
+  are not untranslated English: they are the literal strings a merchant has to find in a registrar's
+  control panel, which is in English whatever language we write in. Example hostnames are **not**
+  on that list; `shop.example.com` and `/products/kanaba` travel as i18n **parameters** from
+  `src/server/domains/hostname.ts` and `src/server/push/messages.ts`, so a second locale can change
+  them and the gate keeps refusing stray Latin in copy.
+- **`addDomainAction` redirects on success.** `useActionState` re-runs the action and re-renders the
+  FORM; the server component around it is not re-fetched unless the action revalidates or navigates.
+  Returning `{status:'ok'}` produced the one screen state that must never happen — «أضفنا الدومين»
+  directly above «ما ربطت دومين بعد.», with the add form still offering a second domain the cap had
+  just spent. Found by the e2e suite, which is the only layer that renders the page and the action
+  together.
+- **`checkDomainOwnership` normalises BOTH sides of the CNAME comparison.** `systemDnsLookup`
+  already strips the trailing dot, so this looks redundant — and it is exactly the redundancy that
+  stops being redundant: `DnsLookup` is an injectable interface, and the moment a second
+  implementation returns an FQDN verbatim, verification silently never succeeds for anyone. Found by
+  the unit suite.
+
+### Five defects an adversarial review found after the gate was green
+
+Three reviewers (isolation, correctness, security) read the diff independently; every finding was
+then handed to a separate agent told to REFUTE it against the code. Five survived. All five are
+fixed; the gate was re-run whole.
+
+1. **`/internal/*` was reachable from the public internet on every platform hostname.** The
+   `handle /internal/* { respond 404 }` block went into the `:443` custom-domain site only. Caddy
+   matches a host-specific site block ahead of the port-only one, so on `admin.{DOMAIN}`,
+   `app.{DOMAIN}` and every storefront subdomain the internal routes answered anyone. That is not
+   a missing second layer — it is the *only* layer those two routes have: `proxy.ts` passes
+   `/internal/*` through without resolving a tenant or a session (it has to; the ask arrives for a
+   hostname we may not know yet), and `/internal/domain-ask` carries no shared secret because
+   Caddy's `ask` directive sends no headers. What was exposed: a status-code oracle over the whole
+   `domains` table for any hostname a stranger cares to name, and — for a row at `verified` — an
+   unauthenticated GET that promoted it to `active`, stamped `activatedAt`, emitted
+   `domain.activated` and dropped the hostname cache, with no certificate ever issued. The
+   Caddyfile's own comment asserted the protection that was absent. **Fixed** by mirroring the
+   block into the platform site, with the proxy moved inside its own `handle` so the matcher is
+   reachable. A unit test now counts the directive in both blocks — with comments stripped first,
+   because the paragraph explaining the directive by name made a naive text search find three
+   blocks in a file with two, which is precisely how this gate would have gone green over the
+   deleted directive it was written to catch.
+
+2. **The push subscribe endpoint appended a `Consent` row on every request.** The subscription
+   upsert is idempotent; the compliance write was not, and the asymmetry was the bug — a returning
+   browser re-subscribes on every visit, the service worker re-subscribes on every
+   `pushsubscriptionchange`, and a script may POST up to the per-IP hourly limit. One visitor
+   produced hundreds of duplicate proofs of a single decision in a tenant-owned table.
+   `removeSubscription`, forty lines below, already guarded exactly this case for withdrawals.
+   **Fixed** with the same shape the consent banner's route uses: write only when the visitor's
+   last recorded answer *changed*. An unsubscribe followed by a fresh opt-in still writes two rows,
+   because that is genuinely two decisions.
+
+3. **`webpush.sendNotification` had no request timeout.** `web-push` leaves `timeout` undefined
+   unless passed, and Node's HTTPS client has no default socket timeout — so one push service that
+   accepts the connection and then stops answering hangs forever. The whole processor runs inside
+   one interactive transaction with a 120s budget, so a single stalled endpoint out of five hundred
+   would not cost one delivery: it would burn the budget, roll back, and lose the counts for every
+   subscriber the batch had already reached. **Fixed** with a 10s per-request ceiling — far beyond
+   any healthy service, far below the transaction budget — so a stall is counted as the failure it
+   is.
+
+4. **The link to `/settings/advanced` was gated on `custom_domain`.** Accidentally correct while
+   the domain panel lived on that screen; Phase 4 moved domains out, so a tenant with `pwa` or
+   `seo_tools` and no custom domain — one entitlement override away — lost the only route to the
+   two panels they do have, on a page that renders them perfectly. **Fixed** by gating it on
+   "does this plan include anything advanced", which is what `loadAdvanced().flags.empty` already
+   computed for the screen itself.
+
+5. **The TXT verification value was a phantom before a domain row existed.** With no row,
+   `loadDomains` fell back to a freshly generated token so the whole procedure could be read before
+   committing — but that token was regenerated on every render and stored nowhere, while the copy
+   beside it told the merchant to publish these values and come back. Anyone who took the TXT path
+   first published a value that could never match, and «تحقّق» would then refuse a record sitting
+   in their own DNS with nothing to explain why. The code comment admitted the token "is not stored
+   and not honoured" — an awareness that lived only in the comment. **Fixed**: the TXT block is not
+   rendered until a row exists, and the copy says so. The CNAME half is complete without a row and
+   is the path the instructions lead with, so a merchant deciding whether their registrar can do
+   this still has everything they need up front.
+
+Findings that did NOT survive verification, recorded because the reasoning is worth keeping:
+the continuation enqueue "forking" on rollback (Prisma's statement ordering makes the claimed
+trigger unreachable, and the residual sliver is the tradeoff already documented above); a
+`PushMessage` permanently stuck in `sending` (reachable only via states the system cannot produce
+for itself); the `!vapid` branch moving a message backwards from `sending` to `failed` (same); a
+resolver outage being indistinguishable from NXDOMAIN (the Arabic copy for `missing` already says
+"sometimes it takes a while — try again in fifteen minutes", and a `pending` row that records
+`failed` is re-verifiable); a null `verificationToken` collapsing the TXT proof to the sentinel
+`souq-verify=` (unreachable — `addDomain` is the only writer of a custom Domain row and always
+mints one); and the daily-quota check-then-act race (bounded by the same form's own submit state
+and by a limit whose whole purpose is a soft reputation ceiling).
+
+### Still open, carried forward
+
+- **A merchant's push audience survives an admin turning `push_notifications` off.** Nothing can
+  send to them (the compose action checks the flag) and nothing can subscribe, but the rows remain.
+  A sweep belongs with **Phase 6**'s consent/DSR work, and weakening the unsubscribe endpoint's own
+  feature gate to solve it would be the wrong direction.
+- **A continuation batch that fails after sending double-counts on retry.** The enqueue happens
+  inside the transaction (there is no post-commit hook available to a processor; `createWorker` owns
+  the only one and is a frozen shared file), so a rollback loses that batch's counts while the
+  continuation still runs from a correct cursor. An imperfect count beats an undelivered
+  notification, and the alternative failure mode is a message stuck at `sending` with most of the
+  audience never reached.
+- **The push subscribe endpoint has no push-service hostname allow-list.** It requires HTTPS, bounds
+  the lengths, rate-limits per IP and dedupes on `@@unique([tenantId, endpoint])`. An allow-list
+  would have to name every current service and would silently stop recording subscriptions the day a
+  browser changes its endpoint host — with no error anyone would see. Stated rather than hidden.
+- **PWA icons are rendered per request with a small in-process cache**, bounded at 256 entries and
+  keyed on tenant, variant, logo id and both colours. There is no CDN in front of the app server for
+  these paths; `Cache-Control: max-age=86400` bounds what browsers re-request. If install-prompt
+  traffic ever shows up in a profile, the answer is a queued generation job writing under the media
+  prefix — deliberately not built now, because it would add bytes the storage counter does not know
+  about.
+- **`/internal/domain-ask` has no shared secret**, because Caddy's `ask` directive takes a URL and
+  nothing else. The network boundary is the control; the endpoint is written to be safe if reached
+  anyway (hostname input only, reveals only what DNS already does, one idempotent write), and the
+  `:443` block now returns 404 for `/internal/*` so a visitor on a merchant's domain cannot reach it.

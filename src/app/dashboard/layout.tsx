@@ -102,17 +102,21 @@ async function navItems(ctx: MerchantContext): Promise<NavItem[]> {
   // Both axes, per entry. `checkMerchantAccess` answers "may this role?" and "does this plan
   // include it?" together, so a basic-plan owner loses the analytics link and a staff member
   // loses appearance, sections, settings and staff — by the same call the routes make.
-  const [appearance, sections, settings, staff, analytics] = await Promise.all([
+  const [appearance, sections, settings, staff, analytics, notifications] = await Promise.all([
     merchantCan(ctx, 'appearance'),
     merchantCan(ctx, 'sections'),
     merchantCan(ctx, 'settings'),
     merchantCan(ctx, 'staff'),
     merchantCan(ctx, 'analytics'),
+    // Phase 4. The same call the route makes, so a متجر merchant loses the link and the URL at
+    // once rather than finding a screen the nav forgot to hide.
+    merchantCan(ctx, 'notifications'),
   ]);
 
   if (appearance) items.push({ href: '/appearance', key: 'appearance' });
   if (sections) items.push({ href: '/sections', key: 'sections' });
   if (settings) items.push({ href: '/settings', key: 'settings' });
+  if (notifications) items.push({ href: '/notifications', key: 'notifications' });
   if (analytics) items.push({ href: '/analytics', key: 'analytics' });
   if (staff) items.push({ href: '/staff', key: 'staff' });
 

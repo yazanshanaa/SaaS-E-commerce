@@ -1014,3 +1014,58 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* --- Phase 4: push and the offline page ------------------------------------ */
+
+/*
+ * The push control is a FOOTER COLUMN, not a banner.
+ *
+ * `.sf-footer__inner` is an auto-fit grid, so this drops into the same rhythm as the contact and
+ * social columns and needs no layout of its own — which is the point: a subscribe offer that
+ * looks like part of the site is read as an offer, while one that floats over the page is read
+ * as an interruption and dismissed without being read at all.
+ */
+.sf-push__hint {
+  color: var(--t-ink-soft);
+  font-size: var(--t-text-sm);
+  margin-block: var(--t-space-xs) var(--t-space-sm);
+  max-inline-size: 34ch;
+}
+
+/*
+ * The offline page, rendered from the service worker's cache with no server involved.
+ *
+ * It carries its own centring because it is served OUTSIDE the storefront shell — there is no
+ * header, no footer and no `.sf-shell` wrapper around it, deliberately: every link in the header
+ * leads to a page that cannot load, and the consent banner would post to a network that is down.
+ */
+.sf-offline {
+  min-block-size: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--t-space-sm);
+  text-align: center;
+  padding: var(--t-space-2xl) var(--t-space-lg);
+  background: var(--t-bg);
+  color: var(--t-ink);
+}
+
+.sf-offline__shop {
+  color: var(--t-ink-soft);
+  font-size: var(--t-text-sm);
+  letter-spacing: 0.04em;
+}
+
+.sf-offline__title {
+  font-family: var(--t-font-display);
+  font-size: var(--t-text-2xl);
+  margin: 0;
+}
+
+.sf-offline__body {
+  color: var(--t-ink-soft);
+  max-inline-size: 38ch;
+  margin-block-end: var(--t-space-md);
+}

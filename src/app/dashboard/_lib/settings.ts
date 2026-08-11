@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { can } from '@/server/entitlements';
-import { getEnv } from '@/env';
 import type { MerchantContext } from './context';
 import { audit, refreshStorefront } from './audit';
 import { failure, invalid, optionalText, type ActionState } from './validation';
@@ -14,10 +13,11 @@ import { failure, invalid, optionalText, type ActionState } from './validation';
  * kinder shape too: a basic-plan shop owner has no use for a greyed-out box explaining what
  * they are not paying for on every visit. The sales conversation happens with a human.
  *
- * Domains are Phase 4's, and this screen says so honestly instead of shipping a button that
- * cannot work: it shows the current Domain rows read-only and records a REQUEST. Building the
- * CNAME instructions here would be building Phase 4 in B2's folder, and the verify flow, the
- * cap and the Caddy ask endpoint all live there.
+ * DOMAINS MOVED OUT IN PHASE 4. B2 shipped a "request a domain" stub here, honestly labelled as
+ * one, because verification, the cap and the Caddy ask endpoint did not exist yet. They do now,
+ * and they are a screen of their own — `/settings/domain` — because connecting a domain is a
+ * procedure a merchant follows at another company's control panel, not a field they fill in. What
+ * stays here is the LINK, still behind the same feature.
  */
 
 export interface AdvancedFlags {
@@ -30,17 +30,8 @@ export interface AdvancedFlags {
   empty: boolean;
 }
 
-export interface DomainRow {
-  hostname: string;
-  status: 'pending' | 'verified' | 'active' | 'failed';
-  isPrimary: boolean;
-  kind: string;
-}
-
 export interface AdvancedView {
   flags: AdvancedFlags;
-  domains: DomainRow[];
-  platformHostname: string;
   pwaEnabled: boolean;
   metaTitle: string | null;
   metaDescription: string | null;
@@ -53,20 +44,13 @@ export async function loadAdvanced(ctx: MerchantContext): Promise<AdvancedView |
   });
   if (!site) return null;
 
-  const [customDomain, domainsLimit, pwa, seoTools, paymentGateway, domains, tenant] =
-    await Promise.all([
-      can(ctx.tenantId, 'custom_domain'),
-      can(ctx.tenantId, 'domains_limit'),
-      can(ctx.tenantId, 'pwa'),
-      can(ctx.tenantId, 'seo_tools'),
-      can(ctx.tenantId, 'payment_gateway'),
-      ctx.db.domain.findMany({
-        where: { tenantId: ctx.tenantId, kind: 'custom' },
-        orderBy: [{ isPrimary: 'desc' }, { hostname: 'asc' }],
-        select: { hostname: true, status: true, isPrimary: true, kind: true },
-      }),
-      ctx.db.tenant.findUnique({ where: { id: ctx.tenantId }, select: { slug: true } }),
-    ]);
+  const [customDomain, domainsLimit, pwa, seoTools, paymentGateway] = await Promise.all([
+    can(ctx.tenantId, 'custom_domain'),
+    can(ctx.tenantId, 'domains_limit'),
+    can(ctx.tenantId, 'pwa'),
+    can(ctx.tenantId, 'seo_tools'),
+    can(ctx.tenantId, 'payment_gateway'),
+  ]);
 
   const flags: AdvancedFlags = {
     customDomain: customDomain === true,
@@ -80,13 +64,6 @@ export async function loadAdvanced(ctx: MerchantContext): Promise<AdvancedView |
 
   return {
     flags,
-    domains: domains.map((domain) => ({
-      hostname: domain.hostname,
-      status: domain.status as DomainRow['status'],
-      isPrimary: domain.isPrimary,
-      kind: domain.kind,
-    })),
-    platformHostname: tenant ? `${tenant.slug}.${getEnv().DOMAIN}` : '',
     pwaEnabled: site.pwaEnabled,
     metaTitle: site.metaTitle,
     metaDescription: site.metaDescription,
@@ -155,42 +132,9 @@ export async function saveSeo(ctx: MerchantContext, raw: unknown): Promise<Actio
 }
 
 // -----------------------------------------------------------------------------
-// Custom domain — a REQUEST, not a provisioning flow (Phase 4 owns that)
+// Custom domain
 // -----------------------------------------------------------------------------
-
-export const domainRequestSchema = z.object({
-  hostname: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .min(4, 'dashboard:errors.invalidValue')
-    .max(253, 'dashboard:errors.invalidValue')
-    // A hostname, not a URL: a merchant pasting `https://shop.example/` should be told what to
-    // type, not have a scheme silently stripped into something that looks accepted.
-    .regex(/^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/, 'dashboard:errors.invalidValue'),
-});
-
-/**
- * Record the merchant's intent and audit it. Nothing is provisioned.
- *
- * Phase 4 owns verification, the `domains_limit` enforcement, the Caddy on-demand TLS ask and
- * the CNAME runbook. Writing a `pending` Domain row here would put a hostname in a globally
- * unique column that no code can currently verify or clean up — and `domains` is the table
- * `proxy.ts` resolves strangers against.
- */
-export async function requestDomain(ctx: MerchantContext, raw: unknown): Promise<ActionState | null> {
-  if ((await can(ctx.tenantId, 'custom_domain')) !== true) {
-    return failure('dashboard:errors.forbidden');
-  }
-
-  const parsed = domainRequestSchema.safeParse(raw);
-  if (!parsed.success) return invalid(parsed.error);
-
-  await audit(ctx, {
-    action: 'domain.requested',
-    entityType: 'domain',
-    after: { hostname: parsed.data.hostname },
-  });
-
-  return null;
-}
+//
+// Phase 4 owns the whole flow, in `src/app/dashboard/_lib/domains.ts` and `src/server/domains`.
+// B2's "request a domain" stub is gone: it wrote nothing but an audit row, and leaving it beside
+// a real screen would have given a merchant two boxes for the same job, one of which did nothing.

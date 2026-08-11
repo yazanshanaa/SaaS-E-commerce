@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { t } from '@/shared/i18n';
 import { loadAdvanced } from '../../_lib/settings';
 import { requireMerchantPage } from '../../_components/guard';
@@ -9,11 +10,10 @@ import {
   Field,
   PageHead,
   Panel,
-  Tag,
   TextArea,
   TextInput,
 } from '../../_components/ui';
-import { requestDomainAction, savePwaAction, saveSeoAction } from './actions';
+import { savePwaAction, saveSeoAction } from './actions';
 
 /**
  * Advanced settings — each panel behind its own feature, and INVISIBLE when the feature is off.
@@ -23,10 +23,10 @@ import { requestDomainAction, savePwaAction, saveSeoAction } from './actions';
  * basic-plan shop owner has no use for a greyed-out box explaining what they are not paying for,
  * on every visit. The sales conversation happens with a human.
  *
- * DOMAINS ARE A REQUEST HERE, NOT A PROVISIONING FLOW. Phase 4 owns verification, the
- * `domains_limit` enforcement, the CNAME runbook and the Caddy on-demand TLS ask. Writing a
- * `pending` Domain row now would put a hostname into a globally unique column that nothing can
- * yet verify or clean up — and `domains` is the table `proxy.ts` resolves strangers against.
+ * DOMAINS ARE A SCREEN OF THEIR OWN NOW (Phase 4). Connecting one is a procedure a merchant
+ * follows at another company's control panel — a record to create, a warning about Cloudflare's
+ * orange cloud, a verify button, a status that changes twice — and that does not fit in a panel
+ * beside two checkboxes. What survives here is the link, behind the same feature it always was.
  */
 export const dynamic = 'force-dynamic';
 
@@ -50,30 +50,9 @@ export default async function AdvancedSettingsPage() {
 
       {flags.customDomain ? (
         <Panel title={t('dashboard', 'advanced.domain')} note={t('dashboard', 'advanced.domainHint')}>
-          {view.domains.length === 0 ? (
-            <Empty>{t('dashboard', 'advanced.domainNone')}</Empty>
-          ) : (
-            <ul className="sbd-sortable">
-              {view.domains.map((domain) => (
-                <li key={domain.hostname}>
-                  <span className="sbd-sortable-name">{domain.hostname}</span>
-                  <Tag
-                    label={t('dashboard', `advanced.domainStatus.${domain.status}`)}
-                    tone={domain.status === 'active' ? 'ok' : 'muted'}
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <ActionForm
-            action={requestDomainAction}
-            submitLabel={t('dashboard', 'advanced.domainRequest')}
-          >
-            <Field label={t('dashboard', 'advanced.domain')} name="hostname">
-              <TextInput name="hostname" placeholder={view.platformHostname} inputMode="url" />
-            </Field>
-          </ActionForm>
+          <Link className="sbd-btn" href="/settings/domain">
+            {t('dashboard', 'domain.title')}
+          </Link>
         </Panel>
       ) : null}
 

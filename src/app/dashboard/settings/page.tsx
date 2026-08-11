@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { formatDate, formatNumber, t } from '@/shared/i18n';
 import { getSiteDetails, listAnnouncements, listSocialLinks, socialPlatformSchema } from '../_lib/site';
 import { loadCapabilityContext, listOwnChangeRequests } from '../_lib/change-requests';
+import { loadAdvanced } from '../_lib/settings';
 import { merchantCan } from '../_lib/context';
 import { canSelfServeExport } from '../_lib/export';
 import { param, requireMerchantPage } from '../_components/guard';
@@ -52,7 +53,7 @@ export default async function SettingsPage({
   const ctx = await requireMerchantPage('settings');
   const params = await searchParams;
 
-  const [site, social, announcements, capabilityContext, requests, hasExport, hasAdvanced] =
+  const [site, social, announcements, capabilityContext, requests, hasExport, hasDomain, advanced] =
     await Promise.all([
       getSiteDetails(ctx),
       listSocialLinks(ctx),
@@ -69,9 +70,22 @@ export default async function SettingsPage({
        */
       canSelfServeExport(ctx),
       merchantCan(ctx, 'domain'),
+      /**
+       * The ADVANCED link is gated on "does this plan include anything advanced", not on
+       * `custom_domain`.
+       *
+       * It used to reuse the domain scope, which was accidentally correct while the domain panel
+       * lived on that screen and every plan with `pwa` also had `custom_domain`. Neither is true
+       * now: Phase 4 moved domains to their own screen, so a tenant with `pwa` or `seo_tools` and
+       * no custom domain — an ordinary per-tenant entitlement override away — lost the only link
+       * to the two panels they DO have, on a page that renders them perfectly.
+       */
+      loadAdvanced(ctx),
     ]);
 
   if (!site) return <Empty>{t('common', 'states.empty')}</Empty>;
+
+  const hasAdvanced = advanced !== null && !advanced.flags.empty;
 
   const { capabilities, quota } = capabilityContext;
   const exhausted = isExhausted(quota);
@@ -106,6 +120,18 @@ export default async function SettingsPage({
             {hasAdvanced ? (
               <Link className="sbd-btn" href="/settings/advanced">
                 {t('dashboard', 'advanced.title')}
+              </Link>
+            ) : null}
+            {/*
+              A DIRECT link to the domain screen, beside the advanced one rather than only inside
+              it. Connecting a domain is a job a merchant comes to the dashboard specifically to
+              do, usually once, often with a registrar's control panel already open in another
+              tab — burying it one click deeper than "إعدادات متقدمة" is how a merchant ends up
+              phoning to ask where it is.
+            */}
+            {hasDomain ? (
+              <Link className="sbd-btn" href="/settings/domain">
+                {t('dashboard', 'domain.title')}
               </Link>
             ) : null}
             {hasExport ? (

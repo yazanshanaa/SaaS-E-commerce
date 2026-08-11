@@ -3,6 +3,7 @@ import { AnalyticsScript } from './components/analytics';
 import { AnnouncementBar } from './components/announcement-bar';
 import { ConsentBanner } from './components/consent-banner';
 import { DemoWatermark } from './components/demo-watermark';
+import { ServiceWorkerRegistrar } from './components/service-worker';
 import { SiteFooter } from './components/site-footer';
 import { SiteHeader } from './components/site-header';
 import { st } from './i18n';
@@ -82,6 +83,28 @@ export function StorefrontShell({
   // tracks when it does not.
   const showConsent = context.flags.analytics && !consentAnswered;
 
+  /**
+   * THE PUSH OFFER WAITS FOR THE CONSENT BANNER TO BE ANSWERED (Phase 4).
+   *
+   * Expressed as "no banner is currently on screen" rather than "the visitor has answered", and
+   * the difference is not pedantry: a tenant with push but without analytics never shows a banner
+   * at all, so `consentAnswered` would stay false forever and the push control would never appear.
+   * What the rule is actually protecting against is stacking two permission asks on one screen —
+   * a visitor facing both answers neither, and the one they dismiss fastest is the one they will
+   * never be offered again.
+   *
+   * A push endpoint is a persistent per-device identifier, so this is visitor data in the same
+   * sense the consent record is; Phase 6's privacy copy has to say so.
+   */
+  const showPush = context.flags.push && Boolean(context.pushPublicKey) && !showConsent;
+
+  /**
+   * The worker is registered for PUSH as well as for the PWA. A push cannot be received without
+   * one in any browser, so gating registration on the PWA alone would have made a احترافي
+   * feature depend on an unrelated متجر one that the merchant may never have switched on.
+   */
+  const wantsWorker = context.flags.pwa || (context.flags.push && Boolean(context.pushPublicKey));
+
   return (
     <div
       className="sf-root"
@@ -118,6 +141,32 @@ export function StorefrontShell({
         href={context.site.faviconUrl ?? faviconDataUri(colors.primary, colors.background)}
       />
 
+      {/*
+        The manifest and the theme colour, only when the PWA is actually on.
+
+        Both are declared HERE rather than through Next's `metadata` export, for the same reason
+        the icon above is: React 19 hoists `<link>` and `<meta>` into `<head>` from anywhere in
+        the tree, and the four storefront routes each build their own metadata object — so a
+        change made here lands on all of them at once instead of in four places that can drift.
+
+        `theme_color` in the manifest paints the Android task-switcher card; this meta tag paints
+        the browser's own address bar on the page itself. They are different surfaces and both
+        want the tenant's colour, not the platform's.
+      */}
+      {context.flags.pwa ? (
+        <>
+          <link rel="manifest" href="/manifest.webmanifest" />
+          <meta name="theme-color" content={colors.primary} />
+          {/*
+            iOS ignores the manifest for home-screen installs and reads these two instead. Without
+            them an "add to home screen" on an iPhone opens the shop in a Safari chrome window
+            with an address bar — which is a browser bookmark, not the app the merchant is paying
+            for. `apple-touch-icon` has no `sizes` because iOS picks the largest it is given.
+          */}
+          <meta name="apple-mobile-web-app-capable" content="yes" />
+          <link rel="apple-touch-icon" href="/icons/512" />
+        </>
+      ) : null}
 
       {context.announcementBar ? (
         <AnnouncementBar
@@ -135,7 +184,7 @@ export function StorefrontShell({
         {children}
       </main>
 
-      <SiteFooter context={context} />
+      <SiteFooter context={context} showPush={showPush} />
 
       {/*
         ONE fixed stack at the bottom of the viewport, not two overlapping fixed elements.
@@ -167,6 +216,8 @@ export function StorefrontShell({
       ) : null}
 
       <AnalyticsScript decision={analytics} />
+
+      {wantsWorker ? <ServiceWorkerRegistrar /> : null}
     </div>
   );
 }

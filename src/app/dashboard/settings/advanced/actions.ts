@@ -1,6 +1,6 @@
 'use server';
 
-import { requestDomain, savePwa, saveSeo } from '../../_lib/settings';
+import { savePwa, saveSeo } from '../../_lib/settings';
 import { checkbox, text, type ActionState } from '../../_lib/validation';
 import { requireMerchantPage } from '../../_components/guard';
 
@@ -29,14 +29,4 @@ export async function saveSeoAction(_state: ActionState, form: FormData): Promis
   });
 
   return state ?? { status: 'ok', messageKey: 'dashboard:advanced.saved' };
-}
-
-export async function requestDomainAction(
-  _state: ActionState,
-  form: FormData,
-): Promise<ActionState> {
-  const ctx = await requireMerchantPage('settings');
-  const state = await requestDomain(ctx, { hostname: text(form, 'hostname') });
-
-  return state ?? { status: 'ok', messageKey: 'dashboard:advanced.domainRequested' };
 }

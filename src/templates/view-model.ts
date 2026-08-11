@@ -85,6 +85,14 @@ export interface StorefrontSite {
   ogImageUrl: string | null;
   /** The merchant's own tab icon when they have set one; the shell generates a mark when null. */
   faviconUrl: string | null;
+  /**
+   * The media id behind `logo`, carried alongside the rendered image because Phase 4's icon
+   * route reads the stored VARIANT rather than the CDN URL — it needs bytes to make a square PNG
+   * out of, and `StorefrontImage.src` is an address, not a source.
+   */
+  logoMediaId: string | null;
+  /** The merchant's own switch. Separate from the `pwa` FEATURE: both must be on. */
+  pwaEnabled: boolean;
 }
 
 export interface StorefrontSection {
@@ -113,6 +121,17 @@ export interface StorefrontFlags {
   /** `can(tenantId,'analytics')` — availability. Consent is a SEPARATE gate. */
   analytics: boolean;
   customHtml: boolean;
+  /**
+   * `can(tenantId,'pwa')` AND the merchant's own `Site.pwaEnabled`. Resolved to one boolean here
+   * so no component has to remember that it is two questions.
+   */
+  pwa: boolean;
+  /**
+   * `can(tenantId,'push_notifications')` — احترافي only. Like `analytics`, availability only:
+   * the subscribe prompt is offered ONLY after the consent banner has been answered, because a
+   * push endpoint is a persistent per-device identifier and therefore visitor data.
+   */
+  push: boolean;
 }
 
 export interface StorefrontContext {
@@ -121,6 +140,18 @@ export interface StorefrontContext {
   hostname: string;
   origin: string;
   isDemo: boolean;
+  /**
+   * The VAPID public key, or null when push cannot work — no keys configured, or the plan does
+   * not include it.
+   *
+   * Request-scoped and therefore outside the cached unit, exactly like `origin`: it comes from
+   * env, and a key baked into a five-minute cache entry would survive a rotation for five
+   * minutes, producing subscriptions signed for a key the sender no longer holds.
+   *
+   * Null is a first-class state. A subscribe button with no key behind it takes a real permission
+   * from a real visitor and can never deliver anything.
+   */
+  pushPublicKey: string | null;
   template: TemplateDefinition;
   colors: ResolvedColors;
   site: StorefrontSite;

@@ -3,6 +3,7 @@ import { unstable_cache } from 'next/cache';
 import { getEnv } from '@/env';
 import { PUBLIC_ACTOR, tenantDb } from '@/server/db';
 import { can, isCapabilityVisible } from '@/server/entitlements';
+import { pushPublicKey } from '@/server/push';
 import {
   colorSelectionSchema,
   isWithinSchedule,
@@ -111,12 +112,23 @@ async function loadStorefrontContextUncached(
     // wrong one on half the requests.
     origin: `${env.PUBLIC_SCHEME}://${surface.hostname}`,
     isDemo: surface.isDemo,
+    /**
+     * Also request-scoped, and for a sharper reason than `origin`: this comes from env, and a key
+     * sealed inside a five-minute cache entry would outlive a rotation by five minutes — long
+     * enough to take subscriptions signed for a key the sender no longer holds, which fail at
+     * delivery with nothing in the logs pointing at the cause.
+     *
+     * Null unless the plan includes push AND a key pair is configured. Both halves matter: a
+     * subscribe button with no key behind it spends a real permission on a device that can never
+     * be reached.
+     */
+    pushPublicKey: access.push ? pushPublicKey() : null,
   };
 }
 
 type CachedTenantData = Omit<
   StorefrontContext,
-  'tenantId' | 'slug' | 'hostname' | 'origin' | 'isDemo'
+  'tenantId' | 'slug' | 'hostname' | 'origin' | 'isDemo' | 'pushPublicKey'
 >;
 
 function cachedTenantSource(tenantId: string): Promise<TenantSource> {
@@ -152,6 +164,9 @@ interface StorefrontAccess {
   whatsappOrders: boolean;
   analytics: boolean;
   customHtml: boolean;
+  /** Phase 4. The FEATURE only — the merchant's own `Site.pwaEnabled` is combined at composition. */
+  pwa: boolean;
+  push: boolean;
   announcementBar: boolean;
   socialLinks: boolean;
   announcementsBoard: boolean;
@@ -172,6 +187,8 @@ async function resolveAccess(tenantId: string, isDemo: boolean): Promise<Storefr
     whatsappOrders,
     analytics,
     customHtmlFeature,
+    pwa,
+    push,
     announcementBar,
     socialLinks,
     announcementsBoard,
@@ -181,6 +198,8 @@ async function resolveAccess(tenantId: string, isDemo: boolean): Promise<Storefr
     can(tenantId, 'whatsapp_orders'),
     can(tenantId, 'analytics'),
     can(tenantId, CUSTOM_HTML_FEATURE_KEY),
+    can(tenantId, 'pwa'),
+    can(tenantId, 'push_notifications'),
     isCapabilityVisible(tenantId, 'announcement_bar'),
     isCapabilityVisible(tenantId, 'social_links'),
     isCapabilityVisible(tenantId, 'announcements_board'),
@@ -192,6 +211,8 @@ async function resolveAccess(tenantId: string, isDemo: boolean): Promise<Storefr
     whatsappOrders: whatsappOrders === true,
     analytics: analytics === true,
     customHtml: isCustomHtmlAllowed({ featureEnabled: customHtmlFeature === true, isDemo }),
+    pwa: pwa === true,
+    push: push === true,
     announcementBar,
     socialLinks,
     announcementsBoard,
@@ -299,6 +320,7 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
         metaTitle: true,
         metaDescription: true,
         umamiWebsiteId: true,
+        pwaEnabled: true,
         announcementBarEnabled: true,
         announcementBarText: true,
         announcementBarLink: true,
@@ -494,6 +516,10 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
       faviconUrl: siteRow?.faviconMediaId
         ? (mediaById[siteRow.faviconMediaId]?.src ?? null)
         : null,
+      // Carried as an ID as well as a rendered image: Phase 4's icon route needs the stored
+      // variant's BYTES to make a square PNG, and `logo.src` is a CDN address, not a source.
+      logoMediaId: siteRow?.logoMediaId ?? null,
+      pwaEnabled: siteRow?.pwaEnabled ?? false,
     },
     announcementBar: buildAnnouncementBar(siteRow),
     theme: themeRow,
@@ -595,6 +621,14 @@ function composeTenantData(source: TenantSource, access: StorefrontAccess): Cach
       whatsappOrders: access.whatsappOrders,
       analytics: access.analytics,
       customHtml: access.customHtml,
+      /**
+       * TWO questions, one boolean. The plan has to include the PWA and the merchant has to have
+       * switched it on — a shop that never asked for an install prompt should not get one because
+       * they upgraded their plan for a different reason. Combined here so no component below has
+       * to remember that it is two.
+       */
+      pwa: access.pwa && source.site.pwaEnabled,
+      push: access.push,
     },
     announcementBar,
     socialLinks,
