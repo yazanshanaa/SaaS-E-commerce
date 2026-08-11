@@ -238,7 +238,11 @@ test.describe('the approve → link → storefront → close chain', () => {
       .getByRole('link', { name: 'تفاصيل النسخة التجريبية' })
       .click();
 
-    expect(new URL(page.url()).pathname).toMatch(/^\/demos\//);
+    // waitForURL, not a bare `page.url()` read: `click()` resolves when the click is DISPATCHED,
+    // so reading the address immediately races the navigation it just started and sees `/demos`.
+    // This case had never run before the Group B merge — it was inside the block skipped for
+    // sync point 6 — so the race had no chance to show itself.
+    await page.waitForURL(/\/demos\/[^/]+$/);
 
     // A wrong confirmation changes nothing — the list above it is a page of similar-looking rows.
     await page.locator('#confirmSlug').fill('not-the-slug');

@@ -134,14 +134,20 @@ test('extending retention pushes the deadline and counts the extension', async (
 /**
  * The two ways a deletion must NOT happen.
  *
- * Note what this stack cannot prove: a SUCCESSFUL purge. `next start` runs with
- * NODE_ENV=production and no object storage, and `storage()` refuses to serve media off the app
- * server's disk in production — correctly (invariant 4). The successful path is covered against
- * real objects by `tests/integration/b1-lifecycle.test.ts`, and against real R2 by the Phase 7
- * item in docs/PHASES.md.
+ * This used to say the stack could not reach object storage at all, so the second refusal below
+ * was whatever generic failure `storage()` produced. That stopped being true at the Group B merge:
+ * `E2E_ALLOW_LOCAL_STORAGE=1` gives this stack a real disk (sync point 6), so a purge here now
+ * fails or succeeds for PRODUCT reasons rather than environmental ones.
  *
- * What it proves instead is the more valuable half: when the prerequisites are missing, the one
- * irreversible action in the platform changes NOTHING and says so in Arabic.
+ * Which is why the second half asserts B1's export-in-flight guard instead. The account was
+ * suspended by the test above it minutes ago and no worker exists to build its export, so
+ * `exportKey` is null inside the two-hour window — exactly the state the guard refuses in, and the
+ * one an operator can reach by pressing «احذف الآن» on a fresh suspension. It has unit coverage
+ * and had never been seen on a screen.
+ *
+ * A SUCCESSFUL purge is still not proven here, and now for an honest reason: it needs either an
+ * export artifact or a suspension older than the window. `tests/integration/b1-lifecycle.test.ts`
+ * covers it against real objects, and the Phase 7 item in docs/PHASES.md against real R2.
  */
 test('deleting refuses a mistyped slug, and refuses cleanly when it cannot finish', async ({
   page,
@@ -171,14 +177,22 @@ test('deleting refuses a mistyped slug, and refuses cleanly when it cannot finis
   await again.locator('input[name="confirmSlug"]').fill(SLUG);
   await again.getByRole('button', { name: 'احذف الآن نهائياً' }).click();
 
-  // Arabic, in the page's own notice — never Next's error screen with a stack trace on it.
-  await expect(page.locator('.sba-notice--error')).toContainText('ما نجح الإجراء');
+  /**
+   * A REFUSAL, and it has to read as one.
+   *
+   * The suspension is minutes old and nothing has built its export, so the deletion would land on
+   * top of an archive that may still be zipping — and phase 2 of that build holds no transaction,
+   * so its `put()` would land after the prefix sweep and leave a complete copy of the merchant's
+   * catalogue under a key no row points at. The screen says "wait", not "try again": the button it
+   * would invite you to press again is the one action on the platform that cannot be undone.
+   */
+  await expect(page.locator('.sba-notice--error')).toContainText('لسا عم بنجهّز نسخة بيانات المتجر');
 
   /**
-   * And nothing was half-done. `purgeTenant` resolves storage before it writes, so a failure
-   * leaves the merchant merely suspended — still listed, still inside their retention window,
-   * still holding whatever link they were sent — rather than stranded mid-purge in a state no
-   * screen can finish.
+   * And nothing was half-done. The guard runs before anything is written — and before that,
+   * `purgeTenant` resolves storage — so the merchant is left merely suspended: still listed, still
+   * inside their retention window, still holding whatever link they were sent, rather than
+   * stranded mid-purge in a state no screen can finish.
    */
   await expect(page.locator('tr', { hasText: SLUG })).toBeVisible();
   await page.goto(`${ADMIN}/accounts?q=${SLUG}`);
