@@ -398,6 +398,30 @@ export const EXPORT_VERIFY_DELAY_MS = 30 * 60 * 1000;
 export const EXPORT_JOB_ATTEMPTS = 5;
 
 /**
+ * How long after suspension an export build may still be in flight.
+ *
+ * The same two hours the nightly sweep uses to call an export overdue, asked as the opposite
+ * question: the sweep asks "should this have finished by now, so should I rebuild it?", and
+ * `purgeTenant` asks "might this still be running, so must I refuse to delete underneath it?".
+ * One number, because a build is either plausibly alive or it is not.
+ */
+export const EXPORT_IN_FLIGHT_WINDOW_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * Raised when a purge would land on top of a suspension export that may still be building.
+ *
+ * NOT a transition error: the subscription is in a perfectly legal state to purge from, and the
+ * same call will succeed shortly. It is a timing refusal, and it reads as one so the operator is
+ * told to wait rather than told they did something wrong.
+ */
+export class ExportInFlightError extends Error {
+  constructor(readonly tenantId: string) {
+    super(`Export may still be building for tenant ${tenantId}; refusing to purge`);
+    this.name = 'ExportInFlightError';
+  }
+}
+
+/**
  * Schedule effect 2 of suspension, plus the check that it happened.
  *
  * Both jobs carry a STABLE `jobId` derived from the suspension, so a repeated call — a retried
@@ -769,11 +793,49 @@ export async function purgeTenant(input: PurgeInput): Promise<PurgeResult> {
         select: {
           slug: true,
           isDemo: true,
+          state: true,
           domains: { select: { hostname: true } },
           members: { select: { userId: true } },
         },
       });
       if (!tenant) throw new Error(`No tenant ${tenantId} to purge`);
+
+      /**
+       * REFUSE while the suspension export may still be building — the operator's door into the
+       * race the sweep already closed on its own side.
+       *
+       * `lifecycle-sweep` bounds its rebuild query with `retentionUntil > now` precisely so one
+       * pass never fans out a purge and an export for the same tenant. Nothing bounded the
+       * OPERATOR path: `/lifecycle/pending-purge` lists a tenant suspended thirty seconds ago
+       * next to a «حذف الآن» button, and the build holds no transaction while it zips, so its
+       * `put()` lands after `deleteByPrefix` has run. The stamp then compensates by deleting the
+       * object — but compensation is a second chance, and this is the first one: an artifact
+       * built minutes before deletion is a link nobody will ever open, so there is nothing to
+       * lose by waiting and a whole catalogue to lose by not.
+       *
+       * SCOPED TO THE OPERATOR PATHS, and the scope is the point rather than a convenience.
+       * `retention_expired` comes from the nightly sweep, which is already bounded on both
+       * sides: it cannot select a tenant for purge until `retentionUntil` has passed, and it
+       * will not schedule a rebuild for one whose `retentionUntil` has. Applying a wall-clock
+       * window to it would be a second, weaker copy of a guard it already has — and one the
+       * sweep can trip over, because it takes an injected `now` while this reads `Date.now()`.
+       * The unbounded door was always the button.
+       *
+       * The window is time-bounded so it cannot wedge the lifecycle: an export that genuinely
+       * died stops blocking the operator two hours later. An already-`purging` tenant is exempt
+       * because this transaction opens with `allowPurging` for exactly one reason — a crashed
+       * purge must be able to resume, and a guard that refused the retry would strand it
+       * half-deleted, which is the failure `docs/decisions/b1.md` §1 exists to prevent.
+       */
+      if (
+        input.reason === 'super_admin_purge' &&
+        tenant.state !== 'purging' &&
+        !subscription.exportKey &&
+        subscription.suspendedAt &&
+        Date.now() - subscription.suspendedAt.getTime() < EXPORT_IN_FLIGHT_WINDOW_MS
+      ) {
+        throw new ExportInFlightError(tenantId);
+      }
 
       const stamped = await tx.subscription.findUnique({
         where: { tenantId },

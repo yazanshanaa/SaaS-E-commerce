@@ -4,6 +4,7 @@ import path from 'node:path';
 import { Client as PgClient } from 'pg';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  EXPORT_IN_FLIGHT_WINDOW_MS,
   EXPORT_VERIFY_DELAY_MS,
   InvalidTransitionError,
   extend,
@@ -591,6 +592,92 @@ describe('a reactivation that lands while the archive is still being written', (
       ok: false,
       reason: 'invalid_token',
     });
+  });
+});
+
+describe('a purge that lands while the archive is still being written', () => {
+  /**
+   * The operator's door into the race the sweep already closed on its own side.
+   *
+   * `lifecycle-sweep` bounds its rebuild query with `retentionUntil > now`, so one pass never
+   * fans out a purge and an export for the same tenant. `/lifecycle/pending-purge` had no such
+   * bound: it lists a tenant suspended thirty seconds ago right next to «حذف الآن».
+   */
+  it('refuses the purge outright while the export may still be building', async () => {
+    const tenant = await createTenant({ slug: 'purge-too-soon' });
+    await suspend(tenant.id);
+    // Deliberately do NOT run the export: exportKey is null and the suspension is seconds old,
+    // which is indistinguishable from a build that is halfway through zipping.
+
+    const { purgeTenant, ExportInFlightError } = await import('@/server/billing');
+    await expect(
+      purgeTenant({ tenantId: tenant.id, reason: 'super_admin_purge' }),
+    ).rejects.toBeInstanceOf(ExportInFlightError);
+
+    // Refused BEFORE anything was written, so the account is exactly as it was — not marked
+    // `purging`, which would have left it dark and waiting for a sweep.
+    expect((await adminDb().tenant.findUnique({ where: { id: tenant.id } }))?.state).toBe(
+      'suspended',
+    );
+    expect((await subscriptionOf(tenant.id))?.status).toBe('suspended');
+  });
+
+  /**
+   * And the second layer, for the case the first one legitimately lets through: an export that
+   * has been failing for hours. The window is time-bounded on purpose — it must not wedge the
+   * lifecycle — so a purge CAN still land mid-build, and the stamp has to carry it.
+   *
+   * `withTenantTxn` throws for a tenant that is already gone, and it throws BEFORE the stamp
+   * runs. That exception used to propagate straight out of `exportTenantData`, skipping the
+   * compensation and leaving a complete copy of the merchant's catalogue under a key no row
+   * points at — inside the one prefix `cleanup-orphans` skips by design.
+   */
+  it('takes the artifact back when the tenant is gone by the time it stamps', async () => {
+    const tenant = await createTenant({ slug: 'purge-mid-build' });
+    await suspend(tenant.id);
+
+    // Hours of failed attempts: past the in-flight window, so the guard above stands aside.
+    await adminDb().subscription.update({
+      where: { tenantId: tenant.id },
+      data: { suspendedAt: new Date(Date.now() - EXPORT_IN_FLIGHT_WINDOW_MS - 60_000) },
+    });
+
+    const racing = new LocalStorageAdapter(storageRoot);
+    const realPut = racing.put.bind(racing);
+    let purgedDuringBuild = false;
+
+    racing.put = async (key, body, options) => {
+      if (!purgedDuringBuild && key.includes('_exports/')) {
+        purgedDuringBuild = true;
+        // The operator presses «حذف الآن» while this build is between its read and its write.
+        const { purgeTenant } = await import('@/server/billing');
+        await purgeTenant({ tenantId: tenant.id, reason: 'super_admin_purge' });
+      }
+      // The object lands AFTER the prefix sweep — which is the whole failure.
+      return realPut(key, body, options);
+    };
+    setStorageAdapter(racing);
+
+    try {
+      const { runSuspensionExport } = await import('@/server/jobs/suspend-tenant');
+      await expect(runSuspensionExport(tenant.id)).resolves.toMatchObject({ exported: false });
+    } finally {
+      setStorageAdapter(new LocalStorageAdapter(storageRoot));
+    }
+
+    expect(purgedDuringBuild).toBe(true);
+
+    // Nothing live remains — including the copy that was written after the sweep.
+    const adapter = new LocalStorageAdapter(storageRoot);
+    expect(await adapter.list(tenantPrefix(tenant.id))).toHaveLength(0);
+    expect(await adminDb().tenant.findUnique({ where: { id: tenant.id } })).toBeNull();
+
+    // And the tombstone still says an export was never delivered, which is the truth.
+    const tombstone = await adminDb().tenantTombstone.findUnique({
+      where: { tenantId: tenant.id },
+    });
+    expect(tombstone).not.toBeNull();
+    expect(tombstone?.exportDeliveredAt).toBeNull();
   });
 });
 
