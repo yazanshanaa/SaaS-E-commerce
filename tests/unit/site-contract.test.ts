@@ -151,9 +151,29 @@ describe('section config schemas', () => {
   });
 
   it('applies defaults rather than demanding a full config', () => {
-    const config = parseSectionConfig('products_grid', {}) as { limit: number; columns: number };
+    const config = parseSectionConfig('products_grid', {}) as { limit: number; showPrices: boolean };
     expect(config.limit).toBe(12);
-    expect(config.columns).toBe(3);
+    expect(config.showPrices).toBe(true);
+  });
+
+  /**
+   * `columns` is the exception, and it has to stay one.
+   *
+   * `ProductsGridSection` reads `config.columns ?? template.layout.gridColumns`, so an ABSENT
+   * column count is how a template's own grid is honoured — warsheh's four, neon-souq's two. This
+   * schema used to `.default(3)`, which meant a parsed config always carried a number, the `??`
+   * never fell through, and all three templates rendered an identical grid. Nothing threw; the
+   * storefronts just stopped differing from one another (docs/decisions/b3.md §9).
+   *
+   * Asserted with `toHaveProperty` rather than `toBeUndefined` because zod's `.default()` puts the
+   * key on the object — which is exactly the difference `??` reads.
+   */
+  it('leaves columns ABSENT, so a template layout is reachable', () => {
+    expect(parseSectionConfig('products_grid', {})).not.toHaveProperty('columns');
+    expect(parseSectionConfig('gallery', {})).not.toHaveProperty('columns');
+
+    // …and still carries an explicit choice, which is what a merchant editing the section sends.
+    expect(parseSectionConfig('products_grid', { columns: 4 })).toHaveProperty('columns', 4);
   });
 
   it('STRIPS unknown keys instead of rejecting them', () => {

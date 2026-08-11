@@ -217,6 +217,31 @@ describe('the event payload rule (item 13)', () => {
     expect(eventTypes).toMatch(/exportUrl/);
     expect(eventTypes).not.toMatch(/signedUrl\s*:/);
   });
+
+  /**
+   * The same rule, one size down, found by B3 (docs/decisions/b3.md §11).
+   *
+   * `demo.created` carried `demoUrl`, which is `{scheme}://{slug}.{DOMAIN}/?token=…` — the demo's
+   * bearer token. Emitting an event materialises `WebhookDelivery` rows, and those are GLOBAL: they
+   * survive `closeDemo`, the operation whose confirmation dialog tells the operator the prospect's
+   * data is gone. The payload is POSTed to n8n as well and lives in its execution history.
+   *
+   * Asserted against the payload TABLE rather than the emit site, because the type is what a future
+   * event has to be declared in — a new `demo.*` event that wanted a shareable link would be
+   * written here first, and this is where it gets stopped.
+   */
+  it('never puts a demo bearer token in an event payload either', () => {
+    const eventTypes = readFileSync(path.join(srcRoot, 'server/events/types.ts'), 'utf8');
+    const demoPayloads = eventTypes
+      .split('\n')
+      .filter((line) => /^\s*'demo[._]/.test(line) || /'demo\.\w+':/.test(line));
+
+    expect(demoPayloads.length).toBeGreaterThan(0);
+    for (const line of demoPayloads) {
+      expect(line, `a demo event payload carries a URL: ${line.trim()}`).not.toMatch(/Url\s*:/);
+      expect(line, `a demo event payload carries a token: ${line.trim()}`).not.toMatch(/token\s*:/i);
+    }
+  });
 });
 
 describe('the storage contract', () => {

@@ -38,12 +38,44 @@ export type Namespace = keyof typeof NAMESPACES;
 
 export type MessageParams = Record<string, string | number>;
 
+/**
+ * Walk a dotted key, and accept a group that stores its own keys FLAT with dots inside them.
+ *
+ * The walk alone was not enough, and the way it failed was invisible. `messages/ar/admin.json`
+ * writes the audit vocabulary as `"events": { "subscription.suspended": "…" }` — one object whose
+ * KEYS contain dots, because those keys are event type identifiers. Splitting on `.` looks for
+ * `events → subscription → suspended`, finds nothing at the second step, and returns undefined.
+ *
+ * Both call sites guard with `messageExists()` and fall back to the raw identifier, so nothing
+ * threw and nothing looked broken: the overview and the audit log simply rendered
+ * `subscription.suspended` and `plan.created` — English identifiers, on the one screen whose whole
+ * job is telling an Arabic-speaking operator what happened. Found by B3 (docs/decisions/b3.md §12)
+ * while wondering why its own `demo.created` rows read that way.
+ *
+ * Fixed HERE rather than by nesting the JSON, because the identifiers are genuinely flat strings —
+ * `events[type]` is how a caller thinks about them — and because this repairs A1's `actions.*`,
+ * B3's `events.demo.*` and anything a later phase declares the same way, all at once. Only reached
+ * when the ordinary walk has already failed, so it can turn no existing lookup into a different
+ * answer; it can only turn `undefined` into the message that was there all along.
+ */
 function resolve(namespace: Namespace, key: string): unknown {
   let node: unknown = NAMESPACES[namespace];
-  for (const segment of key.split('.')) {
+  const segments = key.split('.');
+
+  for (let index = 0; index < segments.length; index += 1) {
     if (node === null || typeof node !== 'object') return undefined;
-    node = (node as Record<string, unknown>)[segment];
+    const record = node as Record<string, unknown>;
+    const segment = segments[index]!;
+
+    if (segment in record) {
+      node = record[segment];
+      continue;
+    }
+
+    const literal = segments.slice(index).join('.');
+    return literal in record ? record[literal] : undefined;
   }
+
   return node;
 }
 

@@ -1176,10 +1176,12 @@ export async function createDemo(input: CreateDemoInput): Promise<CreateDemoResu
         await emitEvent(tx, {
           tenantId: tenant.id,
           type: 'demo.created',
+          // The slug alone. See the payload's own note in src/server/events/types.ts: the token
+          // in `demoStorefrontUrl` would land in WebhookDelivery, which is global and survives the
+          // close that tells the prospect their demo is deleted.
           payload: {
             tenantName: pack.tenant.name,
             slug,
-            demoUrl: demoStorefrontUrl(slug, token),
           },
         });
 

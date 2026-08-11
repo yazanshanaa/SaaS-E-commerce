@@ -43,7 +43,21 @@ const productsGridConfig = z.object({
   title: optionalText,
   categoryKey: optionalText,
   limit: z.number().int().min(1).max(60).default(12),
-  columns: z.union([z.literal(2), z.literal(3), z.literal(4)]).default(3),
+  /**
+   * NO DEFAULT — absence is the meaningful value here, and defaulting it erased three designs.
+   *
+   * `ProductsGridSection` reads `config.columns ?? template.layout.gridColumns`, so an unset
+   * column count is how a template's own grid gets used: warsheh's four dense columns, neon-souq's
+   * two large ones. With `.default(3)` a parsed config ALWAYS carried a number, the `??` never
+   * fell through, and every template rendered the same three-column grid no matter what its
+   * definition said. Nothing failed — the storefronts just quietly stopped being different from
+   * each other, which is the one thing a template system exists to provide.
+   *
+   * Not fixable from the consumer's side, and B3 tried: `normaliseSectionConfig` re-parses the
+   * stored config on every read, so dropping the key before writing the row was a no-op with
+   * moving parts (docs/decisions/b3.md §9).
+   */
+  columns: z.union([z.literal(2), z.literal(3), z.literal(4)]).optional(),
   showPrices: z.boolean().default(true),
 });
 
@@ -62,7 +76,10 @@ const aboutConfig = z.object({
 const galleryConfig = z.object({
   title: optionalText,
   mediaIds: z.array(z.string()).max(24).default([]),
-  columns: z.union([z.literal(2), z.literal(3), z.literal(4)]).default(3),
+  // Same shape, same reason: `GallerySection` reads `config.columns ?? 3`, so the default belongs
+  // to the renderer, where a template can still override it. Two spellings of one value is how the
+  // grid above lost three designs.
+  columns: z.union([z.literal(2), z.literal(3), z.literal(4)]).optional(),
 });
 
 const testimonialsConfig = z.object({
