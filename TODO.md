@@ -242,14 +242,34 @@ create, since `isCapabilityVisible()` is fail-closed (raised by A2 at review).
 **Still open, carried forward** — full detail in `docs/DECISIONS.md`:
 - [ ] `DATABASE_URL_SYSTEM` set in production; no production compose exists yet — **Phase 7**
 - [ ] CDN origin restricted to the `media/` segment, or a separate bucket for `_exports/` — **Phase 7**
-- [ ] E2E stack needs an adapter minting CDN URLs, or its image assertions run on an empty set — **Phase 7**
+- [x] E2E stack needs an adapter minting CDN URLs, or its image assertions run on an empty set —
+      **done at the Group B merge**: `E2E_ALLOW_LOCAL_STORAGE=1` lets the suite write real media to
+      `.tmp/e2e-storage`, which unskipped B3's three demo cases and turned B1's purge case from an
+      environmental failure into a product assertion
 - [ ] Edge cache purge on media delete (currently up to 24h stale) — **Phase 6**, privacy copy must match
 - [ ] `Consent.ipHash` is written by nothing; dropping it is a schema change — **Phase 6**
 - [ ] Two purges running at the same moment can orphan a User shared by both tenants; the fix is a
       global member-less-user sweep, which RLS puts out of reach today — **Phase 6** (raised at the B1 merge)
 - [ ] `demo.closed` puts the demo's plaintext slug in the global `webhook_deliveries` table, which
       outlives the tenant `closeDemo` promised to erase; `demo.created` has the same property —
-      needs a payload change plus a deliveries-retention rule — **Phase 6** (raised at the B1 merge)
+      needs a payload change plus a deliveries-retention rule — **Phase 6** (raised at the B1 merge).
+      The worse half is closed: `demo.created` also carried the live BEARER TOKEN, fixed at the B3
+      merge, and `guardrails.test.ts` now forbids a URL or token in any demo payload
+- [ ] A public demo request notifies nobody out of band — `Notification.tenantId` is NOT NULL with an
+      FK to `tenants`, and a request exists precisely because no tenant does yet. A pending count on
+      the inbox tab is what ships. Needs a nullable `tenantId` or a platform-scoped notification, so
+      a migration — **main session**; Phase 4's push work wants the same thing (raised at the B3 merge)
+- [ ] A custom colour selection collapses `surface` onto `background` for every tenant, making the
+      tinted `derivedSurface` unreachable — white cards turn cream and panels stop being panels. The
+      fix is `site-contract` not defaulting a field whose absence is meaningful, but `defaultSurface`
+      lives in `templates/`, so it is a layering call — **A2's colour pipeline** (raised at the B3 merge)
+- [ ] `hero.ctaHref` is not invented, so a CTA reading "order by WhatsApp" points at `/products`;
+      pointing it at the contact anchor would duplicate the ghost button beside it — **A2's UX call**
+- [ ] `Tenant.demoPackKey` — the demo list reports the TEMPLATE because the pack a demo was built
+      from is never stored. A column is the honest fix, so a migration — **main session, before Phase 5**
+- [ ] `seed-assets` has two candidate homes: `.gitignore` anticipates a repository-root folder,
+      `scripts/check-track-ownership.ts` has no entry for one, and B3 put the lookup inside its own
+      folder. Reconcile, and add `outputFileTracingIncludes` when real photos land
 - [x] A merchant's session did not resolve its tenant, and `absoluteUrl()` dropped the port so every
       invitation link was refused as an invalid callback in dev and e2e — **both serviced in the main
       session during B2**; see `docs/DECISIONS.md`
@@ -345,37 +365,41 @@ create, since `isCapabilityVisible()` is fail-closed (raised by A2 at review).
 - [x] Gate: a merchant without `custom_domain` never sees that section; an admin-locked field is locked with an accurate quota that a rejection refunds; a staff user cannot reach billing by URL; an أساسي merchant sees no analytics screen; all copy natural Arabic RTL
 
 ### B3 — Demo generator and the whole demo surface (owns `src/server/demo` generator code, `src/app/(admin)/demos/**`, `src/app/(public)/**` incl. its layout)
-- [ ] Path 1 — pack picker under `(admin)/demos` creates the demo via `billing.createDemo()`
-- [ ] Path 2 — public Arabic form at `app.{DOMAIN}/demo-request`: address, WhatsApp, preferred prefix, optional pack
-- [ ] The form creates a `DemoRequest` only — **never a tenant directly**
-- [ ] Form rate-limited via `getClientIp()`, zod-validated, prefix checked against the reserved list and for uniqueness
-- [ ] **The Arabic notice matches the real rule**: deleted when the demo is closed, or within 30 days if no demo is opened
-- [ ] Request inbox under `(admin)/demos`: review / approve (same creation path as Path 1) / reject
-- [ ] Tenant created with `isDemo=true`, slug `{slugPrefix}-{shortId}`
-- [ ] Subscription on the hidden `demo` plan, `status=active`, `currentPeriodEnd=null`
-- [ ] Site carries the pack identity, but the **requester's** address and WhatsApp when it came from a request
-- [ ] Template and colors from the pack through the contrast guard
-- [ ] Categories, then products linked via `category → categories[].key`
-- [ ] Sections in `sort` order, config as-is; announcement bar; testimonials
-- [ ] Whole creation inside `withTenantTxn`
-- [ ] Images: real file if `seed-assets/{pack}/{sku}.*` exists, otherwise `svgPlaceholder()` — both through the A3 pipeline, no external URLs
-- [ ] `imageAlt` carried through as-is
-- [ ] `DemoLink` token with **no expiry by default**, optional per-demo expiry
-- [ ] **Storefront only (Q17)**: no demo login, no temporary password, no dashboard magic link
-- [ ] Demo tenant gets a **login-disabled owner user** (member row, no credential account, cannot authenticate by any route, deleted with the demo) so impersonation from A1 works
-- [ ] "Close demo" via `billing.closeDemo()` — quiesce + R2 sweep + cascade, plus deleting the originating `DemoRequest`; confirmation states it is irreversible
-- [ ] closeDemo writes **no `TenantTombstone`** (it would preserve a slug hash derived from the prospect's own prefix after the form promised deletion) — emit `demo.closed` and write the super-admin AuditLog row on the global side instead; `exportKey` is always null on this path
-- [ ] "Convert to a real subscription" via `billing.convertDemo()` — off the demo plan onto a real plan and period, watermark and noindex dropped, token disabled, zero data loss
-- [ ] Demo list shows each demo's age (demos never expire on a timer)
-- [ ] `messages/ar/demo.json`
-- [ ] `docs/decisions/b3.md`
-- [ ] Gate: button click to shareable link in under 30 seconds with 15 products and variants; a customer request never creates a tenant before approval; approving from the inbox produces an identical tenant to Path 1; **the demo owner user cannot authenticate by any route while impersonation from A1 reaches the dashboard and shows the staff-accounts feature**; closing a demo removes every row, every R2 object, and its `DemoRequest`
+- [x] Path 1 — pack picker under `(admin)/demos` creates the demo via `billing.createDemo()`
+- [x] Path 2 — public Arabic form at `app.{DOMAIN}/demo-request`: address, WhatsApp, preferred prefix, optional pack
+- [x] The form creates a `DemoRequest` only — **never a tenant directly**
+- [x] Form rate-limited via `getClientIp()`, zod-validated, prefix checked against the reserved list and for uniqueness — the limit is charged BEFORE validation and **fails open**, because a cache blink that silently rejected every sales lead would surface only as an empty inbox
+- [x] **The Arabic notice matches the real rule**: deleted when the demo is closed, or within 30 days if no demo is opened
+- [x] Request inbox under `(admin)/demos`: review / approve (same creation path as Path 1) / reject
+- [x] Tenant created with `isDemo=true`, slug `{slugPrefix}-{shortId}`
+- [x] Subscription on the hidden `demo` plan, `status=active`, `currentPeriodEnd=null`
+- [x] Site carries the pack identity, but the **requester's** address and WhatsApp when it came from a request
+- [x] Template and colors from the pack through the contrast guard — stored as one of the five vetted **presets**, because each pack's three colours are exactly one of them and a custom selection would collapse `surface` onto `background` (open item in `docs/DECISIONS.md`)
+- [x] Categories, then products linked via `category → categories[].key`
+- [x] Sections in `sort` order, config as-is; announcement bar; testimonials — with `hero.cta` and `contact_whatsapp.note` remapped onto the contract's `ctaLabel` / `body`, which the contract would otherwise strip
+- [x] Whole creation inside `withTenantTxn`
+- [x] Images: real file if `seed-assets/{pack}/{sku}.*` exists, otherwise `svgPlaceholder()` — both through the A3 pipeline, no external URLs. The lookup lives at `src/server/demo/seed-assets.ts` rather than a repository-root folder, which is outside every track's ownership; the directory is legitimately absent today and every failure resolves to the placeholder
+- [x] `imageAlt` carried through as-is
+- [x] `DemoLink` token with **no expiry by default**, optional per-demo expiry
+- [x] **Storefront only (Q17)**: no demo login, no temporary password, no dashboard magic link
+- [x] Demo tenant gets a **login-disabled owner user** (member row, no credential account, cannot authenticate by any route, deleted with the demo) so impersonation from A1 works — the auth guard that refused the impersonated session too was fixed at the merge (sync point 4)
+- [x] "Close demo" via `billing.closeDemo()` — quiesce + R2 sweep + cascade, plus deleting the originating `DemoRequest`; confirmation states it is irreversible
+- [x] closeDemo writes **no `TenantTombstone`** (it would preserve a slug hash derived from the prospect's own prefix after the form promised deletion) — emit `demo.closed` and write the super-admin AuditLog row on the global side instead; `exportKey` is always null on this path
+- [x] "Convert to a real subscription" via `billing.convertDemo()` — off the demo plan onto a real plan and period, watermark and noindex dropped, token disabled, zero data loss
+- [x] Demo list shows each demo's age (demos never expire on a timer)
+- [x] `messages/ar/demo.json`
+- [x] `docs/decisions/b3.md`
+- [x] Gate: button click to shareable link in under 30 seconds with 15 products and variants; a customer request never creates a tenant before approval; approving from the inbox produces an identical tenant to Path 1; **the demo owner user cannot authenticate by any route while impersonation from A1 reaches the dashboard and shows the staff-accounts feature**; closing a demo removes every row, every R2 object, and its `DemoRequest`
+  - the 30s clock is the LINK, minted in the same transaction; ~3s against a local cluster and 20.8s in a loaded e2e stack. Image VARIANTS arrive afterwards through A3's queue, and the detail screen shows the pending count so an operator knows whether to wait
 
 ### Group B merge (main session, Fable 5 / Opus)
 - [x] Review + merge `phase-b1`, gates green — 15 verified findings fixed first; see `docs/DECISIONS.md`
+- [x] Review + merge `phase-b1` trailing audit commit — the operator's door into the purge/export race, refused and compensated
 - [x] Review + merge `phase-b2`, gates green — typecheck, lint, 678 unit + integration, `next build` and the full e2e (82 specs) all run in the MAIN checkout, because a Group B worktree cannot build: its `node_modules` is a symlink Turbopack refuses
-- [ ] Review + merge `phase-b3`, gates green
-- [ ] Decision files folded into `docs/DECISIONS.md`
+- [x] Review + merge `phase-b3`, gates green — typecheck, lint, **765 unit + integration (46 files)**, and the full **90-spec e2e** including the three demo cases B3 had to skip. The e2e ran from the `sb-b1` worktree via `next build --webpack` on overridden ports, because another session held the main checkout and the fixed e2e ports
+- [x] Sync points 1–4 and 6 serviced — placeholders replaced, `/demos` in the rail, impersonation unblocked, the e2e storage seam opened
+- [x] Three cross-track findings fixed — the demo bearer token in a global webhook table, the i18n keys that could not resolve, the `columns` default that erased three template designs
+- [x] Decision files folded into `docs/DECISIONS.md`
 - [ ] Worktrees and branches removed
 
 ---

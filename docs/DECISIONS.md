@@ -549,6 +549,34 @@ and passed identically at day 4000; the purge-race test queued no job and stubbe
 was meant to exercise; the export-failure test counted the notification and not the webhook that
 was firing every night.
 
+### The operator's door into the purge/export race — closed after the B1 merge
+
+An independent audit found the one path the review missed. The sweep learned `retentionUntil > now`
+so a single pass can never fan out a purge and an export rebuild for the same tenant; the OPERATOR
+path never learned anything. `/lifecycle/pending-purge` lists a tenant suspended thirty seconds ago
+— whose export is still zipping — next to «حذف الآن», and phase 2 of that build holds no transaction
+by design, so its `put()` lands after `deleteByPrefix` has already run: a complete copy of a
+merchant's catalogue on R2, under a prefix whose Tenant row is then deleted, inside the one prefix
+`cleanup-orphans` skips by design. The tombstone asserts the deletion while the catalogue sits there.
+
+Two layers, because the first has to stay time-bounded:
+
+- **REFUSE.** `purgeTenant` throws `ExportInFlightError` when there is no `exportKey` and the
+  suspension is under two hours old. Scoped to `super_admin_purge`, and the scope is load-bearing:
+  the sweep's `retention_expired` purge is already bounded on both sides, and it takes an injected
+  `now` while this reads `Date.now()` — an unscoped guard fails the sweep's own tests, for a reason
+  that would be just as real wherever those two clocks disagree. An already-`purging` tenant is
+  exempt so a crashed purge can still resume.
+- **COMPENSATE.** The conditional stamp already took the object back when the stamp was refused, but
+  only when it RETURNED false. `withTenantTxn` throws for a tenant that is gone or purging, and it
+  throws before `fn` runs — so the purge case propagated out of `exportTenantData` and skipped the
+  compensation entirely. Those two errors now land as `stamped = false`. Only those two: a
+  connection lost after COMMIT is indistinguishable from a rollback here, and deleting an object a
+  committed stamp points at would hand the merchant a link to nothing.
+
+The refusal reads as a refusal on screen, not as a failure — «failed» on that page means "try
+again", and the button it invites you to press again is the one action that cannot be undone.
+
 ### Two known gaps, carried forward rather than fixed at a merge
 
 - **Concurrent purges can orphan a shared identity.** If two tenants are purged at the same moment
@@ -561,6 +589,9 @@ was firing every night.
   from the prospect's own requested prefix would survive. The payload shape is Phase 1's,
   `demo.created` has the same property, and the stated payload rule permits identifiers, so this is
   a vocabulary change plus a deliveries-retention decision. **Phase 6** privacy pass.
+  **Narrowed at the Group B merge:** the far worse half of this — `demo.created` also carried the
+  demo's live BEARER TOKEN in `demoUrl` — is fixed, and `guardrails.test.ts` now forbids a URL or a
+  token in any demo payload. The plaintext SLUG remains in both, which is what Phase 6 still owns.
 
 ---
 
@@ -649,12 +680,171 @@ Track decisions in full in `docs/decisions/b2.md`. What a later phase would othe
 ### Carried forward
 
 - **`pnpm build` and `pnpm e2e` cannot run from a Group B worktree** — its `node_modules` is a
-  symlink into the main checkout and Turbopack refuses it. Both gates were run here at the merge.
-  Whoever bootstraps a worktree next should run `pnpm install` in it rather than linking.
-- **`STORAGE_DRIVER=local` under `NODE_ENV=production` throws**, which the e2e stack hits: the
-  dashboard now degrades (a product list renders without thumbnails, the library says it cannot
-  read the images) instead of answering 500, but B1's purge still fails there. That is the Group A
-  carry-forward about the e2e stack needing an adapter — **Phase 7**.
+  symlink into the main checkout and Turbopack refuses it. `next build --webpack` compiles the same
+  tree without complaint, which is how the Group B merge ran its e2e gate from `sb-b1` while another
+  session held the main checkout. Whoever bootstraps a worktree next should run `pnpm install` in it
+  rather than linking. Note the e2e ports are fixed (`3100` / `55433` / `1026`) and overridable
+  through `E2E_PORT` / `E2E_PG_PORT` / `E2E_SMTP_PORT`: two suites on one machine collide on
+  postgres with `FATAL: could not create any TCP/IP sockets` and every test then fails on
+  `ERR_CONNECTION_REFUSED`, which looks nothing like a port conflict.
+- ~~**`STORAGE_DRIVER=local` under `NODE_ENV=production` throws**, which the e2e stack hits~~ —
+  **RESOLVED at the Group B merge** by `E2E_ALLOW_LOCAL_STORAGE=1` (sync point 6 above). The suite
+  now writes real media to `.tmp/e2e-storage`, which is what let B3's three skipped cases run and
+  what turned B1's purge case from an environmental failure into a product assertion.
 - **`staffInviteTemplate` is still unused.** Staff invitations reuse better-auth's password-reset
   flow, exactly as A1 does for a new owner, because the reset URL exists only inside the
   `sendResetPassword` hook in the auth config. The screen's Arabic promises what actually happens.
+
+---
+
+## B3 — Demo generator, the demo surface and the public request form
+
+### The B1/B3 seam: the content builder writes its own media
+
+`billing/demo-content.ts` hands the builder an already-open transaction and expects an
+`afterCommit` callback, so A3's `ingestInternalImage()` — documented as "B3's door" — could not be
+used: it opens its own `withTenantTxn` and enqueues immediately, which would take a second
+connection per product, commit fifteen `Media` rows independently of the catalogue they belong to,
+and fire fifteen jobs before the demo exists. `src/server/demo/images.ts` assembles the same
+operation from A3's exported primitives and writes on the caller's `tx`, so a demo's images are
+indistinguishable from an uploaded one to the library, the purge and the orphan sweep.
+
+Two refinements over a literal transcription of `upload.ts`: **one locked read** (`SELECT … FOR
+UPDATE` taken fifteen times inside one transaction re-locks what we already hold, so admission runs
+against a running total), and **the objects are taken back on failure** rather than left to the
+orphan sweep, since `createDemo`'s catch deletes the tenant and nothing would look under that
+prefix again.
+
+**The enqueue is `billing.dispatchJob`, and all fifteen fire together.** Both halves were found by
+review, not by reasoning. `createDemo` awaits `afterCommit()` INSIDE the try whose catch calls
+`discardHalfBuiltDemo()`, so a raw `enqueue()` throwing there would not fail an enqueue — it would
+DELETE a complete, already-committed demo. And `dispatchJob` arms a fresh five-second timer per
+call, so fifteen sequential dispatches against a dead broker ran ~75s of spinner against a 30s
+acceptance criterion; `Promise.all` makes the worst case one timeout.
+
+**Accepted risk:** a dropped job leaves its `Media` row `pending` and the product renders A2's
+placeholder letter. The shop, the catalogue and the link are all correct, the detail screen shows
+the pending count before an operator sends the link, and A3's sweep is the backstop. Rolling a demo
+back over a broker blink would be strictly worse.
+
+**A trap for whoever tests this next:** the recording seam is `setJobDispatcher`, not
+`vi.mock('@/server/queues')` — `dispatchJob` resolves `enqueue` by dynamic import inside
+`billing/dispatch.ts`, so the mock does not intercept it.
+
+### The smaller decisions
+
+- **Slug is the SKU.** `Product.slug` is NOT NULL and unique per tenant, the packs carry no slug,
+  and slugifying an Arabic name yields an empty string. Prices are whole shekels in the packs and
+  agorot in the column, so ×100 with `Math.round`.
+- **The home page is B3's to create.** `Section.pageId` is NOT NULL and `createDemo` writes no
+  `Page`; the storefront loads sections only through `page.slug = 'home', published: true`, so a
+  demo without that row renders as a site with no sections and no error at all.
+- **`Site.sellingEnabled` stays false.** A demo is a WhatsApp-order showcase with no checkout, so
+  a returns policy and a permanent «إلغاء معاملة» link would promise a transaction that cannot
+  happen. Revisit in Phase 5 with payments.
+- **The public form checks the prefix against tenants only.** `app_web` has INSERT and no SELECT on
+  `demo_requests`, and widening that to answer a stranger would expose every other prospect's
+  choice. Two requests for one word are resolved in the inbox, where the prefix is editable.
+- **The rate limit fails OPEN.** Failing closed would silently reject every sales lead the platform
+  has during a cache blink, with an Arabic apology, and nobody would find out until someone asked
+  why the inbox was empty. The limit is charged BEFORE validation: a limiter that only counts
+  well-formed submissions is not a limiter.
+- **The public action returns resolved Arabic, not message keys.** `src/shared/i18n` is a static
+  object of every namespace, so one `t()` in a `'use client'` form would ship the admin panel's
+  entire catalogue to a prospect on a phone. Behind a login that is a fair trade; on the one page
+  the platform serves to the open internet it is not.
+- **`/demo-request` 404s on any surface but `app`.** The path is unprefixed by design — it is on a
+  business card — which also means it renders on any hostname the proxy resolves, including a
+  merchant's storefront.
+- **The demo list reports the TEMPLATE, not the pack.** `createDemo` takes a `packKey` and writes
+  what the pack says without recording which pack said it. A `Tenant.demoPackKey` column is the
+  honest fix and is a migration — **main session, before Phase 5**.
+
+## Group B merge — sync points serviced, findings fixed, and what is still open
+
+### Serviced
+
+1. **A1's `builds no admin screen for demos`** went red on B3's first page, as designed. Replaced —
+   but NOT with the assertion `b3.md` proposed: `adminSources` already walks `src/app/admin/**`, so
+   re-checking `demos/` for `.tenant.create` would restate the three tests above it over a smaller
+   set of files. What the demo surface genuinely adds is a screen whose purpose is DESTROYING a
+   tenant, which nothing forbade, so the replacement pins `.tenant.delete`.
+2. **B1's demo-unwind case** was written for the window in which `buildDemoContent` still threw.
+   B3's "leaves nothing behind when the build fails half way" drives the same path from a real
+   failure (storage refusing the fourth image) and asserts strictly more, so B1's is now a pointer.
+   It carries the trap B3 found: the `demo` plan seeded in that file has no features, so a real
+   build there fails closed with `limitsUnavailable` before writing anything.
+3. **`/demos` wired into the rail.** `nav.demos` already existed in `messages/ar/admin.json`.
+4. **Impersonation of a demo owner now works**, which is half of B3's own acceptance gate. The
+   `loginDisabled` guard was one condition short — `impersonateUser` MINTS a session for that user,
+   so an unconditional refusal closed the sales tour Q17 exists for. The predicate is now
+   `maySignIn()`, exported so a branch with a security consequence on each side can be tested
+   directly, and pinned in both directions. `impersonatedBy` is safe to branch on: the admin plugin
+   writes it only after re-verifying the caller against `adminRoles`, and no sign-in route sets it.
+5. **The e2e stack can write media.** `E2E_ALLOW_LOCAL_STORAGE=1` — one greppable opt-out, set only
+   in `playwright.config.ts`, pointing at `.tmp/e2e-storage`. The production guard still refuses a
+   real deployment and now logs a warning wherever it is honoured. This retired B3's three skipped
+   cases AND the Group A carry-forward about the e2e stack and media. Option 1 of the three B3
+   listed, for the reason it gave: it is the only one that keeps the suite testing the artefact
+   that ships.
+
+### Cross-track findings fixed at the merge
+
+- **The demo's bearer token was leaving the platform.** `demo.created` carried `demoUrl` —
+  `{slug}.{DOMAIN}/?token=…` — and emitting an event materialises `WebhookDelivery` rows, which are
+  GLOBAL: they outlive `closeDemo`, whose dialog tells the operator the prospect's data is gone,
+  and the same payload sits in n8n's execution history. The payload carries the slug now, and
+  `guardrails.test.ts` — which already forbade this shape for the export link — covers demo events.
+- **`admin.events.*` and `admin.actions.*` could not resolve.** Those groups store flat dotted keys
+  (`"subscription.suspended"`) because the keys ARE event identifiers, while `resolve()` split on
+  `.` and walked. Both call sites guard with `messageExists()` and fall back to the raw identifier,
+  so nothing threw — the overview and the audit log simply rendered English identifiers on a
+  product whose language policy allows none. Fixed in the resolver rather than by re-nesting the
+  JSON: it repairs A1's `actions.*`, B3's `events.demo.*` and anything a later phase declares the
+  same way, and it can only turn `undefined` into a message that was already there.
+- **`products_grid.columns` had `.default(3)`**, so a parsed config always carried a number and
+  `config.columns ?? template.layout.gridColumns` never fell through — warsheh's four columns and
+  neon-souq's two were unreachable, three templates rendering one grid. `gallery.columns` had the
+  same shape. Not fixable from the consumer, and B3 tried: `normaliseSectionConfig` re-parses on
+  every read, so dropping the key before storing was a no-op with moving parts.
+
+### Two e2e cases that changed meaning, not behaviour
+
+- **B1's purge refusal.** It asserted the generic «ما نجح الإجراء» because the purge could only ever
+  fail on storage in that stack. With a real disk it now fails — correctly — on B1's
+  export-in-flight guard: the account was suspended minutes ago and no worker built its export,
+  which is exactly the state that guard refuses in and the one an operator reaches by pressing
+  «احذف الآن» on a fresh suspension. Unit-covered until now, never seen on a screen.
+- **Two demo assertions were on `expect`'s 5s default** while the actions they watch legitimately
+  take longer: the build writes fifteen images and races a bounded timer per dispatch against a
+  deliberately dead broker (~200ms idle, 20.8s on the tail of a full suite run), and `closeDemo`
+  always spends the drain's full five-second bound before the purging-state guard takes over. Both
+  now use the 30s the feature is actually held to, so they fail when the PRODUCT misses its budget.
+
+### Still open
+
+- **A public demo request notifies nobody out of band.** `Notification.tenantId` is NOT NULL with a
+  foreign key to `tenants`, and a demo request exists precisely because no tenant does yet. What
+  ships is a pending count on the inbox tab, which reaches an operator already in the panel and
+  nobody else. The fix is a nullable `tenantId` or a platform-scoped notification — a migration, so
+  **main session**. Phase 4's push work wants the same thing.
+- **A custom colour selection collapses `surface` onto `background`, for every tenant.**
+  `resolveColors` sets `surface = selection.surface ?? selection.background`, and A2's
+  `resolveTenantColors` re-runs it on every read — so the tinted `derivedSurface` in
+  `templates/tokens.ts` is unreachable whenever a `ThemeSettings` row exists, because
+  `chosen = base.surface || derivedSurface` can never see a falsy surface. For a cream background
+  that is white cards turning cream: every panel stops being a panel. B3 sidestepped it (each pack's
+  three colours are exactly one of the five vetted presets, so it stores `colorMode: 'preset'`), and
+  the interaction still affects merchants. NOT fixed at the merge: the honest repair is for
+  `site-contract` to stop defaulting a field whose absence is meaningful, and `defaultSurface` lives
+  in `templates/`, so it is a layering decision inside A2's colour pipeline rather than a merge step.
+- **`hero.ctaHref` was deliberately not invented.** All three pack CTAs say "order by WhatsApp" and
+  the renderer's default href is `/products`, so the label points at a product list rather than at
+  the contact block. Pointing it at the contact anchor would duplicate the ghost button the hero
+  already renders beside it. **A2's UX to decide.**
+- **`seed-assets` has two candidate homes.** `.gitignore` already carries
+  `seed-assets/**/*.{jpg,png,webp}`, so a repository-root folder was anticipated somewhere, but
+  `scripts/check-track-ownership.ts` has no entry for it — B3 put the lookup inside the folder it
+  owns. Either the ownership table needs a line or the `.gitignore` comment is out of date. When
+  real photos are added, `next.config.ts` needs an `outputFileTracingIncludes` entry or the
+  standalone build silently keeps drawing placeholders.
