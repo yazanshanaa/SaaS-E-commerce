@@ -156,16 +156,27 @@ export async function createDemoImageWriter(
      * sending the link, and A3's orphan sweep is the backstop for rows that never process.
      */
     async enqueueProcessing(): Promise<void> {
-      let dropped = 0;
+      /**
+       * CONCURRENTLY, and that is not a micro-optimisation — it is the difference between a
+       * five-second pause and a minute and a quarter.
+       *
+       * `dispatchJob` arms its own five-second timer per call (`billing/dispatch.ts:40`), and
+       * `createDemo` awaits `afterCommit()` before it returns, which the admin action awaits before
+       * it redirects. Dispatched one at a time with the broker down, fifteen timeouts run back to
+       * back: the operator watches a spinner for ~75 seconds on a demo that committed correctly
+       * seconds earlier, against an acceptance criterion of "button click to a shareable link in
+       * under 30 seconds". Fired together they overlap, so the worst case is one timeout.
+       *
+       * `Promise.all` is safe here precisely because `dispatchJob` never rejects — it catches,
+       * logs and returns a boolean — so this cannot become the throw that deletes a committed demo.
+       */
+      const results = await Promise.all(
+        written.map(({ mediaId }) =>
+          dispatchJob(MEDIA_QUEUE, tenantJob(tenantId, PROCESS_UPLOAD_JOB, { mediaId })),
+        ),
+      );
 
-      for (const { mediaId } of written) {
-        const scheduled = await dispatchJob(
-          MEDIA_QUEUE,
-          tenantJob(tenantId, PROCESS_UPLOAD_JOB, { mediaId }),
-        );
-        if (!scheduled) dropped += 1;
-      }
-
+      const dropped = results.filter((scheduled) => !scheduled).length;
       if (dropped > 0) {
         logger().error(
           { tenantId, dropped, total: written.length },

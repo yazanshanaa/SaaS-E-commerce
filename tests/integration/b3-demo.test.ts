@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 /**
  * B3 — the demo generator and the demo surface, end to end, against a real PostgreSQL with RLS on.
@@ -11,60 +11,53 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
  *   - STORAGE is the local-disk driver. Not a mock — it writes and deletes real files, so "closing
  *     a demo removed every object" is measured rather than asserted about a spy, and every call
  *     goes through the same `StorageAdapter` interface R2 implements.
- *   - The QUEUE's `enqueue` is captured. There is no Redis here, and what is under test is WHAT
- *     the builder puts on the queue and WHEN — not BullMQ. The "when" is the interesting half:
- *     `DemoContentResult.afterCommit` exists so the processing jobs are fired after the demo
- *     commits, and the capture below proves it by reading the `Media` row on a second connection
- *     at the moment the job is enqueued.
+ *   - The QUEUE is a RECORDING DISPATCHER installed with `setJobDispatcher`, which is the seam
+ *     Phase 1 built for exactly this ("installing a recording dispatcher is how the lifecycle tests
+ *     assert 'this transition scheduled that job' without a broker" — `billing/dispatch.ts:18`).
+ *     Mocking `@/server/queues` instead does NOT work here and the failure is silent: the builder
+ *     reaches the queue through `dispatchJob`, which resolves `enqueue` by dynamic import inside
+ *     `billing/dispatch.ts`, so the jobs went to the real BullMQ and died against a closed Redis
+ *     while the test reported one enqueue out of fifteen and blamed the product.
+ *
+ * What is under test is WHAT the builder queues and WHEN — not BullMQ. The "when" is the
+ * interesting half: `DemoContentResult.afterCommit` exists so the processing jobs are fired after
+ * the demo commits, and the dispatcher below proves it by reading the `Media` row on a second
+ * connection at the moment the job is dispatched.
  *
  * Everything else is real: the transaction, the row-level security, the contrast guard, the magic
  * bytes, the quota accounting and the storefront's own queries.
  */
 
-const { enqueued } = vi.hoisted(() => ({
-  enqueued: [] as Array<{ queue: string; job: Record<string, unknown>; mediaVisible: boolean }>,
-}));
+interface RecordedJob {
+  queue: string;
+  job: { name: string; tenantId?: string; data?: { mediaId?: string } };
+  /** Was the `Media` row visible on another connection when this job was dispatched? */
+  mediaVisible: boolean;
+}
 
-vi.mock('@/server/queues', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/server/queues')>();
-  const { tenantDb, SYSTEM_ACTOR } = await import('@/server/db');
+const enqueued: RecordedJob[] = [];
+/**
+ * The ordering probes, started at dispatch time and awaited later.
+ *
+ * A read on a second connection sees a row only if the transaction that wrote it has committed.
+ * Enqueuing inside the transaction — which is what calling A3's `ingestInternalImage` from the
+ * builder would have done — hands BullMQ a job whose `Media` row a worker cannot see yet, and the
+ * job fails on a demo that is perfectly fine. So the read has to BEGIN at dispatch time; when it
+ * finishes does not matter, and awaiting it inline would make fifteen concurrent transactions the
+ * thing under test.
+ */
+const probes: Array<Promise<void>> = [];
 
-  return {
-    ...actual,
-    enqueue: vi.fn(async (queue: string, job: Record<string, unknown>) => {
-      /**
-       * THE ORDERING ASSERTION, taken at the only moment it can be taken.
-       *
-       * A read on a second connection sees a row only if the transaction that wrote it has
-       * committed. Enqueuing inside the transaction — which is what calling A3's
-       * `ingestInternalImage` from the builder would have done — hands BullMQ a job whose `Media`
-       * row a worker cannot see yet, and the job fails on a demo that is perfectly fine.
-       */
-      const record = job as { tenantId?: string; data?: { mediaId?: string } };
-      let mediaVisible = false;
-      if (record.tenantId && record.data?.mediaId) {
-        const row = await tenantDb(record.tenantId, SYSTEM_ACTOR).media.findUnique({
-          where: { id: record.data.mediaId },
-          select: { id: true },
-        });
-        mediaVisible = row !== null;
-      }
-
-      enqueued.push({ queue, job, mediaVisible });
-      return 'test-job';
-    }),
-  };
-});
-
-import { PUBLIC_ACTOR, tenantDb, withSystemTxn } from '@/server/db';
+import { SYSTEM_ACTOR, PUBLIC_ACTOR, tenantDb, withSystemTxn } from '@/server/db';
 import {
   DEMO_PACKS,
   closeDemo,
   convertDemo,
   createDemo,
+  setJobDispatcher,
   setJobDrainer,
 } from '@/server/billing';
-import { listDemos } from '@/server/demo/admin';
+import { listDemos, setDemoLinkExpiry } from '@/server/demo/admin';
 import {
   isPrefixTaken,
   rejectDemoRequest,
@@ -121,17 +114,35 @@ beforeAll(async () => {
   // No broker here; `closeDemo` drains before it sweeps and must not hang waiting for one.
   setJobDrainer(async () => 0);
 
+  setJobDispatcher(async (queue, job) => {
+    const record = job as RecordedJob['job'];
+    const entry: RecordedJob = { queue, job: record, mediaVisible: false };
+    enqueued.push(entry);
+
+    if (record.tenantId && record.data?.mediaId) {
+      probes.push(
+        tenantDb(record.tenantId, SYSTEM_ACTOR)
+          .media.findUnique({ where: { id: record.data.mediaId }, select: { id: true } })
+          .then((row) => {
+            entry.mediaVisible = row !== null;
+          }),
+      );
+    }
+  });
+
   await ensureDemoPlan();
   await ensurePlan('basic', { features: { storage_mb: 500, image_max_mb: 2 } });
 });
 
 afterAll(() => {
   setJobDrainer(undefined);
+  setJobDispatcher(undefined);
 });
 
 beforeEach(async () => {
   await resetTenants();
   enqueued.length = 0;
+  probes.length = 0;
   resetDemoRequestRateLimit();
 });
 
@@ -260,6 +271,7 @@ describe('creating a demo from a frozen pack', () => {
 
   it('enqueues variant processing only after the demo has committed', async () => {
     await createDemo({ packKey: 'food', slugPrefix: 'demo-market', actor: SUPER_ADMIN });
+    await Promise.all(probes);
 
     const jobs = enqueued.filter((record) => record.queue === 'media');
     expect(jobs).toHaveLength(15);
@@ -534,7 +546,65 @@ describe('the demo list', () => {
     // Arabic, from the template registry — the pack itself is not stored on the tenant.
     expect(row?.templateName).toMatch(ARABIC);
   });
+
+  /**
+   * The optional per-demo expiry (Q2), which is the half of the magic-link rule that is not the
+   * default.
+   *
+   * Without this the liveness comparison in `listDemos` is only ever reached through its
+   * `expiresAt === null` short circuit, so the `getTime()` test beside it is never evaluated at
+   * all: inverting it would leave the suite green while either hiding the link of every demo that
+   * has an expiry, or handing an operator a dead link to send over WhatsApp. The token GATE is a
+   * separate implementation in `src/server/tenancy` with its own coverage — this is the display
+   * path, and the risk is the two drifting apart.
+   */
+  it('hides a link that has expired, shows one that has not, and restores it when cleared', async () => {
+    const created = await createDemo({
+      packKey: 'clothing',
+      slugPrefix: 'demo-expiring',
+      actor: SUPER_ADMIN,
+    });
+
+    const tomorrow = new Date(Date.now() + 86_400_000);
+    expect(await setDemoLinkExpiry(SUPER_ADMIN, created.tenantId, tomorrow)).toBe(1);
+
+    const live = await find(created.tenantId);
+    expect(live?.demoUrl).toContain(created.demoToken);
+    expect(live?.tokenExpiresAt?.toISOString()).toBe(tomorrow.toISOString());
+
+    // Past its date the list stops offering it, so nobody copies a link into a message that will
+    // open the Arabic rejection page.
+    await setDemoLinkExpiry(SUPER_ADMIN, created.tenantId, new Date(Date.now() - 86_400_000));
+    expect((await find(created.tenantId))?.demoUrl).toBeNull();
+
+    // Cleared — back to the default, which is no expiry at all.
+    await setDemoLinkExpiry(SUPER_ADMIN, created.tenantId, null);
+    const restored = await find(created.tenantId);
+    expect(restored?.demoUrl).toContain(created.demoToken);
+    expect(restored?.tokenExpiresAt).toBeNull();
+  });
+
+  it('reports no link to update for a demo whose tokens are all revoked', async () => {
+    const created = await createDemo({
+      packKey: 'food',
+      slugPrefix: 'demo-revoked',
+      actor: SUPER_ADMIN,
+    });
+
+    await adminDb().demoLink.updateMany({
+      where: { tenantId: created.tenantId },
+      data: { revokedAt: new Date() },
+    });
+
+    // Zero is what the admin action turns into the Arabic «ما لقينا هذه النسخة التجريبية».
+    expect(await setDemoLinkExpiry(SUPER_ADMIN, created.tenantId, new Date())).toBe(0);
+    expect((await find(created.tenantId))?.demoUrl).toBeNull();
+  });
 });
+
+async function find(tenantId: string) {
+  return (await listDemos(SUPER_ADMIN)).find((demo) => demo.tenantId === tenantId);
+}
 
 describe('ending a demo', () => {
   it('closing removes every row, every object and the request it came from', async () => {
