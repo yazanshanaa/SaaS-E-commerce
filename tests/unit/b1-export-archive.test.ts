@@ -137,6 +137,10 @@ describe('the README a merchant actually reads', () => {
     categories: 5,
     images: 12,
     imagesOmitted: 0,
+    // Phase 5. A shop that never enabled checkout: the orders section must not appear at all,
+    // which is what the assertions below keep true.
+    orders: 0,
+    customerIdentifiers: false,
   };
 
   it('is Arabic and names the shop', () => {

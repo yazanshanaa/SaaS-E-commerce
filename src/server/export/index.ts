@@ -78,26 +78,72 @@ const CATEGORY_HEADERS = ['المفتاح', 'الاسم', 'الترتيب', 'م�
 
 const IMAGE_HEADERS = ['الملف', 'المنتج', 'رمز المنتج', 'النص البديل', 'الصورة الرئيسية'];
 
+/**
+ * Phase 5. One row PER LINE, not per order, so the file is a ledger a merchant can pivot rather
+ * than a summary they have to trust. `رقم الطلب` repeats across an order's lines and is the join
+ * key to `orders-customers.csv`.
+ */
+const ORDER_HEADERS = [
+  'رقم الطلب',
+  'الحالة',
+  'تاريخ الطلب',
+  'تاريخ الدفع',
+  'المنتج',
+  'سعر الوحدة بالشيكل',
+  'الكمية',
+  'المجموع الفرعي بالشيكل',
+  'مجموع الطلب بالشيكل',
+  'العملة',
+];
+
+/** The identifiers. Self-serve mode ONLY — see decision (a) in `types.ts`. */
+const ORDER_CUSTOMER_HEADERS = ['رقم الطلب', 'اسم الزبون', 'رقم الجوال', 'ملاحظة الزبون'];
+
 const PRODUCTS_FILE = 'products.csv';
 const CATEGORIES_FILE = 'categories.csv';
 const IMAGES_FILE = 'images.csv';
+const ORDERS_FILE = 'orders.csv';
+const ORDER_CUSTOMERS_FILE = 'orders-customers.csv';
 const IMAGES_FOLDER = 'images/';
 const README_FILE = 'README.txt';
 
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  pending: 'بانتظار الدفع',
+  paid: 'مدفوع',
+  fulfilled: 'تم التسليم',
+  cancelled: 'ملغي',
+  refunded: 'مسترجع',
+};
+
 export interface ExportBundle {
   files: Array<{ name: string; body: string }>;
-  contents: { products: number; categories: number };
+  contents: { products: number; categories: number; orders: number; customerIdentifiers: boolean };
 }
 
 /**
  * Build the CSV half. Split out so the archive builder can call it, add the images and zip the
  * result without re-reading the database or re-deciding what "the merchant's data" means.
  *
- * Note what is NOT here: customer data. Q5 means the V1 storefront collects none, which is the
- * entire reason a merchant's export can be handed over on a link at all. Phase 5 introduces
- * orders and MUST revisit this function before it does.
+ * WHAT COUNTS AS "THE MERCHANT'S DATA" CHANGED IN PHASE 5, and this is where the answer lives.
+ *
+ * Through V1 it was simple: Q5 meant the storefront collected no customer information at all, so
+ * everything in the archive was unambiguously the merchant's own and could be handed over on a
+ * bearer link (Q18). Checkout ends that. An order carries a name, a phone number and a note
+ * belonging to a person who has no account here and never agreed to anything with this platform.
+ *
+ * Decision (a) splits the archive by DELIVERY CHANNEL rather than by content type:
+ *   - the order LEDGER (`orders.csv`) is the merchant's commercial record and ships in both modes;
+ *   - the IDENTIFIERS (`orders-customers.csv`) ship only when `includeCustomerIdentifiers` is set,
+ *     which only `self_serve` may set — a session, an owner role and `data_export` in front of it.
+ *
+ * The split is two files rather than dropped columns so the merchant's spreadsheet joins on
+ * `رقم الطلب` and nothing is silently missing from a file that claims to be complete.
  */
-export async function buildExportBundle(tx: TenantTx, tenantId: string): Promise<ExportBundle> {
+export async function buildExportBundle(
+  tx: TenantTx,
+  tenantId: string,
+  options: { includeCustomerIdentifiers?: boolean } = {},
+): Promise<ExportBundle> {
   const [categories, products] = await Promise.all([
     tx.category.findMany({
       where: { tenantId },
@@ -147,12 +193,74 @@ export async function buildExportBundle(tx: TenantTx, tenantId: string): Promise
     categories.map((c) => [c.key, c.name, c.sort, c.published ? 'نعم' : 'لا']),
   );
 
+  const files = [
+    { name: PRODUCTS_FILE, body: productsCsv },
+    { name: CATEGORIES_FILE, body: categoriesCsv },
+  ];
+
+  /**
+   * Orders are read here rather than in `readPhase` so they share the caller's ONE transaction
+   * with the products and the image inventory — a catalogue and an order ledger from two different
+   * snapshots would let a product be renamed between them.
+   *
+   * The import is dynamic to keep the dependency one-directional: `src/server/orders` imports
+   * `src/server/billing`, which the export folder is called BY, and a static import here would
+   * close that loop at module load.
+   */
+  const { readOrdersForExport } = await import('@/server/orders');
+  const orders = await readOrdersForExport(tx, tenantId);
+
+  if (orders.length > 0) {
+    const lines = orders.flatMap((order) =>
+      // An order with no lines is not possible through `placeOrder`, but a defensive `?? []` here
+      // would silently drop the order from the ledger. One row with an empty product cell keeps
+      // the order visible and the totals reconcilable.
+      (order.items.length > 0
+        ? order.items
+        : [{ nameSnapshot: '', priceAgorot: 0, quantity: 0, subtotalAgorot: 0 }]
+      ).map((item) => [
+        order.number,
+        ORDER_STATUS_LABELS[order.status] ?? order.status,
+        order.placedAt.toISOString(),
+        order.paidAt?.toISOString() ?? '',
+        item.nameSnapshot,
+        agorotToDecimal(item.priceAgorot),
+        item.quantity,
+        agorotToDecimal(item.subtotalAgorot),
+        agorotToDecimal(order.totalAgorot),
+        order.currency,
+      ]),
+    );
+
+    files.push({ name: ORDERS_FILE, body: toCsv(ORDER_HEADERS, lines) });
+
+    if (options.includeCustomerIdentifiers) {
+      files.push({
+        name: ORDER_CUSTOMERS_FILE,
+        body: toCsv(
+          ORDER_CUSTOMER_HEADERS,
+          orders.map((order) => [
+            order.number,
+            order.customerName ?? '',
+            // `+972…` starts with `+`, so `escapeField` prefixes it with an apostrophe. That is the
+            // formula-injection guard doing its job, and the README says so — a merchant who
+            // re-imports must not think the number is corrupt.
+            order.customerPhone ?? '',
+            order.customerNote ?? '',
+          ]),
+        ),
+      });
+    }
+  }
+
   return {
-    files: [
-      { name: PRODUCTS_FILE, body: productsCsv },
-      { name: CATEGORIES_FILE, body: categoriesCsv },
-    ],
-    contents: { products: products.length, categories: categories.length },
+    files,
+    contents: {
+      products: products.length,
+      categories: categories.length,
+      orders: orders.length,
+      customerIdentifiers: orders.length > 0 && options.includeCustomerIdentifiers === true,
+    },
   };
 }
 
@@ -185,6 +293,8 @@ export function buildReadme(params: {
   categories: number;
   images: number;
   imagesOmitted: number;
+  orders: number;
+  customerIdentifiers: boolean;
 }): string {
   const lines = [
     t('billing', 'export.readme.title'),
@@ -203,11 +313,39 @@ export function buildReadme(params: {
     );
   }
 
+  /**
+   * Only when there ARE orders. A shop that never enabled checkout must not open its archive and
+   * read a line about a file that is not in it — and the negative assertions in
+   * `tests/unit/b1-export-archive.test.ts` say so.
+   */
+  if (params.orders > 0) {
+    lines.push(t('billing', 'export.readme.orders', { file: ORDERS_FILE, count: params.orders }));
+
+    // Decision (a) is stated in the archive, in both directions. A merchant who finds no phone
+    // numbers must learn WHY from the file itself rather than concluding data was lost.
+    lines.push(
+      params.customerIdentifiers
+        ? t('billing', 'export.readme.ordersCustomers', { file: ORDER_CUSTOMERS_FILE })
+        : t('billing', 'export.readme.ordersNoCustomers'),
+    );
+
+    /**
+     * Decision (b), said out loud to the person it affects.
+     *
+     * The platform keeps no order ledger after a purge — only an aggregate on a global audit row.
+     * That is defensible precisely because the merchant was handed this file and told, in it, that
+     * it is their bookkeeping copy. A retention rule the merchant never reads is not one.
+     */
+    lines.push('', t('billing', 'export.readme.bookkeeping'));
+  }
+
   if (params.imagesOmitted > 0) {
     lines.push('', t('billing', 'export.readme.imagesOmitted', { count: params.imagesOmitted }));
   }
 
-  lines.push('', t('billing', 'export.readme.encoding'), t('billing', 'export.readme.help'));
+  lines.push('', t('billing', 'export.readme.encoding'));
+  if (params.customerIdentifiers) lines.push(t('billing', 'export.readme.phoneQuoting'));
+  lines.push(t('billing', 'export.readme.help'));
 
   return `${lines.join('\r\n')}\r\n`;
 }
@@ -227,10 +365,11 @@ async function readPhase(
   tx: TenantTx,
   tenantId: string,
   includeImages: boolean,
+  includeCustomerIdentifiers: boolean,
 ): Promise<ReadPhase> {
   const [tenant, bundle] = await Promise.all([
     tx.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }),
-    buildExportBundle(tx, tenantId),
+    buildExportBundle(tx, tenantId, { includeCustomerIdentifiers }),
   ]);
 
   if (!includeImages) {
@@ -253,11 +392,26 @@ export async function exportTenantData(
   const generatedAt = new Date();
   const mode: ExportMode = options.mode;
   const includeImages = options.includeImages !== false;
+  const includeCustomerIdentifiers = options.includeCustomerIdentifiers === true;
 
   if (mode === 'suspension' && (!options.subscriptionId || !options.suspendedAt)) {
     // Without both, the key is not deterministic and a retry orphans a second copy.
     throw new ExportModeError(
       "mode 'suspension' requires subscriptionId and suspendedAt — the key must be deterministic.",
+    );
+  }
+
+  /**
+   * Decision (a), enforced rather than documented.
+   *
+   * The suspension artifact is reached with a bearer token in a WhatsApp message. A caller that
+   * asked for customer identifiers on that channel would be handing a merchant's customers'
+   * phone numbers to whoever the link was forwarded to — so the request is refused here, at the
+   * one point every export passes through, instead of being a rule each caller has to remember.
+   */
+  if (includeCustomerIdentifiers && mode !== 'self_serve') {
+    throw new ExportModeError(
+      "customer identifiers may be exported only in mode 'self_serve' — the suspension artifact is reachable with a bearer token (decision (a), docs/DECISIONS.md).",
     );
   }
 
@@ -268,10 +422,12 @@ export async function exportTenantData(
 
   // --- 1. Read -----------------------------------------------------------------
   const read = options.tx
-    ? await readPhase(options.tx, tenantId, includeImages)
-    : await withTenantTxn(tenantId, (tx) => readPhase(tx, tenantId, includeImages), {
-        timeoutMs: 60_000,
-      });
+    ? await readPhase(options.tx, tenantId, includeImages, includeCustomerIdentifiers)
+    : await withTenantTxn(
+        tenantId,
+        (tx) => readPhase(tx, tenantId, includeImages, includeCustomerIdentifiers),
+        { timeoutMs: 60_000 },
+      );
 
   // --- 2. Build, holding no transaction ----------------------------------------
   const fetched = await fetchExportImages(read.images);
@@ -287,6 +443,8 @@ export async function exportTenantData(
         categories: read.bundle.contents.categories,
         images: fetched.files.length,
         imagesOmitted,
+        orders: read.bundle.contents.orders,
+        customerIdentifiers: read.bundle.contents.customerIdentifiers,
       }),
     },
     ...read.bundle.files,
@@ -410,6 +568,8 @@ export async function exportTenantData(
     contents: {
       products: read.bundle.contents.products,
       categories: read.bundle.contents.categories,
+      orders: read.bundle.contents.orders,
+      customerIdentifiers: read.bundle.contents.customerIdentifiers,
       images: fetched.files.length,
       imagesOmitted,
     },
@@ -420,6 +580,8 @@ export async function exportTenantData(
       tenantId,
       mode,
       products: artifact.contents.products,
+      orders: artifact.contents.orders,
+      customerIdentifiers: artifact.contents.customerIdentifiers,
       images: artifact.contents.images,
       imagesOmitted,
       sizeBytes: artifact.sizeBytes,

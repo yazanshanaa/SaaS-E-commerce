@@ -249,38 +249,79 @@ export interface RecordPaymentInput {
   recordedById?: string | null;
   /** A subscription payment may extend the period in the same call (A1's manual record). */
   extendPeriods?: number;
+  /** Phase 5. Set together with `kind: 'order'` — an order payment carries no subscription. */
+  orderId?: string;
+  /** The provider's own identifier for the transaction. Not a credential. */
+  providerRef?: string;
+  /** The settlement notice as received, for reconciliation. Redacted in logs. */
+  rawPayload?: unknown;
+  status?: 'pending' | 'paid' | 'failed' | 'refunded';
+  paidAt?: Date | null;
+}
+
+/**
+ * Write a `Payment` row inside the CALLER'S transaction.
+ *
+ * Phase 5 needs this shape and `recordPayment` (which opens its own) cannot serve it: an order
+ * payment must commit or roll back with the order status change it settles, and calling a function
+ * that opens a second transaction from inside one would take a second connection and see a
+ * different snapshot.
+ *
+ * IT STAYS IN THIS FOLDER because invariant 5 says the Payment table has one writer. The orders
+ * service calls in; it does not write payments itself, and a guardrail test asserts that.
+ *
+ * `kind: 'order'` writes `subscriptionId = null`, deliberately and not as an omission. An order
+ * payment is a merchant's CUSTOMER paying the merchant — it is not platform revenue, and joining
+ * it to the subscription would put a shop's turnover into the platform's own revenue report
+ * through `subscription.billingPeriod`. The revenue functions filter on `kind` as well, so the
+ * containment holds from two directions.
+ */
+export async function recordPaymentInTx(
+  tx: TenantTx,
+  input: RecordPaymentInput,
+): Promise<{ paymentId: string }> {
+  const subscription = await loadSubscription(tx, input.tenantId);
+  assertTransition('record_payment', subscription.status);
+
+  const status = input.status ?? 'paid';
+  const paidAt =
+    input.paidAt !== undefined ? input.paidAt : status === 'paid' ? new Date() : null;
+
+  const payment = await tx.payment.create({
+    data: {
+      tenantId: input.tenantId,
+      subscriptionId: input.kind === 'order' ? null : subscription.id,
+      kind: input.kind,
+      status,
+      amountAgorot: input.amountAgorot,
+      method: input.method,
+      note: input.note,
+      changeRequestId: input.changeRequestId,
+      attachmentMediaId: input.attachmentMediaId,
+      recordedById: input.recordedById ?? null,
+      orderId: input.orderId ?? null,
+      providerRef: input.providerRef ?? null,
+      // `undefined` leaves the column NULL; Prisma reserves an explicit `null` here for its own
+      // JsonNull sentinel, and passing one is a type error rather than a stored null.
+      rawPayload: (input.rawPayload ?? undefined) as object | undefined,
+      paidAt,
+    },
+    select: { id: true },
+  });
+
+  await emitEvent(tx, {
+    tenantId: input.tenantId,
+    type: 'payment.recorded',
+    payload: { kind: input.kind, amountAgorot: input.amountAgorot, currency: 'ILS' },
+  });
+
+  return { paymentId: payment.id };
 }
 
 export async function recordPayment(input: RecordPaymentInput): Promise<{ paymentId: string }> {
-  const paymentId = await withTenantTxn(input.tenantId, async (tx) => {
-    const subscription = await loadSubscription(tx, input.tenantId);
-    assertTransition('record_payment', subscription.status);
-
-    const payment = await tx.payment.create({
-      data: {
-        tenantId: input.tenantId,
-        subscriptionId: subscription.id,
-        kind: input.kind,
-        status: 'paid',
-        amountAgorot: input.amountAgorot,
-        method: input.method,
-        note: input.note,
-        changeRequestId: input.changeRequestId,
-        attachmentMediaId: input.attachmentMediaId,
-        recordedById: input.recordedById ?? null,
-        paidAt: new Date(),
-      },
-      select: { id: true },
-    });
-
-    await emitEvent(tx, {
-      tenantId: input.tenantId,
-      type: 'payment.recorded',
-      payload: { kind: input.kind, amountAgorot: input.amountAgorot, currency: 'ILS' },
-    });
-
-    return payment.id;
-  });
+  const { paymentId } = await withTenantTxn(input.tenantId, (tx) =>
+    recordPaymentInTx(tx, input),
+  );
 
   // Extending is a SEPARATE transition with its own guard: a payment recorded against a
   // suspended account must not silently reopen it (that is reactivate's job, with its own
@@ -721,6 +762,13 @@ export interface PurgeResult {
   usersDeleted: number;
   exportDeliveredAt: Date | null;
   exportDownloadedAt: Date | null;
+  /**
+   * Phase 5, decision (b). How much trade the account carried — an AGGREGATE, never a ledger.
+   * The same four numbers go into the global platform audit row, which survives the cascade.
+   */
+  ordersPurged: number;
+  paidOrdersPurged: number;
+  orderGrossAgorot: number;
 }
 
 /**
@@ -872,9 +920,35 @@ export async function purgeTenant(input: PurgeInput): Promise<PurgeResult> {
   const soleMembershipUserIds = await usersWithNoOtherMembership(tenantId, snapshot.memberUserIds);
 
   // --- 2 and 3. Record it, then let the cascade run ------------------------------
-  await withTenantTxn(
+  const trade = await withTenantTxn(
     tenantId,
     async (tx) => {
+      /**
+       * Decision (b), read here because this is the last transaction in which the rows exist.
+       *
+       * `orders`, `order_items` and `payments` are all `ON DELETE CASCADE` from the tenant, so
+       * `tx.tenant.delete` at the bottom of this function destroys every one of them — as it
+       * should: a merchant's ledger keyed on a tenant that no longer exists is data the platform
+       * could not lawfully re-associate with anyone, and Q6 promised it would be gone.
+       *
+       * What survives is an AGGREGATE on the global platform audit row: how many orders, how many
+       * settled, how much money, and when the last one was. That answers "how much trade went
+       * through this account" for a dispute or an audit of the platform itself. It cannot answer
+       * "who bought what", which is a ledger question — and the merchant already has the ledger,
+       * delivered at suspension under Q18 and, since decision (a), including `orders.csv`.
+       *
+       * The statutory bookkeeping obligation is the MERCHANT'S, not the platform's: they are the
+       * controller and the taxpayer, we are a processor. Our duty is that they hold the records,
+       * and the suspension export is how that duty is discharged. `messages/ar/billing.json` says
+       * so in the archive itself, because a promise the merchant never reads is not one.
+       *
+       * NO NAMES, NO PHONE NUMBERS, NO PER-ORDER ROWS in what survives. `platform_audit_logs` is
+       * global and outlives every tenant; a customer's number in it would be exactly the retention
+       * the purge exists to end, for a person who never had an account here.
+       */
+      const { orderPurgeSummary } = await import('@/server/orders');
+      const summary = await orderPurgeSummary(tx, tenantId);
+
       await writeTombstone(tx, {
         tenantId,
         slugHash: hashSlug(snapshot.slug),
@@ -918,6 +992,7 @@ export async function purgeTenant(input: PurgeInput): Promise<PurgeResult> {
               slugHash: hashSlug(snapshot.slug),
               exportDelivered: snapshot.exportDeliveredAt !== null,
               exportDownloaded: snapshot.exportDownloadedAt !== null,
+              ...summary,
             },
           },
         ],
@@ -937,6 +1012,8 @@ export async function purgeTenant(input: PurgeInput): Promise<PurgeResult> {
       }
 
       await tx.tenant.delete({ where: { id: tenantId } });
+
+      return summary;
     },
     { allowPurging: true, timeoutMs: 60_000 },
   );
@@ -945,7 +1022,13 @@ export async function purgeTenant(input: PurgeInput): Promise<PurgeResult> {
   for (const hostname of snapshot.hostnames) await invalidateHostname(hostname);
 
   logger().warn(
-    { tenantId, objectsDeleted, jobsDropped, usersDeleted: soleMembershipUserIds.length },
+    {
+      tenantId,
+      objectsDeleted,
+      jobsDropped,
+      usersDeleted: soleMembershipUserIds.length,
+      ordersPurged: trade.ordersPurged,
+    },
     'tenant purged',
   );
 
@@ -956,6 +1039,9 @@ export async function purgeTenant(input: PurgeInput): Promise<PurgeResult> {
     usersDeleted: soleMembershipUserIds.length,
     exportDeliveredAt: snapshot.exportDeliveredAt,
     exportDownloadedAt: snapshot.exportDownloadedAt,
+    ordersPurged: trade.ordersPurged,
+    paidOrdersPurged: trade.paidOrdersPurged,
+    orderGrossAgorot: trade.orderGrossAgorot,
   };
 }
 

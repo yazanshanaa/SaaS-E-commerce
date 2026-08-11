@@ -69,6 +69,16 @@ export default async function AccountLayout({
         {account.prioritySupport ? (
           <span className="sba-chip sba-chip--olive">{t('admin', 'account.prioritySupport')}</span>
         ) : null}
+        {/*
+          One glance answers "is this shop selling". The chip is the FEATURE, not the readiness —
+          the panel below carries the four-state sentence, and a header badge that flickered
+          between "ready" and "no keys yet" would be noise on the one line that has to stay stable.
+        */}
+        {account.paymentGateway ? (
+          <span className="sba-chip sba-chip--olive">
+            {t('admin', 'account.paymentGatewayBadge')}
+          </span>
+        ) : null}
         <span className="sba-chip">{account.subscription?.planName ?? ''}</span>
       </p>
 

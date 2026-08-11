@@ -115,6 +115,145 @@ describe('invariant 5 — billing state lives in src/server/billing', () => {
   });
 });
 
+/**
+ * Phase 5 adds a SECOND writer's worth of temptation to the Payment table, and two new PII
+ * surfaces. All three rules below are invisible in a passing suite: an order payment written
+ * outside billing works perfectly until someone asks why the revenue report disagrees with the
+ * bank, and a customer's phone number in an event payload works perfectly until it turns up in a
+ * backup of n8n's execution history.
+ */
+describe('invariant 5, Phase 5 — the Payment table still has ONE writer', () => {
+  it('creates a Payment row only from src/server/billing', () => {
+    const offenders = sources
+      .filter(({ rel }) => !rel.startsWith('src/server/billing/'))
+      .filter(({ source }) => /\.payment\.(create|createMany|upsert)\s*\(/.test(source))
+      .map(({ rel }) => rel);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('keeps the orders service out of subscription lifecycle state', () => {
+    // `src/server/orders` calls INTO billing (`recordPaymentInTx`); it must never reach around it.
+    const offenders = sources
+      .filter(({ rel }) => rel.startsWith('src/server/orders/'))
+      .filter(({ source }) =>
+        /\.subscription\.(update|updateMany|create|upsert)\s*\(/.test(source),
+      )
+      .map(({ rel }) => rel);
+
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe('Phase 5 — customer PII stays out of the places that outlive the tenant', () => {
+  /**
+   * An event payload is copied into `WebhookDelivery`, which is GLOBAL and survives the purge, and
+   * POSTed to n8n, whose execution history Q9 puts in the backup set. A storefront customer never
+   * had an account here and has no route to ask us to stop, so their name and number may not enter
+   * either. Asserted against the payload TABLE rather than an emit site, because the type is what a
+   * future event has to be declared in.
+   */
+  it('declares no order event payload carrying a customer identifier', () => {
+    const eventTypes = readFileSync(path.join(srcRoot, 'server/events/types.ts'), 'utf8');
+    const orderPayloads = eventTypes
+      .split('\n')
+      .filter((line) => /^\s*'order\.\w+':/.test(line) || /^\s*'order\.\w+':\s*\{/.test(line));
+
+    expect(orderPayloads.length).toBeGreaterThan(0);
+    for (const line of orderPayloads) {
+      for (const field of ['customerName', 'customerPhone', 'customerNote', 'providerRef']) {
+        expect(line, `an order event payload carries ${field}: ${line.trim()}`).not.toContain(field);
+      }
+    }
+  });
+
+  it('redacts the new PII and secret-shaped fields in the logger', () => {
+    const logger = readFileSync(path.join(srcRoot, 'server/logger.ts'), 'utf8');
+    for (const field of ['customerName', 'customerPhone', 'customerNote', 'rawPayload']) {
+      expect(logger, `logger does not redact ${field}`).toContain(`'${field}'`);
+    }
+  });
+
+  /**
+   * Decision (a). The suspension artifact is fetched with a bearer token pasted into a WhatsApp
+   * message; the identifiers ride only on the authenticated channel. The rule is enforced inside
+   * `exportTenantData` so it cannot be forgotten by a caller — this checks the enforcement exists.
+   */
+  it('refuses customer identifiers in any mode but self_serve, inside the export itself', () => {
+    const exportIndex = readFileSync(path.join(srcRoot, 'server/export/index.ts'), 'utf8');
+    expect(exportIndex).toMatch(/includeCustomerIdentifiers && mode !== 'self_serve'/);
+    expect(exportIndex).toMatch(/throw new ExportModeError/);
+  });
+
+  /**
+   * Every registered job name must have something that ENQUEUES it.
+   *
+   * `cleanup-self-serve` had a processor and a registry entry and no producer for four phases, so
+   * the 24-hour life promised in `src/server/export/types.ts` was never real. Nothing noticed,
+   * because every test that matters drives processors directly — and orphan cleanup skips
+   * `_exports/` by design, so nothing else was ever going to collect the objects.
+   *
+   * It became worth catching mechanically when decision (a) put customer names and phone numbers
+   * into that one artifact. This asserts the shape rather than the schedule: a job name that
+   * appears only in the registry is a job that never runs.
+   */
+  it('has a producer for every job name the registry can run', () => {
+    /**
+     * ONE documented exception, and it is an exception in the strong sense: `demo/build-demo` is
+     * registered and deliberately never enqueued, because a demo must be built INSIDE the
+     * transaction that creates it (a queued build hands back a shareable link to an empty shop).
+     * Its processor THROWS, loudly, precisely so a hand-enqueued or stale payload is visible
+     * rather than silently successful — and the registry entry cannot be removed because
+     * `src/server/queues.ts` is a frozen shared file.
+     *
+     * The distinction this test draws is therefore not "is it enqueued" but "is its absence
+     * deliberate": a stub that throws is a decision, a processor that quietly does real work and
+     * is never called is a promise nobody keeps.
+     */
+    const DELIBERATELY_NEVER_ENQUEUED = new Set(['build-demo']);
+
+    const registry = readFileSync(path.join(srcRoot, 'server/queues.ts'), 'utf8');
+    const jobNames = [...registry.matchAll(/'([a-z-]+)':\s*\(\)\s*=>\s*import\(/g)]
+      .map((match) => match[1]!)
+      .filter((name) => !DELIBERATELY_NEVER_ENQUEUED.has(name));
+
+    expect(jobNames.length).toBeGreaterThan(5);
+
+    const producers = sources
+      .filter(({ rel }) => rel !== 'src/server/queues.ts')
+      .map(({ source }) => source)
+      .join('\n');
+
+    const orphans = jobNames.filter((name) => {
+      // Either enqueued by its literal name, or through the `LIFECYCLE_JOBS` / `EXPORT_JOBS`
+      // constant vocabulary that exists so a typo is a compile error.
+      const constantName = name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
+      return !producers.includes(`'${name}'`) && !producers.includes(`.${constantName}`);
+    });
+
+    expect(orphans).toEqual([]);
+  });
+});
+
+describe('Phase 5 — a gateway credential never leaves its folder', () => {
+  it('unseals credentials in exactly one file', () => {
+    const readers = sources
+      .filter(({ source }) => /\bunseal\s*\(/.test(source))
+      .filter(({ rel }) => rel !== 'src/server/crypto.ts')
+      .map(({ rel }) => rel);
+
+    expect(readers).toEqual(['src/server/payments/config.ts']);
+  });
+
+  it('reads the credential columns in exactly one file', () => {
+    const readers = sources
+      .filter(({ source }) => /credentialsCipher/.test(source))
+      .map(({ rel }) => rel);
+
+    expect(readers).toEqual(['src/server/payments/config.ts']);
+  });
+});
+
 describe('invariant 4 — the S3 client is reachable from one folder only', () => {
   it('has no @aws-sdk import outside src/server/media/storage', () => {
     const offenders = sources

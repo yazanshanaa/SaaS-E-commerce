@@ -1,5 +1,13 @@
 import { z } from 'zod';
+import { withTenantTxn } from '@/server/db';
 import { can } from '@/server/entitlements';
+import { merchantPaymentsSchema } from '@/server/orders';
+import {
+  gatewayReadiness,
+  readEnabledGateway,
+  writeGatewayConfig,
+  type GatewayReadiness,
+} from '@/server/payments';
 import type { MerchantContext } from './context';
 import { audit, refreshStorefront } from './audit';
 import { failure, invalid, optionalText, type ActionState } from './validation';
@@ -35,21 +43,31 @@ export interface AdvancedView {
   pwaEnabled: boolean;
   metaTitle: string | null;
   metaDescription: string | null;
+  /** Phase 5. The merchant's own selling switch, and why checkout is or is not live. */
+  sellingEnabled: boolean;
+  paymentInstructions: string | null;
+  gatewayReadiness: GatewayReadiness;
 }
 
 export async function loadAdvanced(ctx: MerchantContext): Promise<AdvancedView | null> {
   const site = await ctx.db.site.findUnique({
     where: { tenantId: ctx.tenantId },
-    select: { pwaEnabled: true, metaTitle: true, metaDescription: true },
+    select: {
+      pwaEnabled: true,
+      metaTitle: true,
+      metaDescription: true,
+      sellingEnabled: true,
+    },
   });
   if (!site) return null;
 
-  const [customDomain, domainsLimit, pwa, seoTools, paymentGateway] = await Promise.all([
+  const [customDomain, domainsLimit, pwa, seoTools, paymentGateway, gateway] = await Promise.all([
     can(ctx.tenantId, 'custom_domain'),
     can(ctx.tenantId, 'domains_limit'),
     can(ctx.tenantId, 'pwa'),
     can(ctx.tenantId, 'seo_tools'),
     can(ctx.tenantId, 'payment_gateway'),
+    readEnabledGateway(ctx.db, ctx.tenantId),
   ]);
 
   const flags: AdvancedFlags = {
@@ -67,7 +85,82 @@ export async function loadAdvanced(ctx: MerchantContext): Promise<AdvancedView |
     pwaEnabled: site.pwaEnabled,
     metaTitle: site.metaTitle,
     metaDescription: site.metaDescription,
+    sellingEnabled: site.sellingEnabled,
+    paymentInstructions: gateway?.instructions ?? null,
+    gatewayReadiness: gatewayReadiness({
+      featureOn: paymentGateway === true,
+      state: gateway,
+    }),
   };
+}
+
+// -----------------------------------------------------------------------------
+// Payments — the MERCHANT'S half (Phase 5)
+// -----------------------------------------------------------------------------
+
+/**
+ * What the merchant controls, and what they deliberately do not.
+ *
+ * They own the SELLING SWITCH (`Site.sellingEnabled`) and the Arabic instructions their customer
+ * reads after ordering. They do not own the provider or its keys: those are a commercial
+ * credential issued to a registered entity, collected during onboarding, and typing one wrong
+ * takes the shop's checkout down. That split is why this function writes `Site.sellingEnabled` and
+ * `GatewayConfig.config.instructions` and touches nothing else.
+ *
+ * `Site.sellingEnabled` has existed since Phase 1 with no write path anywhere — A2 reads it for
+ * the legal footer. This is it.
+ */
+export async function savePayments(
+  ctx: MerchantContext,
+  raw: unknown,
+): Promise<ActionState | null> {
+  if ((await can(ctx.tenantId, 'payment_gateway')) !== true) {
+    return failure('dashboard:errors.forbidden');
+  }
+
+  const parsed = merchantPaymentsSchema.safeParse(raw);
+  if (!parsed.success) return invalid(parsed.error);
+
+  const gateway = await readEnabledGateway(ctx.db, ctx.tenantId);
+  const readiness = gatewayReadiness({ featureOn: true, state: gateway });
+
+  /**
+   * Turning selling ON needs a gateway that can actually take an order. Turning it OFF is always
+   * allowed — a merchant closing their own checkout must never be blocked by the state of a
+   * provider, which is exactly the moment they most want it closed.
+   */
+  if (parsed.data.sellingEnabled && (readiness !== 'ready' || !gateway)) {
+    return failure('dashboard:orders.errors.noGateway');
+  }
+
+  await ctx.db.site.update({
+    where: { tenantId: ctx.tenantId },
+    data: { sellingEnabled: parsed.data.sellingEnabled },
+  });
+
+  if (gateway) {
+    await withTenantTxn(
+      ctx.tenantId,
+      (tx) =>
+        writeGatewayConfig(tx, {
+          tenantId: ctx.tenantId,
+          provider: gateway.provider,
+          // No `credentials` key at all: this path must not be able to touch them even by
+          // accident, and `writeGatewayConfig` leaves the stored blob alone when it is absent.
+          instructions: parsed.data.instructions ?? null,
+        }),
+      { actor: ctx.actor },
+    );
+  }
+
+  await audit(ctx, {
+    action: 'site.selling_toggled',
+    entityType: 'site',
+    after: { sellingEnabled: parsed.data.sellingEnabled },
+  });
+
+  await refreshStorefront(ctx.tenantId);
+  return null;
 }
 
 // -----------------------------------------------------------------------------

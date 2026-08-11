@@ -38,6 +38,11 @@ export const EVENT_TYPES = [
   'payment.recorded',
   'account.created',
   'domain.activated',
+
+  // Orders (Phase 5)
+  'order.placed',
+  'order.paid',
+  'order.status_changed',
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -95,6 +100,27 @@ export interface EventPayloads {
   'payment.recorded': { kind: string; amountAgorot: number; currency: string };
   'account.created': { tenantName: string; planKey: string; billingPeriod: string };
   'domain.activated': { hostname: string };
+  /**
+   * Order events carry the ORDER, never the customer.
+   *
+   * The rule above this table forbids a credential in a payload; this is the same rule one step
+   * further out. An event is copied into `WebhookDelivery` — a GLOBAL table that outlives the
+   * purge — and POSTed to n8n, whose execution history Q9 puts in the backup set. A customer's
+   * name and phone number reaching either would survive the deletion the platform promises the
+   * merchant, for a person who never had an account here at all and cannot ask us to stop.
+   *
+   * A consumer that needs to contact the customer opens the order in the dashboard. `providerRef`
+   * is absent for the same reason in a smaller size: it is the handle a provider's own API acts
+   * on, and it has no business in a third party's log.
+   */
+  'order.placed': { orderId: string; number: number; totalAgorot: number; currency: string };
+  'order.paid': { orderId: string; number: number; totalAgorot: number; currency: string };
+  'order.status_changed': {
+    orderId: string;
+    number: number;
+    status: string;
+    previousStatus: string;
+  };
 }
 
 export type EventPayload<T extends EventType = EventType> = T extends keyof EventPayloads

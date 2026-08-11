@@ -174,6 +174,15 @@ const schema = z.object({
    * revoked at the OS level where no merchant can win it back.
    */
   RATE_LIMIT_PUSH_SEND_PER_DAY: z.coerce.number().int().positive().default(5),
+  /**
+   * Phase 5. A visitor placing an order, per tenant per IP per hour.
+   *
+   * This is the OUTER bound only, and it degrades open like every other Redis-backed throttle
+   * here. The bound that must not degrade is the per-tenant hourly ceiling in
+   * `src/server/orders`, counted off `Order` rows inside the checkout transaction — an order is
+   * a row a stranger creates on a merchant's account, and a cache blink must not lift that.
+   */
+  RATE_LIMIT_CHECKOUT_PER_HOUR: z.coerce.number().int().positive().default(10),
 });
 
 export type Env = z.infer<typeof schema>;

@@ -152,6 +152,9 @@
     "usageCard": "الاستهلاك",
     "products": "المنتجات",
     "storage": "التخزين",
+    "orders": "الطلبات",
+    "ordersThisMonth": "{count} طلب هذا الشهر",
+    "paymentGatewayBadge": "بوابة دفع",
     "visits": "الزيارات (آخر ٣٠ يوم)",
     "ofLimit": "من أصل {limit}",
     "analyticsOff": "إحصاءات الزيارات مطفية على هذه الباقة.",
@@ -411,6 +414,54 @@
     "gateway": "بوابة دفع",
     "other": "غير ذلك"
   },
+  "gateways": {
+    "title": "بوابة الدفع",
+    "hint": "المزوّد ومفاتيحه بتنحفظ مشفّرة، وبتشتغل على متجر هذا الحساب لحاله. التاجر بيتحكم بتشغيل الطلب من الموقع وبتعليمات الدفع، مش بالمفاتيح.",
+    "provider": "المزوّد",
+    "providers": {
+      "manual": "تحويل بنكي أو نقداً (تسجيل يدوي)",
+      "meshulam": "ميشولام",
+      "tranzila": "ترانزيلا",
+      "paypal": "باي بال"
+    },
+    "credentials": "مفاتيح المزوّد",
+    "credentialsHint": "بتنحفظ مشفّرة وما بتظهر بعد الحفظ ولا مرة. اترك الحقل فاضي إذا ما بدك تغيّر المحفوظ.",
+    "fields": {
+      "apiKey": "مفتاح الواجهة",
+      "apiPassword": "كلمة مرور الواجهة",
+      "userId": "معرّف المستخدم عند المزوّد",
+      "pageCode": "رمز صفحة الدفع",
+      "terminalName": "اسم الطرفية",
+      "clientId": "معرّف التطبيق",
+      "clientSecret": "المفتاح السري للتطبيق",
+      "webhookId": "معرّف الإشعار",
+      "webhookSecret": "المفتاح السري للإشعار"
+    },
+    "credentialsSaved": "محفوظة",
+    "credentialsMissing": "ما انحفظت بعد",
+    "instructions": "تعليمات الدفع للزبون",
+    "instructionsHint": "بتظهر للزبون بعد ما يبعت الطلب. اكتب فيها رقم الحساب أو طريقة التحويل. التاجر بيقدر يعدّلها من لوحته.",
+    "noProviders": "ما في مزوّد محفوظ على هذا الحساب بعد.",
+    "enable": "فعّل",
+    "disable": "أوقف",
+    "enabled": "مفعّلة",
+    "disabled": "مطفية",
+    "scaffolded": "مجهّز، غير مفعّل",
+    "activeLabel": "المزوّد المفعّل",
+    "state": {
+      "feature_off": "ميزة الدفع الإلكتروني مطفية على هذا الحساب. شغّلها من مصفوفة المزايا أول.",
+      "no_provider": "ما في مزوّد مفعّل على هذا الحساب، فالطلب من الموقع مقفل.",
+      "no_credentials": "المزوّد مفعّل بس مفاتيحه ما انحفظت بعد.",
+      "not_activated": "المزوّد المفعّل مجهّز بالكود بس مش مربوط بمنصة حقيقية.",
+      "ready": "البوابة جاهزة. الطلب من الموقع بيشتغل إذا شغّله التاجر من لوحته."
+    },
+    "sellingOn": "التاجر مشغّل الطلب من الموقع.",
+    "sellingOff": "التاجر لسا ما شغّل الطلب من الموقع.",
+    "save": "احفظ إعدادات البوابة",
+    "saved": "تم حفظ إعدادات البوابة.",
+    "enabledDone": "تم تفعيل البوابة.",
+    "disabledDone": "تم إيقاف البوابة."
+  },
   "events": {
     "subscription.expiring_soon": "اقتراب انتهاء الاشتراك",
     "subscription.expires_today": "انتهاء الاشتراك اليوم",
@@ -428,7 +479,10 @@
     "change_request.decided": "قرار على طلب تعديل",
     "payment.recorded": "تسجيل دفعة",
     "account.created": "فتح حساب",
-    "domain.activated": "تفعيل دومين"
+    "domain.activated": "تفعيل دومين",
+    "order.placed": "طلب جديد",
+    "order.paid": "دفع طلب",
+    "order.status_changed": "تغيير حالة طلب"
   },
   "actions": {
     "account.created": "فتح حساب جديد",
@@ -459,7 +513,11 @@
     "impersonation.stopped": "إنهاء الدخول باسم تاجر",
     "plan.created": "إنشاء باقة",
     "plan.updated": "تعديل باقة",
-    "plan.deleted": "حذف باقة"
+    "plan.deleted": "حذف باقة",
+    "gateway.credentials_set": "حفظ إعدادات بوابة الدفع",
+    "gateway.enabled": "تفعيل بوابة الدفع",
+    "gateway.disabled": "إيقاف بوابة الدفع",
+    "order.status_changed": "تغيير حالة طلب"
   },
   "errors": {
     "unauthorized": "لازم تسجّل دخول كمالك للمنصة.",
@@ -488,7 +546,11 @@
     "unknownCapability": "الصلاحية غير معروفة",
     "periodEndRequired": "لازم تحدّد نهاية الفترة الأولى لهذه الباقة",
     "amountPositive": "المبلغ لازم يكون أكبر من صفر",
-    "notFound": "العنصر غير موجود."
+    "notFound": "العنصر غير موجود.",
+    "unknownProvider": "مزوّد الدفع غير معروف",
+    "gatewayFeatureOff": "لازم تشغّل ميزة الدفع الإلكتروني على هذا الحساب أول",
+    "gatewayNotActivated": "هذا المزوّد مجهّز بالكود بس لسا مش مربوط بمنصة حقيقية، فما بنقدر نفعّله",
+    "gatewayNoConfig": "احفظ إعدادات هذا المزوّد أول، بعدين فعّله"
   },
   "common": {
     "yes": "نعم",

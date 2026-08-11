@@ -30,6 +30,25 @@ import { jerusalemMonthWindow, type MonthWindow } from '@/server/time';
 export const RECURRING_PAYMENT_KINDS = ['subscription'] as const;
 export const NON_RECURRING_PAYMENT_KINDS = ['setup_fee', 'change_request_addon'] as const;
 
+/**
+ * Phase 5. A `kind: 'order'` payment is a merchant's CUSTOMER paying the merchant. It is not the
+ * platform's money and it must never appear in a platform revenue figure.
+ *
+ * The two recognised figures were already safe by construction — they whitelist kinds — but
+ * COLLECTED sums everything paid in the window, and that is the number the platform reads against
+ * its own bank statement. A shop taking ₪40,000 in a good month would have made the platform's
+ * «التحصيل» tile read ₪40,000 higher than the bank, once, silently, on the day checkout shipped.
+ *
+ * The queries in `overview.ts` and `payments.ts` also filter on kind. Both layers, deliberately:
+ * a filter someone drops from a `where` clause is invisible, and a pure function is where the
+ * rule can be unit-tested without a database.
+ */
+export const EXCLUDED_FROM_PLATFORM_REVENUE = ['order'] as const;
+
+function isPlatformRevenue(kind: string): boolean {
+  return !(EXCLUDED_FROM_PLATFORM_REVENUE as readonly string[]).includes(kind);
+}
+
 export type BillingPeriodLike = 'monthly' | 'yearly';
 
 export interface RevenuePayment {
@@ -122,6 +141,7 @@ export function collectedAgorot(
   let total = 0;
   for (const payment of payments) {
     if (!isPaid(payment)) continue;
+    if (!isPlatformRevenue(payment.kind)) continue;
     if (inWindow(payment.paidAt, window)) total += payment.amountAgorot;
   }
   return total;

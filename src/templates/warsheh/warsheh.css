@@ -130,3 +130,18 @@
 [data-template='warsheh'] .sf-social a {
   border-radius: 0;
 }
+
+/*
+ * Phase 5's checkout, in warsheh's own language: nothing is rounded in this template, and a form
+ * that arrived with soft corners would read as a widget bolted onto a workshop's site.
+ */
+[data-template='warsheh'] .sf-checkout,
+[data-template='warsheh'] .sf-input,
+[data-template='warsheh'] .sf-textarea,
+[data-template='warsheh'] .sf-checkout__error {
+  border-radius: 0;
+}
+
+[data-template='warsheh'] .sf-checkout {
+  border-block-start: 3px solid var(--t-secondary);
+}

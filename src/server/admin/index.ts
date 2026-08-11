@@ -26,6 +26,19 @@ export {
 } from './audit';
 
 export {
+  getAccountGateway,
+  saveGatewayCredentials,
+  setAccountGatewayEnabled,
+  type AccountGatewayView,
+  type GatewayProvider,
+  type GatewayProviderOption,
+  type GatewayReadiness,
+  type GatewayState,
+  type GatewayStatus,
+} from './gateways';
+
+export {
+  EXCLUDED_FROM_PLATFORM_REVENUE,
   RECURRING_PAYMENT_KINDS,
   NON_RECURRING_PAYMENT_KINDS,
   amortisedMonthlyAgorot,

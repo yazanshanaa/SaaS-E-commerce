@@ -46,6 +46,8 @@ function storefrontContext(overrides: Partial<StorefrontContext> = {}): Storefro
     origin: 'https://warsheh.souqbartaa.test',
     isDemo: false,
     pushPublicKey: null,
+    // Phase 5: this fixture has no gateway, so the storefront is the Q5 one — checkout never draws.
+    checkout: null,
     template,
     colors: {
       primary: template.tokens.color.primary,
@@ -76,7 +78,14 @@ function storefrontContext(overrides: Partial<StorefrontContext> = {}): Storefro
       logoMediaId: null,
       pwaEnabled: false,
     },
-    flags: { whatsappOrders: true, analytics: false, customHtml: false, pwa: false, push: false },
+    flags: {
+      whatsappOrders: true,
+      analytics: false,
+      customHtml: false,
+      pwa: false,
+      push: false,
+      payments: false,
+    },
     announcementBar: null,
     socialLinks: [],
     categories: [],

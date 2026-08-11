@@ -78,7 +78,16 @@ export async function getOverview(ctx: AdminContext): Promise<Overview> {
     }),
     ctx.db.changeRequest.count({ where: { status: 'open' } }),
     ctx.db.payment.findMany({
-      where: { status: 'paid', paidAt: { gte: since } },
+      /**
+       * `kind: 'order'` is excluded HERE as well as in `collectedAgorot`.
+       *
+       * Not belt and braces: this is a cross-tenant read that would otherwise pull every order
+       * payment on the platform into memory to be filtered out again — and on the one screen
+       * whose numbers the platform owner reconciles against a bank statement, a shop's turnover
+       * arriving in the same array as the platform's own is one dropped filter away from being
+       * counted.
+       */
+      where: { status: 'paid', paidAt: { gte: since }, kind: { not: 'order' } },
       select: {
         kind: true,
         status: true,

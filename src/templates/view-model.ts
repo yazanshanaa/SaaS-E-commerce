@@ -132,6 +132,33 @@ export interface StorefrontFlags {
    * push endpoint is a persistent per-device identifier and therefore visitor data.
    */
   push: boolean;
+  /**
+   * Phase 5. Whether the ORDER FORM renders at all.
+   *
+   * FOUR questions resolved into one boolean, and all four must hold: `can(tenantId,
+   * 'payment_gateway')`, the tenant is not a demo, the merchant's own `Site.sellingEnabled`, and
+   * an enabled `GatewayConfig` row exists. Combined here so no component below has to remember
+   * that it is four — and so that the Q5 path stays byte-identical for everyone else: when this
+   * is false the product page renders exactly the WhatsApp block it always did, with no input,
+   * no textarea and no select anywhere on it.
+   *
+   * The entitlement half is resolved PER REQUEST, outside the storefront's cached unit, so a
+   * super admin toggling `payment_gateway` closes checkout on the very next page view.
+   */
+  payments: boolean;
+}
+
+/**
+ * What the checkout form needs to know about the tenant's gateway. Null when `flags.payments` is
+ * false — the two are set together and neither is meaningful alone.
+ *
+ * Note what is NOT here: anything resembling a credential. The provider NAME is public (the
+ * customer is about to be told how to pay) and the instructions are merchant-authored Arabic.
+ */
+export interface StorefrontCheckout {
+  provider: string;
+  /** The merchant's own payment instructions, shown after the order is placed. */
+  instructions: string | null;
 }
 
 export interface StorefrontContext {
@@ -152,6 +179,8 @@ export interface StorefrontContext {
    * from a real visitor and can never deliver anything.
    */
   pushPublicKey: string | null;
+  /** Phase 5. Set exactly when `flags.payments` is true; null otherwise. */
+  checkout: StorefrontCheckout | null;
   template: TemplateDefinition;
   colors: ResolvedColors;
   site: StorefrontSite;

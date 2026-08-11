@@ -38,6 +38,21 @@ export interface ExportOptions {
   /** Defaults to true since B1. Set false only for a catalogue-only export. */
   includeImages?: boolean;
   /**
+   * Phase 5, decision (a) — the ONE switch that decides whether a customer's name and phone number
+   * leave this platform in a file.
+   *
+   * Default FALSE, and legal only in `self_serve` mode: `exportTenantData` throws `ExportModeError`
+   * if a caller asks for identifiers in `suspension` mode, so the rule cannot be lost in a
+   * refactor or turned on "just for this one call".
+   *
+   * The reasoning, in one sentence: the suspension artifact is reached with a bearer token pasted
+   * into a WhatsApp message — whoever holds the string holds the file — and a customer gave their
+   * phone number to the SHOP, not to whoever ends up with a forwarded link. The merchant's own
+   * order ledger is unambiguously theirs and ships in both modes; the identifiers ride only on the
+   * channel that has a session, a role check and a feature check in front of it.
+   */
+  includeCustomerIdentifiers?: boolean;
+  /**
    * The caller's own transaction, when it already holds one.
    *
    * The `build-export` processor runs inside the transaction `createWorker` opens for every
@@ -66,6 +81,13 @@ export interface ExportArtifact {
   contents: {
     products: number;
     categories: number;
+    /** Phase 5. Order rows in the archive — zero for a shop that never enabled checkout. */
+    orders: number;
+    /**
+     * Whether `orders-customers.csv` is in the archive. False in every suspension artifact by
+     * construction; the merchant's README says so, so an absence is never a silent one.
+     */
+    customerIdentifiers: boolean;
     /** Image FILES in the archive, not ProductImage rows. */
     images: number;
     /**

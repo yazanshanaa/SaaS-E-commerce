@@ -66,3 +66,24 @@ Two of these hold personal data and therefore need a stated lifetime (Phase 6):
 
 `dsr_requests` and `platform_audit_logs` are compliance records; their retention is the
 statutory one, stated in Phase 6's privacy copy.
+
+### What Phase 5 added here, and what it deliberately did not
+
+Phase 5 writes `orders`, `order_items`, `tenant_counters`, `payments` and `gateway_configs` for
+the first time. **All five are tenant-owned**, were already in migration 0001's `tenant_tables`
+array, and are destroyed by the purge cascade like everything else. No table was added, and no
+table was moved into this file.
+
+That was a decision, not an omission (`docs/DECISIONS.md`, decision (b)). Order records now
+collide with statutory bookkeeping retention — but the obligation is the **merchant's**: they are
+the controller and the taxpayer, the platform is a processor for order data, and Q18 discharges
+the platform's duty by delivering them a complete copy at suspension (which, after decision (a),
+now contains the full order ledger). Keeping a shadow ledger the platform could not lawfully
+re-associate with anyone would have meant new global tables holding a stranger's phone number
+forever — the exact retention the purge exists to end.
+
+What survives instead is an **aggregate** on the existing `platform_audit_logs` row for
+`tenant.purged`: `ordersPurged`, `paidOrdersPurged`, `orderGrossAgorot` and `lastOrderAt`. Four
+numbers, so the platform can answer "how much trade went through this account" in a dispute. No
+customer name, no phone number, no per-order row — and `tenant_tombstones` is untouched, because
+it records facts about the deletion, not about the business.

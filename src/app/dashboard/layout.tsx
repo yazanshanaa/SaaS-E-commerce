@@ -93,9 +93,21 @@ export default async function DashboardSurfaceLayout({ children }: { children: R
 }
 
 async function navItems(ctx: MerchantContext): Promise<NavItem[]> {
+  /**
+   * `orders` is UNCONDITIONAL, beside products and media, and that is a decision rather than an
+   * omission.
+   *
+   * It is not in `FEATURE_GATED` (src/server/auth/rbac.ts), so it is not gated on
+   * `payment_gateway`. Gating it there would hide a merchant's OWN TRADING HISTORY the moment an
+   * admin switched the gateway off — the wrong axis entirely. Checkout and the gateway settings
+   * consult the feature; the ledger does not. A shop that never sold online opens the screen and
+   * reads «ما في طلبات بعد», which is true, and staff reach it on every plan because
+   * `STAFF_ALLOWED` has held `orders` since Phase 1 waiting for exactly this surface (Q13).
+   */
   const items: NavItem[] = [
     { href: '/', key: 'home' },
     { href: '/products', key: 'products' },
+    { href: '/orders', key: 'orders' },
     { href: '/media', key: 'media' },
   ];
 

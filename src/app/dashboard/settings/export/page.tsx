@@ -35,6 +35,15 @@ export default async function ExportPage() {
       />
 
       <Panel title={t('dashboard', 'export.title')} note={t('dashboard', 'export.note')}>
+        {/*
+          Phase 5, decision (a), said where the merchant is about to act on it. This archive
+          carries their CUSTOMERS' names and phone numbers — it may, because getting here took a
+          session, an owner role and `data_export`. The suspension copy, whose link opens with no
+          login at all, does not. A merchant who later finds no phone numbers in that one must
+          already know why.
+        */}
+        <p className="sbd-panel-note">{t('dashboard', 'export.customersNote')}</p>
+
         <p className="sbd-actions">
           <a className="sbd-btn sbd-btn--primary" href="/api/dashboard/export" download>
             {t('dashboard', 'export.download')}

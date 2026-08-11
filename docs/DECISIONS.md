@@ -1125,3 +1125,256 @@ and by a limit whose whole purpose is a soft reputation ceiling).
   nothing else. The network boundary is the control; the endpoint is written to be safe if reached
   anyway (hostname input only, reveals only what DNS already does, one idempotent write), and the
   `:443` block now returns 404 for `/internal/*` so a visitor on a merchant's domain cannot reach it.
+
+---
+
+## Phase 5 — Pluggable payments and the orders surface
+
+`Order`, `OrderItem` and `TenantCounter` shipped empty in Phase 1 and stayed empty through V1
+(Q5). This is the phase that writes them, and with them the first customer personal data this
+platform has ever held. Three decisions had to be made before a single row existed, because each
+one is a promise that becomes false the moment checkout is switched on.
+
+### Zero migrations, and why that is a design property rather than luck
+
+Phase 1's rule — *the full schema lands now, every table through Phase 5* — held exactly. Every
+column this phase needed was already there: `Order.number` with `@@unique([tenantId, number])`,
+`OrderItem` with its `quantity > 0` CHECK, `TenantCounter` keyed on `[tenantId, key]`,
+`Payment.orderId/providerRef/rawPayload`, `GatewayConfig` with its three credential columns, and
+`Site.sellingEnabled`. All five tables were already in the `tenant_tables` array of migration
+0001, so they arrived with `tenant_isolation` and `system_read` and a `tenant_id`-first index.
+
+No queue and no BullMQ job either. A manual order is synchronous and a gateway callback is a short
+handler; adding a queue would have meant editing `QUEUE_NAMES` (a frozen shared file), restarting
+the worker, and doing an outbound provider call inside the 120-second single-transaction budget
+`createWorker` opens. One optional env var with a default (`RATE_LIMIT_CHECKOUT_PER_HOUR`), so no
+test harness needed touching.
+
+### Decision (a) — what the export contains once customer PII exists
+
+**The archive splits by DELIVERY CHANNEL, not by content type.**
+
+- the **suspension** artifact — mode `suspension`, fetched through `/export/{token}` with a bearer
+  token pasted into a WhatsApp message — gains `orders.csv`: number, status, timestamps, totals
+  and the item lines. It does **not** contain `customerName`, `customerPhone` or `customerNote`.
+- the **self-serve** artifact — mode `self_serve`, behind a session, `role === 'owner'` and
+  `data_export` — gains the same file **plus** `orders-customers.csv`.
+
+Q18's whole argument was that the artifact behind the link contains only the merchant's own data.
+A merchant's order ledger is unambiguously theirs, and withholding it would make the suspension
+export useless for the one thing it exists for. Their customers' phone numbers are a different
+asset: the customer gave the number to *the shop*, not to whoever ends up with a forwarded link,
+and the platform is the one choosing the channel. Excluding the identifiers costs the merchant
+nothing they cannot get by logging in, and it keeps Q18's sentence true word for word.
+
+Two files rather than dropped columns, joined on the order number, so nothing is silently missing
+from a file that claims to be complete.
+
+Mechanically it is `ExportOptions.includeCustomerIdentifiers`, default false, and
+`exportTenantData` **throws** `ExportModeError` if a caller asks for identifiers in suspension
+mode. The rule lives at the one point every export passes through rather than in each caller, so
+it cannot be lost in a refactor or switched on "just for this one call". The README says which
+archive the merchant is holding, in both directions — a merchant who finds no phone numbers must
+learn why from the file rather than concluding the platform lost their data.
+
+### Decision (b) — what purge does with order and payment records
+
+**Nothing changes: the purge still destroys everything live. What Phase 5 adds is an AGGREGATE on
+the global platform audit row.**
+
+Four reasons, in the order that actually decides it:
+
+1. Retaining live `Order`/`Payment` rows past the tenant is not possible without a migration —
+   both cascade from `tenants` and are readable only under `tenant_isolation`, keyed on a row that
+   no longer exists. Keeping them would mean new global tables.
+2. `TenantTombstone` is the wrong home. `prisma/GLOBAL_TABLES.md` says it is minimal and
+   slug-hashed *by design* and records facts about the deletion, not about the business. Hanging a
+   revenue history on it re-creates the trap it exists to avoid.
+3. **Statutory bookkeeping retention is the merchant's obligation, not the platform's.** They are
+   the controller and the taxpayer; we are a processor for order data. Our duty is that they
+   *hold* the records, and Q18 discharges it — at suspension they receive a complete copy which,
+   after decision (a), now contains the full order ledger.
+4. What the platform genuinely needs afterwards is the ability to answer *"how much trade went
+   through this account"* in a dispute. That is an aggregate, and `platform_audit_logs.after` is
+   already a global JSON column that survives the cascade.
+
+So `purgeTenant` reads `orderPurgeSummary` inside its last transaction and adds `ordersPurged`,
+`paidOrdersPurged`, `orderGrossAgorot` and `lastOrderAt` to the `tenant.purged` audit row. No
+names, no phone numbers, no per-order rows — a global table that outlived the tenant and held a
+stranger's number would be exactly the retention the purge exists to end, for a person who never
+had an account here.
+
+**Residual risk, stated rather than hidden:** after a purge the platform can say how large a
+merchant's trade was and not what it consisted of. If the merchant lost their archive, it is gone.
+That is why `messages/ar/billing.json` now tells them, in the archive itself and in the suspension
+notice, that this copy is their bookkeeping record.
+
+### Decision (c) — privacy and consent copy
+
+Phase 6 owns the legal-page generator. Phase 5 owns the strings that become **false** on the day
+checkout ships, and fixed them in-phase:
+
+- `storefront.consent.body` claimed the site collects no name and no number — read as a site-wide
+  claim it is false on a selling site. Rewritten to scope the claim to the analytics themselves.
+- `storefront.order.hint` is **unchanged**, deliberately. It is rendered only by `WhatsappOrder`,
+  and on that path it stays exactly true. Merging the two would have made both vaguer.
+- `storefront.checkout.privacy` is new and renders above the submit button, at the point of
+  collection: what is kept, who gets it, and when it goes.
+- `dashboard.export.*` now names orders, and the self-serve page says out loud that this archive
+  carries customer data and the WhatsApp one does not.
+
+Handed to **Phase 6**, written into `TODO.md`: the generator must branch on `Site.sellingEnabled`
+(two different truths — a non-selling site still records no orders and no customer names, which is
+still a selling point and still exactly true); the PROCESSORS section must name the tenant's
+*active* gateway provider and only that one, because the scaffolded three are processing nothing
+and listing them would be a false disclosure; and the DSR box gains storefront customers as a
+fourth subject class.
+
+### Order numbers: one statement, and why not the obvious ones
+
+`allocateOrderNumber` is a single `INSERT … ON CONFLICT DO UPDATE … RETURNING` against
+`tenant_counters`. That takes a row-level exclusive lock before it computes and holds it to commit,
+so two concurrent checkouts serialise on that row and the waiter increments the *committed* value.
+`max()+1` and `SELECT`-then-`UPDATE` both read outside the lock: under REPEATABLE READ they produce
+a duplicate that violates `@@unique([tenantId, number])` — a 500 on a customer's checkout — and
+under READ COMMITTED two orders race for the same number and one loses. The integration suite
+places twenty concurrent orders and asserts the numbers are exactly 1..20.
+
+No `FOR UPDATE` on `tenants`: product creation takes that lock because it makes a quota decision,
+and numbering needs no quota. Adding it would serialise every checkout against every product save.
+
+### Two writers were considered for the Payment table. There is still one.
+
+`src/server/orders` never writes a `Payment` row. Billing grew `recordPaymentInTx(tx, input)` — the
+transaction-taking form the order path needs so a settlement commits or rolls back with the status
+change it settles — and `recordPayment` became a wrapper around it. A guardrail test now asserts
+that `.payment.create(` appears nowhere outside `src/server/billing/`.
+
+`kind: 'order'` writes `subscriptionId = null`, deliberately and not as an omission: an order
+payment is a merchant's *customer* paying the merchant, and joining it to the subscription would
+carry a shop's turnover into the platform's own revenue through `subscription.billingPeriod`. The
+containment holds from two directions — the queries in `overview.ts` and `payments.ts` filter on
+kind, and `collectedAgorot` skips it as a pure function. That last one was a real hole:
+`collectedAgorot` summed every kind, so a shop taking a good month would have inflated the
+platform's own collections tile by the same amount, once, silently, on the day checkout shipped.
+
+### The checkout gate: four conjuncts, three independent layers
+
+`flags.payments` is true only when `can(tenantId,'payment_gateway')` **and** the tenant is not a
+demo **and** `Site.sellingEnabled` **and** an enabled `GatewayConfig` row exists. When any is
+false the product page renders exactly the WhatsApp block it always did — no input, no textarea,
+no select — so Q5 stays literally true for every tenant that has not opted in, and
+`a2-storefront.spec.ts`'s form-control count stands unchanged as the regression.
+
+The entitlement half is resolved **per request, outside** the storefront's `unstable_cache`, which
+is what makes the acceptance criterion — *toggling the feature immediately enables or disables
+checkout* — true without any cache work. `POST /api/storefront/checkout` re-reads all four itself
+and answers 404 when any fails, so a form left open across a toggle writes nothing; and the write
+happens under `withTenantTxn(..., { actor: PUBLIC_ACTOR })`, where RLS refuses a row for another
+tenant regardless. 404 rather than 403 throughout, for the same reason the push route chose it.
+
+### The bound that must not degrade
+
+Every Redis throttle in this platform fails **open** by contract, which is right for a merchant
+verifying a domain and wrong for an order — an order is an irreversible row a stranger creates on
+someone else's account. So there are two bounds: `RATE_LIMIT_CHECKOUT_PER_HOUR` per tenant per IP
+in the route, which degrades open, and `MAX_ORDERS_PER_TENANT_PER_HOUR = 60` counted off `Order`
+**rows inside the checkout transaction**, which does not. Same reasoning as `remainingPushSends`
+counting `PushMessage` rows rather than Redis.
+
+### Scaffolded, not activated — and what "scaffolded" actually buys
+
+`manual` is the only `active` adapter. Meshulam, Tranzila and PayPal ship as code with
+`status: 'scaffolded'`: `createPaymentLink` throws `GatewayNotActivatedError`, the admin panel
+offers no enable switch for them, and `setAccountGatewayEnabled` refuses one anyway. The Launch
+Gate (a real Israeli gateway needs a registered entity) is a commercial blocker, not a technical
+one, so the shape worth freezing now is the part that is invisible when it is wrong: the callback
+reads the raw bytes **once**, HMACs *those* bytes, compares in constant time with `safeEqual`, and
+only then parses. Re-serialising a parsed object changes the whitespace the provider signed — every
+legitimate callback fails, and the tempting fix is to stop checking.
+
+Credential field names are the providers' own, so the encrypted blob written today is the blob
+activation reads. What is **not** frozen and is flagged at each call site: the signature header
+names, and PayPal's verification entirely — PayPal signs with a certificate chain, not a shared
+HMAC, so activating it means replacing `verifyCallback`, not confirming a header name.
+
+### The orders scope is not feature-gated, and that is the interesting part
+
+`'orders'` has been in `MERCHANT_SCOPES` and `STAFF_ALLOWED` since Phase 1 with nothing behind it.
+It is deliberately **not** added to `FEATURE_GATED`. Gating the scope on `payment_gateway` would
+hide a merchant's own trading history the moment an admin turned the gateway off — the wrong axis
+entirely. The feature gates *checkout* (whether new orders can be created) and the gateway
+settings; it does not gate the ledger of what already happened. A merchant on the basic plan opens
+the screen and reads the empty state, which is true, and staff reach it on every plan — which is
+the whole of "the staff role's `orders` scope finally has a surface" (Q13).
+
+### Where the two halves of gateway configuration live
+
+The **platform** owns the provider and its keys; the **merchant** owns the selling switch and the
+Arabic instructions their customer reads. A provider key is a commercial credential obtained
+during onboarding over the phone, and typing it wrong takes a shop's checkout down. So
+`/settings/advanced` offers a checkbox and a textarea and no field a mistyped credential could
+land in, and `savePayments` writes `Site.sellingEnabled` (which had no write path anywhere until
+now) and `GatewayConfig.config.instructions` and nothing else.
+
+Turning selling **off** is always allowed even when the gateway is unhealthy: a merchant closing
+their own checkout must not be blocked by the state of a provider, which is the moment they most
+want it closed.
+
+`src/server/payments/config.ts` is the only module that ever holds a plaintext key. Credentials
+leave it in exactly one direction — `loadCredentials`, called by an adapter about to sign — and
+they are not part of any return type anything else sees: `GatewayState` carries
+`hasCredentials: boolean`. Audit rows record the field NAMES and that boolean. Two guardrail tests
+now assert that `unseal(` and `credentialsCipher` each appear in exactly one file.
+
+### Two fixes the adversarial review earned
+
+Four reviewers raised ten findings; a separate skeptic was pointed at each one and refuted all ten.
+Two of those refutations conceded a real MECHANISM while arguing the harm was bounded, and both
+were cheap enough that "bounded" was not a good enough reason to leave them.
+
+**`cleanup-self-serve` had a processor, a registry entry and no producer.** Nothing in `src/` ever
+enqueued it, so the promise in `src/server/export/types.ts` — *"deleted by a cleanup job within
+24h"* — was simply untrue, and orphan cleanup cannot compensate because it skips `_exports/` by
+design (that exclusion is what protects a suspended merchant's copy). Survivable while the archive
+held only a catalogue; **decision (a) put customer names and phone numbers in this artifact and
+only in this one**, which turns a stale object into a growing pile of other people's personal data
+whose only reaper was the purge, up to thirty days later. `runSelfServeExport` now enqueues the
+job with a 25-hour delay — per artifact, starting when the artifact is written, which is what the
+promise actually says. The processor sweeps `tmp/` by AGE, so a duplicate enqueue is harmless and
+a lost one is collected by the merchant's next export. A failure to schedule is logged and does
+not fail the export: the merchant asked for their data, and a queue being down is not their
+problem.
+
+**The checkout form declared no `method`.** It is only ever submitted through `onSubmit`, but the
+page is server-rendered, so between first paint and hydration it is a real HTML form — and the
+HTML default is GET to the current URL, which would put a customer's name and phone number in the
+query string, the browser history, the access log and any path-recording analytics. `method="post"`
+turns that same premature submit into a harmless rejected request. One attribute, and it closes
+the only path by which this platform's first customer PII could have reached a URL.
+
+The other eight are recorded as refuted rather than fixed — the reasoning is in the workflow
+journal, and the two most useful to remember are that `consumeSlot` does **not** fail open (it
+falls back to a real in-process window, `src/server/rate-limit.ts:98`), and that the settlement
+paths a reviewer worried about are unreachable while `manual` is the only `active` adapter and its
+`verifyCallback` refuses everything.
+
+### Still open, carried forward
+
+- **A `failed` gateway notice changes nothing.** There is no `pending -> failed` transition, so an
+  attempt that did not complete leaves the order where the customer left it and they can retry on
+  the same number. The alternative — a `failed` state — would make every abandoned card attempt a
+  row the merchant has to reconcile. Revisit if a real provider's retry semantics demand it.
+- **At most one enabled gateway per tenant is an application rule, not a database one.** The unique
+  key is on `[tenantId, provider]`, so nothing at the schema level stops two enabled rows;
+  `setGatewayEnabled` disables the others in the same transaction, and the read path resolves
+  exactly one row so a stray second degrades to "the first wins" rather than to two gateways. A
+  partial unique index would be the belt, and it would be a migration.
+- **One item per order.** The storefront has no cart, so `placeOrder` writes a single `OrderItem`.
+  The schema is already multi-line, so a cart is a UI change and a loop — not a migration.
+- **`refund?` is declared on the adapter and implemented by nobody.** The optional method exists so
+  the contract is complete; a refund today is a merchant marking the order `refunded` and moving
+  money back outside the platform, which is what actually happens with cash and bank transfer.
+- **The Launch Gate stands.** Activating a first real Israeli gateway needs a registered entity, and
+  it is the documented trigger to upgrade backups from `pg_dump` to WAL archiving (Q10) — six hours
+  of RPO is defensible for product edits and is not for settled payments.

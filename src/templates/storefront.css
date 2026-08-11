@@ -975,6 +975,101 @@
   text-underline-offset: 3px;
 }
 
+/* ------------------------------------------------------------ checkout --
+ *
+ * Phase 5's order form — the first FORM this storefront has ever had, which is why there was no
+ * `.sf-input` before it.
+ *
+ * Every value is a `--t-*` token, so the form takes each template's own personality rather than
+ * arriving as a foreign white box: `diwan` rounds it, `warsheh` squares it, `neon-souq` inverts
+ * it, all through the three short overrides in the template stylesheets.
+ *
+ * `min-block-size: 44px` and `font: inherit` are not cosmetic. 44px is the tap target a shop
+ * owner's customer needs on a phone, and a control that does not inherit the font renders Arabic
+ * in the browser's default — which on Windows means a Latin fallback and disconnected letterforms.
+ * `font-size: 1rem` on the inputs specifically: iOS Safari zooms the viewport on focus for
+ * anything smaller, and the zoom does not come back.
+ */
+
+.sf-checkout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--t-space-md);
+  padding: var(--t-space-lg);
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+}
+
+.sf-checkout__title {
+  font-size: var(--t-text-lg);
+  font-weight: var(--t-weight-display);
+  margin: 0;
+}
+
+/*
+ * The error summary sits at the TOP of the form, in `role="alert"`, because that is what a
+ * screen-reader user reaches first after a failed submit — the same choice A1's `ActionForm`
+ * makes. It is marked by a border AND by being the only text in that position, never by colour
+ * alone: the palette is merchant-chosen and no hue can be relied on to read as "wrong".
+ */
+.sf-checkout__error {
+  color: var(--t-text);
+  background: var(--t-surface-alt);
+  border-inline-start: 4px solid var(--t-primary);
+  padding: var(--t-space-sm) var(--t-space-md);
+  border-radius: var(--t-radius-sm);
+  font-size: var(--t-text-sm);
+}
+
+.sf-checkout__total {
+  font-weight: var(--t-weight-display);
+  margin: 0;
+}
+
+.sf-checkout--done {
+  gap: var(--t-space-sm);
+}
+
+.sf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.sf-label {
+  font-size: var(--t-text-sm);
+  color: var(--t-text-muted);
+}
+
+.sf-input,
+.sf-textarea {
+  font: inherit;
+  font-size: 1rem;
+  color: var(--t-text);
+  background: var(--t-bg);
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+  padding: 0.6rem 0.75rem;
+  min-block-size: 44px;
+  inline-size: 100%;
+}
+
+.sf-textarea {
+  resize: vertical;
+}
+
+.sf-root .sf-input:focus-visible,
+.sf-root .sf-textarea:focus-visible {
+  outline: 2px solid var(--t-primary);
+  outline-offset: 2px;
+}
+
+.sf-link {
+  color: var(--t-link);
+  text-underline-offset: 3px;
+}
+
 /* --------------------------------------------------------- responsive -- */
 
 @media (max-width: 60rem) {

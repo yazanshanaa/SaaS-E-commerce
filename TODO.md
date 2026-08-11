@@ -466,20 +466,50 @@ The review (three reviewers, each finding then handed to a separate agent told t
 
 ## Phase 5 — Pluggable payments and the orders surface (sequential, main session)
 
-- [ ] `GatewayAdapter` interface: createPaymentLink, verifyCallback, refund?
-- [ ] Transactions log uses the existing Payment table (`kind=order` + `orderId` + `rawPayload`) — no migration
-- [ ] Gateway orders persisted — `Order` / `OrderItem` / `TenantCounter` finally written and read
-- [ ] Order numbers from `TenantCounter` inside the same transaction — never `max()+1`
-- [ ] **Merchant order screens built here**: list, detail, status — and the staff `orders` scope finally has a surface
-- [ ] Privacy policy and consent copy revisited **within this phase** — the storefront now collects customer PII for the first time
-- [ ] **Re-decide `exportTenantData`'s contents**: Q18's privacy case rests on Q5 (the export is only the merchant's own data). With orders, suspending a merchant would package their customers' personal data into one artifact behind a link sent over WhatsApp — so exclude customer identifiers, or gate the orders portion behind an authenticated download
-- [ ] **Re-decide what purge does with order and payment records**, which now collide with statutory bookkeeping retention
-- [ ] Manual transfer/cash adapter (record only)
-- [ ] Scaffolded, not activated: Meshulam, Tranzila, PayPal links
-- [ ] Per-tenant keys encrypted in `gateway_configs`
-- [ ] Super Admin one-click gateway enablement per account (احترافي only)
-- [ ] Gate: toggling `payment_gateway` immediately enables/disables checkout on that storefront and shows in both the merchant order screens and the admin account page; keys encrypted at rest; staff reaches orders but still no billing
-- [ ] Note the Launch Gate: a real Israeli gateway needs a registered entity — and this is the trigger to upgrade backups to WAL archiving
+- [x] `GatewayAdapter` interface: createPaymentLink, verifyCallback, refund? — in `src/server/payments`, with a static provider table so a missing implementation is a compile error
+- [x] Transactions log uses the existing Payment table (`kind=order` + `orderId` + `rawPayload`) — **zero migrations in the whole phase**; every column Phase 1 promised was there
+- [x] Gateway orders persisted — `Order` / `OrderItem` / `TenantCounter` finally written and read
+- [x] Order numbers from `TenantCounter` inside the same transaction — never `max()+1`. One `INSERT … ON CONFLICT DO UPDATE … RETURNING`, proven by a 20-way concurrent integration test asserting the numbers are exactly 1..20
+- [x] **Merchant order screens built here**: list (filters + cursor), detail (customer, lines, payments, transitions), status — and the staff `orders` scope finally has a surface
+- [x] Privacy and consent copy revisited **within this phase** — `consent.body` no longer makes a site-wide claim, `checkout.privacy` states the collection at the point of collection, `order.hint` left untouched because it is still exactly true on the WhatsApp path
+- [x] **`exportTenantData` re-decided** — decision (a): the archive splits by DELIVERY CHANNEL. The suspension artifact (bearer link) gets `orders.csv` with no identifiers; the self-serve one (session + owner + `data_export`) also gets `orders-customers.csv`. `exportTenantData` **throws** if a caller asks for identifiers on the suspension channel
+- [x] **Purge re-decided** — decision (b): everything live is still destroyed. Four aggregate numbers (`ordersPurged`, `paidOrdersPurged`, `orderGrossAgorot`, `lastOrderAt`) survive on the global `platform_audit_logs` row. Statutory bookkeeping retention is the merchant's obligation, and Q18's delivered copy is how the platform discharges its own
+- [x] Manual transfer/cash adapter (record only) — the only `active` one
+- [x] Scaffolded, not activated: Meshulam, Tranzila, PayPal — real credential field names, real constant-time callback verification, `createPaymentLink` throws
+- [x] Per-tenant keys encrypted in `gateway_configs` (AES-256-GCM); `src/server/payments/config.ts` is the only file that unseals or reads the cipher columns, asserted by two guardrails
+- [x] Super Admin one-click gateway enablement per account, audited, with the credential FIELD NAMES in the audit row and never a value
+- [x] Gate: toggling `payment_gateway` immediately enables/disables checkout on that storefront and shows in both the merchant order screens and the admin account page; keys encrypted at rest; staff reaches orders but still no billing — all four are e2e cases
+- [x] typecheck + lint + **934 unit and integration tests (55 files)** + `next build` + the full **113-spec e2e** (incl. axe and Lighthouse), all green in the main checkout
+- [x] Adversarial review: four reviewers over isolation / money / privacy / the gate, each finding handed to a separate agent told to refute it. Ten raised, ten refuted — but two refutations conceded a real mechanism and both were fixed (below)
+- [x] `docs/DECISIONS.md`, `prisma/GLOBAL_TABLES.md` updated
+
+**Two mechanisms the adversarial review conceded, fixed rather than argued down:**
+- `cleanup-self-serve` had a processor, a registry entry and **no producer** — nothing had ever
+  enqueued it, so `export/types.ts`'s promise that the self-serve artifact is "deleted within 24h"
+  was untrue, and orphan cleanup skips `_exports/` by design. Harmless while the archive held a
+  catalogue; decision (a) put customer names and phone numbers in that one artifact. It is now
+  enqueued with a 25h delay when the export is written, and a new guardrail asserts every
+  registered job name has a producer (with one documented exception, `build-demo`, whose processor
+  throws on purpose).
+- The checkout form declared no `method`, so a submit in the window before hydration would have
+  taken the HTML default — GET to the current URL, putting a customer's name and phone in the
+  query string, history and access log. `method="post"` closes it.
+
+**Two defects found by the gate, both in the admin gateway panel, both invisible to typecheck and lint:**
+- Rendering every provider's credential fieldset produced **duplicate DOM ids** — three providers declare an `apiKey` and three a `webhookSecret`. Invalid HTML, but the damage is the label: `<label for>` binds to the first matching id, so a screen reader announced Tranzila's key as Meshulam's and clicking the label focused the wrong box. Field names are namespaced by provider now.
+- The panel's submit read «احفظ», which the feature matrix above it already uses once per numeric row — ambiguous to an operator and unresolvable by accessible name. It has its own label now.
+
+**Still open, carried forward** — full detail in `docs/DECISIONS.md`:
+- [ ] A `failed` gateway notice changes nothing (there is no `pending → failed`), so an abandoned attempt leaves the order where the customer left it. Revisit if a real provider's retry semantics demand a distinct state
+- [ ] "At most one enabled gateway per tenant" is an application rule, not a database one — a partial unique index would be the belt, and it would be a migration
+- [ ] One item per order: the storefront has no cart. The schema is already multi-line, so a cart is a UI change and a loop
+- [ ] `refund?` is declared on the adapter and implemented by nobody — today a refund is the merchant marking the order `refunded` and moving money back outside the platform
+- [ ] **Launch Gate**: a real Israeli gateway needs a registered entity, and it is the documented trigger to upgrade backups from `pg_dump` to WAL archiving (Q10) — six hours of RPO is defensible for product edits and is not for settled payments
+
+### Handed to Phase 6 by decision (c)
+- [ ] The privacy generator must branch on `Site.sellingEnabled` — a non-selling site still records no orders and no customer names (still true, still a selling point); a selling one records name, phone, note, the order lines and the payment
+- [ ] The PROCESSORS section names the tenant's **active** gateway provider and only that one — the scaffolded three process nothing, and listing them would be a false disclosure
+- [ ] The DSR box gains **storefront customers** as a fourth subject class, beside merchants, demo-request prospects and push subscribers
 
 ---
 

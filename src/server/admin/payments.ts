@@ -52,7 +52,13 @@ export async function listPayments(
   take = 50,
 ): Promise<PaymentRow[]> {
   const payments = await ctx.db.payment.findMany({
-    where: { tenantId },
+    /**
+     * SUBSCRIPTION payments only. This table is «الدفعات» on the account page — what the merchant
+     * has paid the platform — and an order payment is the opposite direction of money. Mixing the
+     * two would put a customer's ₪80 for a jacket beside a ₪149 plan renewal under one heading.
+     * Order payments are rendered on the merchant's own order detail screen, where they belong.
+     */
+    where: { tenantId, kind: { not: 'order' } },
     orderBy: { createdAt: 'desc' },
     take,
     select: {

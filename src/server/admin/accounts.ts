@@ -4,6 +4,7 @@ import { InvalidTransitionError, NotImplementedInPhaseError } from '@/server/bil
 import { authDb } from '@/server/db';
 import { resolveFeatures } from '@/server/entitlements';
 import { isReservedSlug } from '@/server/tenancy';
+import { jerusalemMonthWindow } from '@/server/time';
 import { logger } from '@/server/logger';
 import { storefrontHost, absoluteUrl, platformHost } from '@/env';
 import { TEMPLATE_KEYS, isTemplateKey } from '@/shared/site-contract';
@@ -156,6 +157,9 @@ export interface AccountUsage {
   storageBytes: number;
   storageLimitMb: number | undefined;
   media: number;
+  /** Phase 5. Total orders ever, and the ones placed in the current Asia/Jerusalem month. */
+  orders: number;
+  ordersThisMonth: number;
   /** `null` when analytics is off, unconfigured, unprovisioned, or simply unreachable. */
   visits: { visitors: number; pageviews: number; days: number } | null;
   visitsUnavailableReason:
@@ -195,6 +199,10 @@ export interface AccountDetail {
   owner: { userId: string; name: string; email: string; loginDisabled: boolean } | null;
   usage: AccountUsage;
   prioritySupport: boolean;
+  /** Phase 5. Axis (a) for checkout — read from the resolved features, never from a plan name. */
+  paymentGateway: boolean;
+  /** Whether the merchant's own selling switch is on. Both are needed before checkout renders. */
+  sellingEnabled: boolean;
 }
 
 export async function getAccount(
@@ -224,13 +232,17 @@ export async function getAccount(
           plan: { select: { key: true, name: true, hidden: true } },
         },
       },
-      site: { select: { id: true, templateKey: true, umamiWebsiteId: true } },
+      site: {
+        select: { id: true, templateKey: true, umamiWebsiteId: true, sellingEnabled: true },
+      },
     },
   });
 
   if (!tenant) return null;
 
-  const [features, products, media, ownerMember] = await Promise.all([
+  const month = jerusalemMonthWindow();
+
+  const [features, products, media, ownerMember, orders, ordersThisMonth] = await Promise.all([
     resolveFeatures(tenantId),
     ctx.db.product.count({ where: { tenantId } }),
     ctx.db.media.count({ where: { tenantId } }),
@@ -240,6 +252,10 @@ export async function getAccount(
         userId: true,
         user: { select: { name: true, email: true, loginDisabled: true } },
       },
+    }),
+    ctx.db.order.count({ where: { tenantId } }),
+    ctx.db.order.count({
+      where: { tenantId, placedAt: { gte: month.start, lt: month.end } },
     }),
   ]);
 
@@ -283,7 +299,13 @@ export async function getAccount(
           planHidden: tenant.subscription.plan.hidden,
         }
       : null,
-    site: tenant.site,
+    site: tenant.site
+      ? {
+          id: tenant.site.id,
+          templateKey: tenant.site.templateKey,
+          umamiWebsiteId: tenant.site.umamiWebsiteId,
+        }
+      : null,
     owner: ownerMember
       ? {
           userId: ownerMember.userId,
@@ -300,10 +322,14 @@ export async function getAccount(
       storageBytes: Number(tenant.storageBytesUsed),
       storageLimitMb: features.storage_mb as number | undefined,
       media,
+      orders,
+      ordersThisMonth,
       visits,
       visitsUnavailableReason,
     },
     prioritySupport: features.priority_support === true,
+    paymentGateway: features.payment_gateway === true,
+    sellingEnabled: tenant.site?.sellingEnabled === true,
   };
 }
 

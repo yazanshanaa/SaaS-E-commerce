@@ -3,9 +3,12 @@ import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { getEnv } from '@/env';
 import { formatAgorot, t } from '@/shared/i18n';
+import { CHECKOUT_MAX_QUANTITY } from '@/server/orders/schema';
 import {
   analyticsDecision,
   breadcrumbJsonLd,
+  buildOrderUrl,
+  CheckoutForm,
   JsonLdScript,
   MediaImage,
   ProductCard,
@@ -108,6 +111,24 @@ export default async function ProductPage({ params }: PageProps) {
     url,
   });
 
+  /**
+   * Totals pre-formatted per quantity, so the checkout client component never imports the i18n
+   * layer (see `checkout-form.tsx`). Ninety-nine short strings is about a kilobyte, against
+   * pulling a formatter and a locale into the storefront bundle — and the bundle is what the
+   * Fast-3G LCP budget is spent on.
+   *
+   * Built only when the form will actually render.
+   */
+  const priceLabels: Record<number, string> = {};
+  if (context.flags.payments && product.available) {
+    for (let quantity = 1; quantity <= CHECKOUT_MAX_QUANTITY; quantity += 1) {
+      priceLabels[quantity] = formatAgorot(product.priceAgorot * quantity);
+    }
+  }
+
+  /** The WhatsApp fallback link beside the form: quantity 1, since the form owns the stepper. */
+  const whatsappHref = number ? buildOrderUrl({ number, template: messageTemplate }, 1) : '';
+
   return (
     <StorefrontShell
       context={context}
@@ -197,8 +218,67 @@ export default async function ProductPage({ params }: PageProps) {
                 ) : null}
               </dl>
 
+              {/*
+                CHECKOUT FIRST, WHATSAPP SECOND — and only when `flags.payments` is true.
+
+                Those four server-resolved conjuncts (see `_data/context.ts`) are the entire
+                difference from V1. When any of them is false this block is byte-identical to what
+                it always was: the WhatsApp button or one of three honest refusals, and not a
+                single input on the page. That is Q5, still literally true for every tenant that
+                has not opted in, and `a2-storefront.spec.ts` asserts it by counting form controls.
+
+                When checkout IS on, the WhatsApp link stays below it. A customer who would rather
+                talk to a person than fill a form is the normal case in Bartaa, not an edge one,
+                and removing the button would lose that order to protect nothing.
+              */}
               <div style={{ marginBlockStart: 'var(--t-space-xl)' }}>
-                {context.flags.whatsappOrders && number && product.available ? (
+                {context.flags.payments && product.available ? (
+                  <>
+                    <CheckoutForm
+                      productSlug={product.slug}
+                      maxQuantity={CHECKOUT_MAX_QUANTITY}
+                      priceLabels={priceLabels}
+                      instructions={context.checkout?.instructions ?? null}
+                      labels={{
+                        heading: t('storefront', 'checkout.heading'),
+                        name: t('storefront', 'checkout.name'),
+                        phone: t('storefront', 'checkout.phone'),
+                        note: t('storefront', 'checkout.note'),
+                        quantity: t('storefront', 'checkout.quantity'),
+                        increase: t('storefront', 'checkout.increase'),
+                        decrease: t('storefront', 'checkout.decrease'),
+                        total: t('storefront', 'checkout.total'),
+                        submit: t('storefront', 'checkout.submit'),
+                        submitting: t('storefront', 'checkout.submitting'),
+                        privacy: t('storefront', 'checkout.privacy'),
+                        instructionsTitle: t('storefront', 'checkout.instructionsTitle'),
+                        successTitle: t('storefront', 'checkout.successTitle'),
+                        successBody: t('storefront', 'checkout.successBody'),
+                        errors: {
+                          name: t('storefront', 'checkout.errors.name'),
+                          phone: t('storefront', 'checkout.errors.phone'),
+                          unavailable: t('storefront', 'checkout.errors.unavailable'),
+                          closed: t('storefront', 'checkout.errors.closed'),
+                          flooded: t('storefront', 'checkout.errors.flooded'),
+                          failed: t('storefront', 'checkout.errors.failed'),
+                        },
+                      }}
+                    />
+
+                    {context.flags.whatsappOrders && number ? (
+                      <p className="sf-note" style={{ marginBlockStart: 'var(--t-space-md)' }}>
+                        <a
+                          className="sf-link"
+                          href={whatsappHref}
+                          rel="noopener noreferrer"
+                          target="_blank"
+                        >
+                          {t('storefront', 'checkout.orWhatsapp')}
+                        </a>
+                      </p>
+                    ) : null}
+                  </>
+                ) : context.flags.whatsappOrders && number && product.available ? (
                   <WhatsappOrder
                     number={number}
                     messageTemplate={messageTemplate}

@@ -3,6 +3,7 @@ import { unstable_cache } from 'next/cache';
 import { getEnv } from '@/env';
 import { PUBLIC_ACTOR, tenantDb } from '@/server/db';
 import { can, isCapabilityVisible } from '@/server/entitlements';
+import { readEnabledGateway } from '@/server/payments';
 import { pushPublicKey } from '@/server/push';
 import {
   colorSelectionSchema,
@@ -167,6 +168,15 @@ interface StorefrontAccess {
   /** Phase 4. The FEATURE only — the merchant's own `Site.pwaEnabled` is combined at composition. */
   pwa: boolean;
   push: boolean;
+  /**
+   * Phase 5. The FEATURE only. The other three conjuncts of `flags.payments` — not a demo, the
+   * merchant's own switch, an enabled gateway row — are combined at composition.
+   *
+   * It sits here, with the other entitlements, precisely BECAUSE this half is never cached: the
+   * acceptance criterion is that toggling `payment_gateway` enables or disables checkout on that
+   * storefront IMMEDIATELY, and that only holds while the answer is resolved per request.
+   */
+  paymentGateway: boolean;
   announcementBar: boolean;
   socialLinks: boolean;
   announcementsBoard: boolean;
@@ -189,6 +199,7 @@ async function resolveAccess(tenantId: string, isDemo: boolean): Promise<Storefr
     customHtmlFeature,
     pwa,
     push,
+    paymentGateway,
     announcementBar,
     socialLinks,
     announcementsBoard,
@@ -200,6 +211,7 @@ async function resolveAccess(tenantId: string, isDemo: boolean): Promise<Storefr
     can(tenantId, CUSTOM_HTML_FEATURE_KEY),
     can(tenantId, 'pwa'),
     can(tenantId, 'push_notifications'),
+    can(tenantId, 'payment_gateway'),
     isCapabilityVisible(tenantId, 'announcement_bar'),
     isCapabilityVisible(tenantId, 'social_links'),
     isCapabilityVisible(tenantId, 'announcements_board'),
@@ -213,6 +225,14 @@ async function resolveAccess(tenantId: string, isDemo: boolean): Promise<Storefr
     customHtml: isCustomHtmlAllowed({ featureEnabled: customHtmlFeature === true, isDemo }),
     pwa: pwa === true,
     push: push === true,
+    /**
+     * A DEMO NEVER SELLS, and the refusal is folded in here for the same reason `customHtml`
+     * folds it in: a demo tenant sits on the hidden plan at pro parity, so the feature can
+     * legitimately resolve true, and a prospect's showcase shop must not be able to take a real
+     * order with a real phone number from a visitor who wandered in on a magic link. The checkout
+     * ROUTE re-asks the same question for itself.
+     */
+    paymentGateway: paymentGateway === true && !isDemo,
     announcementBar,
     socialLinks,
     announcementsBoard,
@@ -251,6 +271,15 @@ interface TenantSource {
   /** Any way for a customer to reach the shop, not the WhatsApp number alone. */
   hasContact: boolean;
   hasLocation: boolean;
+  /**
+   * Phase 5. The tenant's enabled gateway, or null.
+   *
+   * This half IS cached, unlike the entitlement: it is content the merchant edits (their payment
+   * instructions) and a row an operator flips, and both already drop the storefront cache through
+   * `requestStorefrontRevalidation`. The entitlement half stays outside the cache, which is what
+   * makes the acceptance criterion — a feature toggle closing checkout immediately — hold.
+   */
+  gateway: { provider: string; instructions: string | null } | null;
 }
 
 /**
@@ -351,6 +380,7 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
     announcementRows,
     testimonialRows,
     pageRow,
+    gatewayRow,
   ] = await Promise.all([
     db.socialLink.findMany({
       where: { tenantId, enabled: true },
@@ -394,6 +424,13 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
         },
       },
     }),
+    /**
+     * Phase 5. Read through `readEnabledGatewayInTx`'s sibling on the scoped client, so this file
+     * never learns the shape of `gateway_configs` — and, more to the point, never touches the
+     * three credential columns. Only `provider` and the merchant's instructions cross into the
+     * storefront, both of which the customer is about to be shown anyway.
+     */
+    readEnabledGateway(db, tenantId),
   ]);
 
   /**
@@ -567,6 +604,9 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
         siteRow?.address?.trim() ||
         (siteRow?.mapLat != null && siteRow?.mapLng != null),
     ),
+    gateway: gatewayRow
+      ? { provider: gatewayRow.provider, instructions: gatewayRow.instructions }
+      : null,
   };
 }
 
@@ -596,6 +636,27 @@ function composeTenantData(source: TenantSource, access: StorefrontAccess): Cach
       : null;
 
   const hiddenSectionTypes: SectionType[] = access.mapLocation ? [] : ['map'];
+
+  /**
+   * Phase 5. FOUR conjuncts, and all four must hold before a single input appears on a storefront:
+   *
+   *   1. `can(tenantId, 'payment_gateway')` — resolved per request, so an admin toggle closes
+   *      checkout on the very next page view (and the demo refusal is already folded into it);
+   *   2. the merchant's own `Site.sellingEnabled` — a shop that never asked to sell online must
+   *      not start because the platform enabled a feature for a different reason;
+   *   3. a `GatewayConfig` row exists and is enabled — otherwise there is nothing to pay through.
+   *
+   * When any one is false, `flags.payments` is false and the product page renders exactly the
+   * WhatsApp block it always rendered: no input, no textarea, no select, no customer PII, and Q5
+   * stays literally true for every tenant that has not opted in.
+   *
+   * The route re-asks all of it server-side (`/api/storefront/checkout`), because this decides
+   * what is DRAWN and a form left open across a toggle must not be able to write an order.
+   */
+  const checkout =
+    access.paymentGateway && source.site.sellingEnabled && source.gateway !== null
+      ? { provider: source.gateway.provider, instructions: source.gateway.instructions }
+      : null;
 
   const sections =
     source.storedSections.length > 0
@@ -629,7 +690,9 @@ function composeTenantData(source: TenantSource, access: StorefrontAccess): Cach
        */
       pwa: access.pwa && source.site.pwaEnabled,
       push: access.push,
+      payments: checkout !== null,
     },
+    checkout,
     announcementBar,
     socialLinks,
     categories: source.categories,

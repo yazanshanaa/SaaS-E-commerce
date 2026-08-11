@@ -13,7 +13,7 @@ import {
   TextArea,
   TextInput,
 } from '../../_components/ui';
-import { savePwaAction, saveSeoAction } from './actions';
+import { savePaymentsAction, savePwaAction, saveSeoAction } from './actions';
 
 /**
  * Advanced settings — each panel behind its own feature, and INVISIBLE when the feature is off.
@@ -81,13 +81,39 @@ export default async function AdvancedSettingsPage() {
         </Panel>
       ) : null}
 
+      {/*
+        Phase 5. The merchant's half of checkout: the switch and the words their customer reads.
+        The provider and its keys stay with the platform (see `savePayments`), so this panel offers
+        no field a mistyped credential could land in.
+
+        The readiness sentence is shown when checkout is NOT ready, and the switch is offered
+        anyway — turning selling OFF must always be possible, and a merchant who reads
+        «راجع إدارة المنصة» while looking at a live switch understands the shape of the problem
+        better than one looking at a panel that vanished.
+      */}
       {flags.paymentGateway ? (
-        <Panel title={t('dashboard', 'advanced.payments')}>
-          {/*
-            Stated, not built. Phase 5 ships the gateway adapters; a toggle here would either do
-            nothing or enable a checkout with no provider behind it.
-          */}
-          <p className="sbd-panel-note">{t('dashboard', 'advanced.paymentsHint')}</p>
+        <Panel title={t('dashboard', 'advanced.payments')} note={t('dashboard', 'advanced.paymentsHint')}>
+          {view.gatewayReadiness === 'ready' ? null : (
+            <p className="sbd-notice" role="status">
+              {t('dashboard', `orders.checkoutState.${view.gatewayReadiness}`)}
+            </p>
+          )}
+
+          <ActionForm action={savePaymentsAction} submitLabel={t('common', 'actions.save')}>
+            <Checkbox
+              name="sellingEnabled"
+              label={t('dashboard', 'advanced.paymentsSelling')}
+              hint={t('dashboard', 'advanced.paymentsSellingHint')}
+              defaultChecked={view.sellingEnabled}
+            />
+            <Field
+              label={t('dashboard', 'advanced.paymentsInstructions')}
+              name="instructions"
+              hint={t('dashboard', 'advanced.paymentsInstructionsHint')}
+            >
+              <TextArea name="instructions" defaultValue={view.paymentInstructions ?? ''} rows={3} />
+            </Field>
+          </ActionForm>
         </Panel>
       ) : null}
     </>

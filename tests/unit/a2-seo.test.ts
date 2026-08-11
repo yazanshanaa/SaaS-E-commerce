@@ -19,6 +19,8 @@ function context(overrides: Partial<StorefrontContext> = {}): StorefrontContext 
     origin: 'https://wadi.souqbartaa.test',
     isDemo: false,
     pushPublicKey: null,
+    // Phase 5: this fixture has no gateway, so the storefront is the Q5 one — checkout never draws.
+    checkout: null,
     template: getTemplate('diwan'),
     colors: {
       primary: '#c2410c',
@@ -49,7 +51,14 @@ function context(overrides: Partial<StorefrontContext> = {}): StorefrontContext 
       logoMediaId: null,
       pwaEnabled: false,
     },
-    flags: { whatsappOrders: true, analytics: false, customHtml: false, pwa: false, push: false },
+    flags: {
+      whatsappOrders: true,
+      analytics: false,
+      customHtml: false,
+      pwa: false,
+      push: false,
+      payments: false,
+    },
     announcementBar: null,
     socialLinks: [],
     categories: [],

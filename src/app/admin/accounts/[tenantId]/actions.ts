@@ -8,13 +8,17 @@ import {
   getAccount,
   parseFeatureValue,
   provisionAccountAnalytics,
+  saveGatewayCredentials,
   sendOwnerPasswordLink,
+  setAccountGatewayEnabled,
   setFeatureOverride,
   startImpersonation,
   text,
   textList,
+  type ActionState,
 } from '@/server/admin';
 import { isFeatureKey } from '@/shared/features';
+import { adapterForValue, isGatewayProvider } from '@/server/payments';
 import { requireAdminPage } from '../../_components/guard';
 
 /**
@@ -90,6 +94,71 @@ export async function sendPasswordLinkAction(form: FormData): Promise<void> {
   back(
     tenantId,
     sent ? { ok: 'admin:account.passwordLinkSent' } : { error: 'admin:errors.unexpected' },
+  );
+}
+
+/**
+ * Save a provider's keys and its customer-facing instructions.
+ *
+ * A LONG FORM, so it returns `ActionState` for in-place field errors rather than redirecting: an
+ * operator who mistypes one of four credential fields must not lose the other three, and the
+ * fields are never re-displayed from storage, so a redirect would blank the whole form.
+ *
+ * The credential values are pulled out by the ADAPTER'S declared field names, so a form field that
+ * is not one of them never reaches the service — and the empty ones are dropped here as well as in
+ * `writeGatewayConfig`, because "leave the stored key alone" is the meaning of a blank box.
+ */
+export async function saveGatewayAction(
+  _state: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const ctx = await requireAdminPage();
+  const tenantId = text(form, 'tenantId');
+  const provider = text(form, 'provider');
+
+  if (!isGatewayProvider(provider)) {
+    return { status: 'error', messageKey: 'admin:errors.unknownProvider' };
+  }
+
+  /**
+   * Read the SELECTED provider's fields only, from its own namespaced inputs.
+   *
+   * The form renders every provider's fieldset (it is a server component, and switching on the
+   * selection would need a client one), so the names carry the provider — otherwise three
+   * providers' `apiKey` boxes would share one id and one label. Reading only the selected
+   * provider's prefix also means the other fieldsets are inert rather than merely ignored later.
+   */
+  const credentials: Record<string, string> = {};
+  for (const field of adapterForValue(provider).credentialFields) {
+    const value = text(form, `credential_${provider}_${field}`);
+    if (value.trim() !== '') credentials[field] = value;
+  }
+
+  const state = await saveGatewayCredentials(ctx, tenantId, {
+    provider,
+    credentials,
+    instructions: text(form, 'instructions'),
+  });
+
+  revalidatePath(`/accounts/${tenantId}`);
+  return state ?? { status: 'ok', messageKey: 'admin:gateways.saved' };
+}
+
+/** The one-click enable/disable. A redirect, because the whole panel re-renders around it. */
+export async function setGatewayEnabledAction(form: FormData): Promise<void> {
+  const ctx = await requireAdminPage();
+  const tenantId = text(form, 'tenantId');
+  const provider = text(form, 'provider');
+  const enabled = text(form, 'enabled') === 'on';
+
+  const state = await setAccountGatewayEnabled(ctx, tenantId, provider, enabled);
+  revalidatePath(`/accounts/${tenantId}`);
+
+  back(
+    tenantId,
+    state
+      ? { error: state.messageKey }
+      : { ok: enabled ? 'admin:gateways.enabledDone' : 'admin:gateways.disabledDone' },
   );
 }
 

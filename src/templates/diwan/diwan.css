@@ -109,3 +109,19 @@
 [data-template='diwan'] .sf-footer {
   background: var(--t-surface-alt);
 }
+
+/*
+ * diwan is the warm, rounded one: the checkout takes the same generous radius its cards and
+ * offers do, and sits on the tinted surface rather than on the page background.
+ */
+[data-template='diwan'] .sf-checkout {
+  border-radius: var(--t-radius-lg);
+  border: 2px solid var(--t-secondary);
+  background: var(--t-surface-alt);
+}
+
+[data-template='diwan'] .sf-input,
+[data-template='diwan'] .sf-textarea {
+  border-radius: var(--t-radius-md);
+  background: var(--t-surface);
+}

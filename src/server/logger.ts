@@ -39,6 +39,27 @@ const REDACTED_PATHS = [
   '*.ip',
   'ipHash',
   '*.ipHash',
+  /**
+   * Phase 5. Two new shapes enter the process on the day checkout ships:
+   *
+   *   - a gateway settlement notice (`rawPayload`), which is a third party's body and may carry
+   *     anything from a card mask to a customer's email;
+   *   - a storefront customer's name and phone, which is the first real customer PII this
+   *     platform has ever held (Q5 held none).
+   *
+   * Neither belongs in a log line. `customerPhone` is the one that would actually leak: it is
+   * carried through the checkout route, the order service and the dashboard, and a single
+   * `logger().info({ order })` anywhere on that path would put a stranger's number in a file
+   * nobody has a retention rule for.
+   */
+  'rawPayload',
+  '*.rawPayload',
+  'customerName',
+  '*.customerName',
+  'customerPhone',
+  '*.customerPhone',
+  'customerNote',
+  '*.customerNote',
 ];
 
 let instance: pino.Logger | undefined;

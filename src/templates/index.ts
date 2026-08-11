@@ -44,5 +44,6 @@ export { ProductCard } from './components/product-card';
 export { SocialLinks, isRenderableSocialUrl } from './components/social-links';
 export { MediaImage } from './components/media-image';
 export { WhatsappOrder } from './components/whatsapp-order';
+export { CheckoutForm, type CheckoutFormProps, type CheckoutLabels } from './components/checkout-form';
 export type { TemplateDefinition, TemplateTokens, TemplateLayout, TemplateFont } from './types';
 export type * from './view-model';

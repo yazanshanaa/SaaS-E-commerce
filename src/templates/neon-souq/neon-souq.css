@@ -144,3 +144,20 @@
   border-radius: var(--t-radius-sm);
   border-color: var(--t-border);
 }
+
+/*
+ * neon-souq is near-black with a lit edge. The form keeps that: a tight radius, the primary as a
+ * top rule, and inputs on the page background so they read as cut into the panel rather than
+ * floated on it.
+ */
+[data-template='neon-souq'] .sf-checkout {
+  border-radius: var(--t-radius-sm);
+  border-block-start: 3px solid var(--t-primary);
+}
+
+[data-template='neon-souq'] .sf-input,
+[data-template='neon-souq'] .sf-textarea {
+  border-radius: var(--t-radius-sm);
+  background: var(--t-bg);
+  border-color: var(--t-border);
+}

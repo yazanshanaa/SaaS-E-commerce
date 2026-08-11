@@ -1,6 +1,6 @@
 'use server';
 
-import { savePwa, saveSeo } from '../../_lib/settings';
+import { savePayments, savePwa, saveSeo } from '../../_lib/settings';
 import { checkbox, text, type ActionState } from '../../_lib/validation';
 import { requireMerchantPage } from '../../_components/guard';
 
@@ -29,4 +29,18 @@ export async function saveSeoAction(_state: ActionState, form: FormData): Promis
   });
 
   return state ?? { status: 'ok', messageKey: 'dashboard:advanced.saved' };
+}
+
+export async function savePaymentsAction(
+  _state: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const ctx = await requireMerchantPage('settings');
+
+  const state = await savePayments(ctx, {
+    sellingEnabled: checkbox(form, 'sellingEnabled'),
+    instructions: text(form, 'instructions'),
+  });
+
+  return state ?? { status: 'ok', messageKey: 'dashboard:advanced.paymentsSaved' };
 }
