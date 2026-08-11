@@ -22,6 +22,10 @@ import { t } from '@/shared/i18n';
 const ITEMS = [
   { href: '/', key: 'overview' },
   { href: '/accounts', key: 'accounts' },
+  // B1's screens, wired in at the merge: `nav.tsx` and `messages/ar/admin.json` are A1's, so the
+  // track that built /lifecycle could not give itself a way in. Next to /accounts because that is
+  // where an operator already is when they need the call list or the deletion deadline.
+  { href: '/lifecycle', key: 'lifecycle' },
   { href: '/change-requests', key: 'changeRequests' },
   { href: '/plans', key: 'plans' },
   { href: '/audit', key: 'audit' },

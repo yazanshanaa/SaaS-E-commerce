@@ -446,3 +446,118 @@ in `billing/index.ts` said B3 implements them.
   conventional.
 - `src/server/billing/demo-content.ts` is reserved inside B1's own folder, exactly as the frozen
   packs are inside B3's.
+
+---
+
+## B1 — Subscription lifecycle, the suspension export and the purge
+
+### A job whose body is a billing TRANSITION is system-scoped
+
+`suspend-tenant` and `purge-tenant` are SystemJobs carrying `tenantId` in the payload;
+`send-reminder` stays a TenantJob. The rule: a job that performs ONE tenant-scoped unit of work is
+a TenantJob and uses the transaction the worker already opened; a job whose body is a billing
+transition is a SystemJob, because the transition opens and closes its own transactions and must.
+
+Three forcing reasons: suspension's two effects are two commits (Q18), and running
+`billing.suspend()` inside `createWorker`'s wrapper erases the boundary the design exists to
+create; the export zips gigabytes, and a TenantJob wrapper pins a Postgres connection across it;
+and the purge's own `purging` guard would make it un-retryable, stranding a half-purged tenant that
+nothing could finish. Invariant 8 still holds — the writes happen inside a `withTenantTxn` that
+sets the RLS context. What moved is only who opens the transaction.
+
+**That choice broke `removeTenantJobs`, and the main session fixed it at merge.** Phase 1 filtered
+the drain on `scope === 'tenant'`, which was complete when every job naming a tenant was a
+TenantJob. It now matches the payload's `tenantId`, so a purge's quiesce step can actually drop the
+suspension export — the job most able to write into a prefix that is about to be swept.
+
+### The verify phase, because BullMQ's retry state is invisible from inside a processor
+
+A processor is handed a parsed payload, not the job, so it cannot know it is on the last attempt.
+So `suspend-tenant` is enqueued twice — once as `phase: 'export'`, once as `phase: 'verify'` with a
+30-minute delay — and the nightly sweep re-checks anything still missing its artifact two hours
+after suspension. Both catch a failure a retry counter never would: a job that was dropped, or a
+worker that died before running it. Both are idempotent, alert and event alike, because an alarm
+that repeats every morning is one people learn to ignore.
+
+### Enqueue and drain are bounded and best-effort
+
+`queueRedis()` uses `maxRetriesPerRequest: null` because BullMQ blocks on BRPOPLPUSH, so a command
+against a dead Redis never settles — an admin pressing "suspend" would get a spinner that never
+ends. `src/server/billing/dispatch.ts` races every broker call against a 5-second timer and
+swallows the failure. That is correct beyond the timeout: a suspension COMMITS first and schedules
+its export second, so an enqueue failure must never be reported as a failed state change, and the
+sweep re-enqueues what went missing. The same wrapper covers the purge's drain, with the
+purging-state guard as the second layer.
+
+### `createMany`, not `create`, on the two global audit tables
+
+`create()` compiles to `INSERT … RETURNING`, and Postgres applies the SELECT policies to the
+returned row. `tenant_tombstones` and `platform_audit_logs` are readable by a super admin only and
+both writes happen as the `system` actor, so an insert the policy explicitly permits is refused on
+the read-back. `createMany` returns a count and touches no SELECT policy — and brings
+`skipDuplicates`, which is what makes a purge resumable after a crash between the tombstone and the
+cascade.
+
+### A purge deletes the merchant's identity too
+
+`users` is global, so the cascade never reaches it. `purgeTenant` and `closeDemo` delete every
+member user whose ONLY membership was this tenant; someone who is staff at two shops keeps their
+account. The cross-tenant question runs as `app_system` (SELECT, no write grant), and the delete
+must happen BEFORE the tenant, because the `user_access` policy admits a user through a member row
+in the current tenant — which disappears with it.
+
+### The export is a real ZIP with a bounded, stated image budget
+
+One variant per image, `full` first, WebP before AVIF — the file is opened OFF our platform, where
+compatibility beats bytes. `MAX_EXPORT_IMAGE_BYTES` is 192 MB because `StorageAdapter.put()` takes
+a Buffer, so the archive is materialised in memory; a truncated export that SAYS it is truncated
+beats a dead worker, and the README says when it bit. Three phases — read (short txn), build (no
+txn), stamp (short txn) — and a fixed entry date, so the artifact is byte-stable and the
+deterministic suspension key is a genuine overwrite.
+
+### What the merge review found, and why a green gate could not see it
+
+An eight-dimension adversarial pass raised 32 findings and 15 survived independent verification.
+Full detail in `docs/decisions/b1.md` section 10; the two that matter:
+
+- **The export could stamp a subscription it no longer belonged to.** Phase 2 holds no transaction
+  by design, so the row can move while the archive is written, and the stamp was unconditional.
+  Reactivating a merchant mid-build left a live paying account carrying a standing snapshot of its
+  own catalogue that nothing would ever collect (`_exports/` is excluded from orphan cleanup), plus
+  a WhatsApp saying their site was closed with a link reactivation had already revoked — and the
+  NEXT suspension would skip the build and hand them a working link to the previous period's data.
+  The stamp is now conditional on the same `suspendedAt`, lives in `src/server/billing` because its
+  predicate is lifecycle state, takes the object back when it does not land, and the message is
+  built inside the transaction that re-asserts the state. `tests/unit/guardrails.test.ts` rejected
+  the first attempt to put that write in `src/server/export`; the guardrail was right.
+- **"Re-send export link" revoked the link and sent nothing.** Rotation killed the link already in
+  the merchant's phone, no event was emitted, and the returned URL was discarded by a screen that
+  deliberately never prints one. It re-emits `subscription.suspended` with the fresh link now —
+  that event rather than a new type, because `WebhookEndpoint.eventTypes` filters delivery and a
+  new type would reach nobody until every endpoint is reconfigured.
+
+Also: the sweep could schedule an export rebuild for a tenant it was purging in the same pass
+(quiet retention arriving by accident rather than by policy — now bounded by `retentionUntil`); the
+three suspended-side sweep queries did not exclude demos, though the docstring claimed they did;
+the "rebuild export" button reused the failed job's id, so BullMQ dropped it while reporting
+success; `subscription.export_failed` re-fired nightly; and two notification bodies interpolated a
+`{link}` no caller supplied, which B2 would have rendered literally to a merchant.
+
+Three tests proved less than their names claimed and now assert the thing itself: "still downloads
+on day 29" faked a JS clock while the window lives in a Postgres policy (`retention_until > now()`)
+and passed identically at day 4000; the purge-race test queued no job and stubbed the drainer it
+was meant to exercise; the export-failure test counted the notification and not the webhook that
+was firing every night.
+
+### Two known gaps, carried forward rather than fixed at a merge
+
+- **Concurrent purges can orphan a shared identity.** If two tenants are purged at the same moment
+  and one person belongs to both, each purge sees the other membership and neither deletes the
+  User. The honest fix is a global sweep for member-less users, which RLS puts out of reach:
+  `app_system` has no write grant, and `app_web` can only delete a User through a member row in the
+  current tenant — exactly what has just disappeared. **Phase 6**, with the data-subject work.
+- **`demo.closed` carries the demo's plaintext slug into `webhook_deliveries`**, which is global and
+  outlives the tenant — after `closeDemo` deliberately wrote no tombstone so that nothing derived
+  from the prospect's own requested prefix would survive. The payload shape is Phase 1's,
+  `demo.created` has the same property, and the stated payload rule permits identifiers, so this is
+  a vocabulary change plus a deliveries-retention decision. **Phase 6** privacy pass.

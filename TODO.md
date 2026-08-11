@@ -25,10 +25,10 @@ Recorded in full in `docs/PHASES.md` → **Resolved decisions**. Nothing here bl
 ### Scope added by those answers — tracked in the phases below
 - [ ] Web Push (احترافي only) — `PushSubscription` + `PushMessage` + VAPID env in Phase 1, feature in Phase 4
 - [ ] Public demo-request form → `DemoRequest` → admin approval — Phase 1 schema + proxy allow-list, surface in B3
-- [ ] Annual billing period + ₪350 setup fee — Phase 1 schema, A1, B1
+- [x] Annual billing period + ₪350 setup fee — Phase 1 schema, A1, B1
 - [ ] Metered change requests (2 / 5 / unlimited, ₪25 over-quota) — `ChangeRequest` in Phase 1, A1, B2
 - [ ] `color_mode: preset | custom` + 5 vetted presets — `site-contract`, A1, B2
-- [ ] Retention window + purge (rows **and** R2 objects **and** a surviving tombstone) + admin extend — Phase 1 schema, B1
+- [x] Retention window + purge (rows **and** R2 objects **and** a surviving tombstone) + admin extend — Phase 1 schema, B1
 
 ---
 
@@ -245,6 +245,11 @@ create, since `isCapabilityVisible()` is fail-closed (raised by A2 at review).
 - [ ] E2E stack needs an adapter minting CDN URLs, or its image assertions run on an empty set — **Phase 7**
 - [ ] Edge cache purge on media delete (currently up to 24h stale) — **Phase 6**, privacy copy must match
 - [ ] `Consent.ipHash` is written by nothing; dropping it is a schema change — **Phase 6**
+- [ ] Two purges running at the same moment can orphan a User shared by both tenants; the fix is a
+      global member-less-user sweep, which RLS puts out of reach today — **Phase 6** (raised at the B1 merge)
+- [ ] `demo.closed` puts the demo's plaintext slug in the global `webhook_deliveries` table, which
+      outlives the tenant `closeDemo` promised to erase; `demo.created` has the same property —
+      needs a payload change plus a deliveries-retention rule — **Phase 6** (raised at the B1 merge)
 - [ ] Lighthouse gate is flaky at its threshold (7 runs: 86–95, median ~90, no regression — machine
       variance in LCP/SI). Decide best-of-N or median-of-three before CI depends on it — **Phase 7**
 - [x] `revalidateStorefront()` is not callable from the worker, which is where variants finish —
@@ -269,47 +274,47 @@ create, since `isCapabilityVisible()` is fail-closed (raised by A2 at review).
       criteria is end-to-end and none can be proven while `createDemo` throws. B1 ∥ B2, then B3.
 
 ### B1 — Billing lifecycle (owns the implementation in `src/server/billing`, the images-ZIP half of `src/server/export`, `src/server/jobs`, and `src/app/(admin)/lifecycle/**`) — **depends on A3's `deleteByPrefix` + `delete` + `signedUrl`**
-- [ ] All transitions implemented inside `src/server/billing` — nothing inline anywhere else
-- [ ] `active → suspended` the moment `currentPeriodEnd` passes — storefront closes, **no grace period**
-- [ ] `suspended → active` on a recorded payment, data intact
-- [ ] Extensions honour `billingPeriod` (monthly +1 month, yearly +12) and reset reminder stages
-- [ ] Rows with `currentPeriodEnd = null` (demos) are never swept
+- [x] All transitions implemented inside `src/server/billing` — nothing inline anywhere else
+- [x] `active → suspended` the moment `currentPeriodEnd` passes — storefront closes, **no grace period**
+- [x] `suspended → active` on a recorded payment, data intact
+- [x] Extensions honour `billingPeriod` (monthly +1 month, yearly +12) and reset reminder stages
+- [x] Rows with `currentPeriodEnd = null` (demos) are never swept
 
 #### Suspension — two separate effects, never one transaction (Q18)
-- [ ] 1. Transactionally: `status=suspended`, `suspendedAt`, `retentionUntil = +30d`, a fresh random `exportDownloadToken`, storefront closed. **Commit.**
-- [ ] 2. Then enqueue an **idempotent TenantJob** running `exportTenantData(…, {mode:'suspension'})` regardless of `data_export`, writing `exportKey`/`exportGeneratedAt`, then emitting `subscription.suspended` carrying `app.{DOMAIN}/export/{token}` — never a storage URL
-- [ ] Rationale: a gigabyte-scale export inside the suspension transaction would roll the suspension back on any failure — leaving a non-paying storefront open and the data retained forever, in a hole no admin screen shows
-- [ ] **Export failure after all retries**: tenant stays suspended with the correct `retentionUntil`, an admin alert is raised, and **no message is sent** claiming a copy that does not exist
-- [ ] `extendRetention`: pushes `retentionUntil`, audited, counted on the tombstone, emits **`subscription.retention_extended`** with the **new date** — no link regeneration needed, the token is stable
-- [ ] Arabic copy renders the **actual `retentionUntil` date**, never a hardcoded "30 days" (which stops being true the moment you extend)
-- [ ] `reissueExportLink(tenantId)` rotates the token and re-sends the message (the merchant lost the WhatsApp); rotation invalidates the old link by construction
-- [ ] **`purge_scheduled` fires at retention R-7 and R-3**, idempotent via `SubscriptionReminder`, carrying the live link and the exact deletion date — without it "delivered and reminded" is false, since every other reminder fires *before* suspension
-- [ ] **Reactivation full effect**: `status=active`, `suspendedAt` and `retentionUntil` nulled, `exportDownloadToken` cleared (link revoked), `StorageAdapter.delete(exportKey)`, `exportKey` cleared, `subscription.reactivated` emitted
+- [x] 1. Transactionally: `status=suspended`, `suspendedAt`, `retentionUntil = +30d`, a fresh random `exportDownloadToken`, storefront closed. **Commit.**
+- [x] 2. Then enqueue an **idempotent TenantJob** running `exportTenantData(…, {mode:'suspension'})` regardless of `data_export`, writing `exportKey`/`exportGeneratedAt`, then emitting `subscription.suspended` carrying `app.{DOMAIN}/export/{token}` — never a storage URL
+- [x] Rationale: a gigabyte-scale export inside the suspension transaction would roll the suspension back on any failure — leaving a non-paying storefront open and the data retained forever, in a hole no admin screen shows
+- [x] **Export failure after all retries**: tenant stays suspended with the correct `retentionUntil`, an admin alert is raised, and **no message is sent** claiming a copy that does not exist
+- [x] `extendRetention`: pushes `retentionUntil`, audited, counted on the tombstone, emits **`subscription.retention_extended`** with the **new date** — no link regeneration needed, the token is stable
+- [x] Arabic copy renders the **actual `retentionUntil` date**, never a hardcoded "30 days" (which stops being true the moment you extend)
+- [x] `reissueExportLink(tenantId)` rotates the token and re-sends the message (the merchant lost the WhatsApp); rotation invalidates the old link by construction
+- [x] **`purge_scheduled` fires at retention R-7 and R-3**, idempotent via `SubscriptionReminder`, carrying the live link and the exact deletion date — without it "delivered and reminded" is false, since every other reminder fires *before* suspension
+- [x] **Reactivation full effect**: `status=active`, `suspendedAt` and `retentionUntil` nulled, `exportDownloadToken` cleared (link revoked), `StorageAdapter.delete(exportKey)`, `exportKey` cleared, `subscription.reactivated` emitted
 
 #### Purge — quiesce, then three ordered steps
-- [ ] 0. Mark the tenant purging and **remove its pending jobs from the queues**; `withTenantTxn` refuses a purging tenant so anything already dequeued fails closed. Without this, a media job queued before the purge writes fresh objects into a prefix we just swept — and with the Tenant row gone, nothing ever finds them again
-- [ ] 1. Inside `withTenantTxn`, `StorageAdapter.deleteByPrefix(tenants/{tenantId}/)` — covers media **and** the export artifact because both live under it by construction
-- [ ] 2. Write `TenantTombstone` (minimal: slug hash, delivered/downloaded facts, never a location) and emit `purged` **before** the cascade (AuditLog and Event rows are tenant-owned and would be destroyed by it)
-- [ ] 3. Delete the Tenant row and let the cascade take the rest
-- [ ] After a purge nothing **live** survives: no rows, no R2 objects, no artifact, no working token — with the honest caveat that backups hold the tenant until they age out under Q10's 14-day rule
+- [x] 0. Mark the tenant purging and **remove its pending jobs from the queues**; `withTenantTxn` refuses a purging tenant so anything already dequeued fails closed. Without this, a media job queued before the purge writes fresh objects into a prefix we just swept — and with the Tenant row gone, nothing ever finds them again
+- [x] 1. Inside `withTenantTxn`, `StorageAdapter.deleteByPrefix(tenants/{tenantId}/)` — covers media **and** the export artifact because both live under it by construction
+- [x] 2. Write `TenantTombstone` (minimal: slug hash, delivered/downloaded facts, never a location) and emit `purged` **before** the cascade (AuditLog and Event rows are tenant-owned and would be destroyed by it)
+- [x] 3. Delete the Tenant row and let the cascade take the rest
+- [x] After a purge nothing **live** survives: no rows, no R2 objects, no artifact, no working token — with the honest caveat that backups hold the tenant until they age out under Q10's 14-day rule
 
 #### Jobs and events
-- [ ] Daily repeatable `SystemJob` at 03:00 Asia/Jerusalem selecting IDs only and fanning out per tenant
-- [ ] The same sweep deletes `DemoRequest` rows past `purgeAfter`
-- [ ] Reminders T-7 / T-3 / T-0 before `currentPeriodEnd`, idempotent via `SubscriptionReminder`
-- [ ] Events: suspended / reactivated / retention_extended / purge_scheduled / purged → outbox → HMAC dispatcher → n8n
-- [ ] Admin screens under `src/app/(admin)/lifecycle`: "expiring soon" call list, "pending purge" with deadline + one-click extend **+ re-send export link**, and a "never-expiring non-demo accounts" guard list that should always be empty
-- [ ] `messages/ar/billing.json`
-- [ ] `docs/decisions/b1.md`
-- [ ] Gate: fake-timers test proving active → suspended → purge and active → suspended → reactivated → active; yearly extension moves twelve months and resets reminder stages; no duplicate reminders; extended retention defers the purge **and pushes the link expiry with it**; demo tenants untouched; a rejected `DemoRequest` is purged after `purgeAfter`
-- [ ] Gate (export): suspending a **basic-plan tenant with `data_export = false` still produces an artifact and a working link** on `subscription.suspended`
-- [ ] Gate (export): **the link still downloads on day 29** — the case a presigned URL would have failed on day 8 — and every download writes an audit row with `getClientIp()`
-- [ ] Gate (export): an export job failing all retries leaves the tenant suspended with the correct `retentionUntil`, alerts the admin, and sends no message
-- [ ] Gate (export): `purge_scheduled` fires once at R-7 and once at R-3, not again on repeated sweeps
-- [ ] Gate (export): extending emits `retention_extended` with the new date and the merchant's existing link keeps working
-- [ ] Gate (export): reactivating revokes the token, deletes the artifact, leaves no `retentionUntil`; `extend` on a suspended subscription is refused
-- [ ] Gate (export): after a purge no row, no object, no artifact and no working link remain — while the tombstone records delivery and whether it was downloaded
-- [ ] Gate (export): **purging while a media job for that tenant is queued still leaves zero objects** under the prefix
+- [x] Daily repeatable `SystemJob` at 03:00 Asia/Jerusalem selecting IDs only and fanning out per tenant
+- [x] The same sweep deletes `DemoRequest` rows past `purgeAfter`
+- [x] Reminders T-7 / T-3 / T-0 before `currentPeriodEnd`, idempotent via `SubscriptionReminder`
+- [x] Events: suspended / reactivated / retention_extended / purge_scheduled / purged → outbox → HMAC dispatcher → n8n
+- [x] Admin screens under `src/app/(admin)/lifecycle`: "expiring soon" call list, "pending purge" with deadline + one-click extend **+ re-send export link**, and a "never-expiring non-demo accounts" guard list that should always be empty
+- [x] `messages/ar/billing.json`
+- [x] `docs/decisions/b1.md`
+- [x] Gate: fake-timers test proving active → suspended → purge and active → suspended → reactivated → active; yearly extension moves twelve months and resets reminder stages; no duplicate reminders; extended retention defers the purge **and pushes the link expiry with it**; demo tenants untouched; a rejected `DemoRequest` is purged after `purgeAfter`
+- [x] Gate (export): suspending a **basic-plan tenant with `data_export = false` still produces an artifact and a working link** on `subscription.suspended`
+- [x] Gate (export): **the link still downloads on day 29** — the case a presigned URL would have failed on day 8 — and every download writes an audit row with `getClientIp()`
+- [x] Gate (export): an export job failing all retries leaves the tenant suspended with the correct `retentionUntil`, alerts the admin, and sends no message
+- [x] Gate (export): `purge_scheduled` fires once at R-7 and once at R-3, not again on repeated sweeps
+- [x] Gate (export): extending emits `retention_extended` with the new date and the merchant's existing link keeps working
+- [x] Gate (export): reactivating revokes the token, deletes the artifact, leaves no `retentionUntil`; `extend` on a suspended subscription is refused
+- [x] Gate (export): after a purge no row, no object, no artifact and no working link remain — while the tombstone records delivery and whether it was downloaded
+- [x] Gate (export): **purging while a media job for that tenant is queued still leaves zero objects** under the prefix
 
 ### B2 — Merchant dashboard (owns `src/app/(dashboard)`)
 - [ ] Products CRUD + drag-and-drop ordering
@@ -361,7 +366,7 @@ create, since `isCapabilityVisible()` is fail-closed (raised by A2 at review).
 - [ ] Gate: button click to shareable link in under 30 seconds with 15 products and variants; a customer request never creates a tenant before approval; approving from the inbox produces an identical tenant to Path 1; **the demo owner user cannot authenticate by any route while impersonation from A1 reaches the dashboard and shows the staff-accounts feature**; closing a demo removes every row, every R2 object, and its `DemoRequest`
 
 ### Group B merge (main session, Fable 5 / Opus)
-- [ ] Review + merge `phase-b1`, gates green
+- [x] Review + merge `phase-b1`, gates green — 15 verified findings fixed first; see `docs/DECISIONS.md`
 - [ ] Review + merge `phase-b2`, gates green
 - [ ] Review + merge `phase-b3`, gates green
 - [ ] Decision files folded into `docs/DECISIONS.md`
