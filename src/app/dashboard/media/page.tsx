@@ -26,7 +26,7 @@ export default async function MediaPage({
   const ctx = await requireMerchantPage('media');
   const params = await searchParams;
 
-  const { page, usage, usageError } = await loadLibrary(ctx, param(params, 'cursor'));
+  const { page, usage, usageError, libraryError } = await loadLibrary(ctx, param(params, 'cursor'));
 
   return (
     <>
@@ -58,8 +58,16 @@ export default async function MediaPage({
       </Panel>
 
       <Panel title={t('media', 'title')}>
+        {libraryError ? (
+          // Not "you have no images": the library could not be READ. Saying the wrong one would
+          // send a merchant looking for photos they still have.
+          <div className="sbd-notice sbd-notice--error" role="alert">
+            {t('media', 'errors.server')}
+          </div>
+        ) : null}
+
         {page.items.length === 0 ? (
-          <Empty>{t('media', 'empty')}</Empty>
+          libraryError ? null : <Empty>{t('media', 'empty')}</Empty>
         ) : (
           <div className="sbd-media-grid">
             {page.items.map((item) => (

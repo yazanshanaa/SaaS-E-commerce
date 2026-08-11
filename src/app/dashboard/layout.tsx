@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { storefrontHost } from '@/env';
+import { absoluteUrl, storefrontHost } from '@/env';
 import { t } from '@/shared/i18n';
 import { optionalMerchantContext, merchantCan, type MerchantContext } from './_lib/context';
 import { DashboardNav, type NavItem } from './_components/nav';
@@ -67,7 +67,7 @@ export default async function DashboardSurfaceLayout({ children }: { children: R
           userName={ctx.session.user.name}
           roleLabel={t('dashboard', ctx.role === 'owner' ? 'shell.roleOwner' : 'shell.roleStaff')}
           siteName={site?.name ?? tenant?.name ?? ''}
-          storefrontUrl={tenant ? `https://${storefrontHost(tenant.slug)}` : '/'}
+          storefrontUrl={tenant ? absoluteUrl(storefrontHost(tenant.slug)) : '/'}
         />
 
         <main id="main" className="sbd-main">

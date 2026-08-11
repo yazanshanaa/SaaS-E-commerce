@@ -31,18 +31,36 @@ export interface LibraryView {
   usage: StorageUsageView | null;
   /** Set when the usage read failed — the screen says so instead of drawing an empty meter. */
   usageError: boolean;
+  /** Set when the library itself could not be read — a storage misconfiguration, not an empty shop. */
+  libraryError: boolean;
 }
+
+const EMPTY_PAGE: MediaPage = { items: [], nextCursor: null };
 
 export async function loadLibrary(
   ctx: MerchantContext,
   cursor?: string,
 ): Promise<LibraryView> {
-  const page = await listMedia(ctx.tenantId, cursor ? { cursor } : {});
+  /**
+   * `listMedia` mints a CDN URL per variant, and `storage()` throws outright when no adapter is
+   * registered — which is a deployment problem, not a library problem. Letting it through would
+   * turn a misconfigured CDN into a 500 on the media screen, where the honest answer is "we
+   * cannot show your images right now" and the upload form still works.
+   */
+  let page: MediaPage;
+  let libraryError = false;
 
   try {
-    return { page, usage: await storageUsage(ctx.tenantId), usageError: false };
+    page = await listMedia(ctx.tenantId, cursor ? { cursor } : {});
   } catch {
-    return { page, usage: null, usageError: true };
+    page = EMPTY_PAGE;
+    libraryError = true;
+  }
+
+  try {
+    return { page, usage: await storageUsage(ctx.tenantId), usageError: false, libraryError };
+  } catch {
+    return { page, usage: null, usageError: true, libraryError };
   }
 }
 

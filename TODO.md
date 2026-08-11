@@ -26,8 +26,8 @@ Recorded in full in `docs/PHASES.md` → **Resolved decisions**. Nothing here bl
 - [ ] Web Push (احترافي only) — `PushSubscription` + `PushMessage` + VAPID env in Phase 1, feature in Phase 4
 - [ ] Public demo-request form → `DemoRequest` → admin approval — Phase 1 schema + proxy allow-list, surface in B3
 - [x] Annual billing period + ₪350 setup fee — Phase 1 schema, A1, B1
-- [ ] Metered change requests (2 / 5 / unlimited, ₪25 over-quota) — `ChangeRequest` in Phase 1, A1, B2
-- [ ] `color_mode: preset | custom` + 5 vetted presets — `site-contract`, A1, B2
+- [x] Metered change requests (2 / 5 / unlimited, ₪25 over-quota) — `ChangeRequest` in Phase 1, A1, B2
+- [x] `color_mode: preset | custom` + 5 vetted presets — `site-contract`, A1, B2
 - [x] Retention window + purge (rows **and** R2 objects **and** a surviving tombstone) + admin extend — Phase 1 schema, B1
 
 ---
@@ -167,7 +167,7 @@ Recorded in full in `docs/PHASES.md` → **Resolved decisions**. Nothing here bl
 - [x] Manual payment records (amount, method, note, attachment) linked to subscription extension
 - [x] Audit log viewer with filters — tenant-owned and platform-level logs, switchable
 - [x] Merchant impersonation, fully audited — **also the sales path**: a demo issues no merchant login, so the dashboard tour happens by impersonating the demo tenant. Minted on `admin.*`, replayed on `app.*` through a single-use handoff, because session cookies are host-only
-- [ ] The impersonation banner itself — **B2 owns it** (`src/app/dashboard`); the copy and the stop endpoint ship with A1
+- [x] The impersonation banner itself — **B2 owns it** (`src/app/dashboard`); the copy and the stop endpoint ship with A1
 - [x] **No demo screens built here** — `(admin)/demos` belongs to B3
 - [x] Colors / sections_layout editing consumes `src/shared/site-contract` only (never `src/templates`)
 - [x] All UI Arabic, RTL, no default shadcn look
@@ -250,6 +250,9 @@ create, since `isCapabilityVisible()` is fail-closed (raised by A2 at review).
 - [ ] `demo.closed` puts the demo's plaintext slug in the global `webhook_deliveries` table, which
       outlives the tenant `closeDemo` promised to erase; `demo.created` has the same property —
       needs a payload change plus a deliveries-retention rule — **Phase 6** (raised at the B1 merge)
+- [x] A merchant's session did not resolve its tenant, and `absoluteUrl()` dropped the port so every
+      invitation link was refused as an invalid callback in dev and e2e — **both serviced in the main
+      session during B2**; see `docs/DECISIONS.md`
 - [ ] Lighthouse gate is flaky at its threshold (7 runs: 86–95, median ~90, no regression — machine
       variance in LCP/SI). Decide best-of-N or median-of-three before CI depends on it — **Phase 7**
 - [x] `revalidateStorefront()` is not callable from the worker, which is where variants finish —
@@ -317,26 +320,29 @@ create, since `isCapabilityVisible()` is fail-closed (raised by A2 at review).
 - [x] Gate (export): **purging while a media job for that tenant is queued still leaves zero objects** under the prefix
 
 ### B2 — Merchant dashboard (owns `src/app/(dashboard)`)
-- [ ] Products CRUD + drag-and-drop ordering
-- [ ] Product limit enforced server-side (30 / 200 / 1000) with a clear Arabic message naming the limit
-- [ ] Sections: enable / disable / reorder + settings via `site-contract` schemas, subject to `canEdit`
-- [ ] Appearance: template selection limited to `templates_allowed`
-- [ ] Color editor: 5 presets in `preset` mode, free picker in `custom` mode, contrast guard in both
-- [ ] Business details: name, tagline, about, address, phones, WhatsApp, opening hours
-- [ ] Every managed-content field respects `canEdit`
-- [ ] Admin-locked fields render read-only with "اطلب تعديل" + remaining quota from `remainingChangeRequests()`
-- [ ] At zero remaining, the button is disabled and explains the ₪25 add-on
-- [ ] Analytics screen ("إحصائيات الزيارات") behind `can(tenantId,'analytics')`, reading the tenant's Umami websiteId
-- [ ] **No orders inbox in V1** — and no placeholder screen; order screens arrive in Phase 5
-- [ ] staff role is products + orders + media (Q13); the orders scope simply has no surface until Phase 5
-- [ ] staff never reaches billing or subscription screens, by navigation or URL
-- [ ] Staff management visible only when `staff_accounts` is on
-- [ ] Advanced settings only when enabled: custom domain, PWA toggle, payment gateway, SEO fields
-- [ ] Data export via `exportTenantData(…, {mode:'self_serve'})` behind `can(tenantId,'data_export')` — tmp prefix, short-lived signed URL, and it **must not touch the Subscription export columns** (clobbering them would break a suspended merchant's link)
-- [ ] Onboarding checklist
-- [ ] `messages/ar/dashboard.json`
-- [ ] `docs/decisions/b2.md`
-- [ ] Gate: a merchant without `custom_domain` never sees that section; an admin-locked field is locked with an accurate quota that a rejection refunds; a staff user cannot reach billing by URL; an أساسي merchant sees no analytics screen; all copy natural Arabic RTL
+- [x] Products CRUD + drag-and-drop ordering — with keyboard move buttons and a live region, because a shop owner does this on a phone
+- [x] Product limit enforced server-side (30 / 200 / 1000) with a clear Arabic message naming the limit; the tenant row is locked `FOR UPDATE` first so two saves cannot both admit the last one
+- [x] **Category CRUD**, because nobody else can create one and A2's categories section would otherwise stay empty forever on every real account
+- [x] Sections: enable / disable / reorder + settings via `site-contract` schemas, subject to `canEdit`
+- [x] Appearance: template selection limited to `templates_allowed`
+- [x] Color editor: 5 presets in `preset` mode, free picker in `custom` mode, contrast guard in both — and what the guard MOVED is reported, never applied in silence
+- [x] Business details: name, tagline, about, address, phones, WhatsApp, opening hours
+- [x] Every managed-content field respects `canEdit`, refused in the SERVICE and not only by the form
+- [x] Admin-locked fields render read-only with "اطلب تعديل" + remaining quota from `remainingChangeRequests()`
+- [x] At zero remaining, the button is disabled and explains the ₪25 add-on
+- [x] Analytics screen ("إحصائيات الزيارات") behind `can(tenantId,'analytics')`, reading the tenant's Umami websiteId
+- [x] **No orders inbox in V1** — and no placeholder screen; order screens arrive in Phase 5
+- [x] staff role is products + orders + media (Q13); the orders scope simply has no surface until Phase 5
+- [x] staff never reaches billing or subscription screens, by navigation or URL — a refused scope is a 404, not a 403
+- [x] Staff management visible only when `staff_accounts` is on
+- [x] Advanced settings only when enabled: custom domain, PWA toggle, payment gateway, SEO fields — invisible rather than disabled
+- [x] Data export via `exportTenantData(…, {mode:'self_serve'})` behind `can(tenantId,'data_export')` — tmp prefix, short-lived signed URL, and it **does not touch the Subscription export columns** (asserted in the integration suite)
+- [x] Onboarding checklist, derived from the data rather than from stored flags that drift
+- [x] **`/forgot-password` and `/reset-password` on `app.*`** — the `redirectTo` every owner and staff invitation already pointed at, which resolved to a 404 until now
+- [x] The impersonation banner (the A1 carry-forward), reading A1's copy and posting to A1's stop endpoint
+- [x] `messages/ar/dashboard.json`
+- [x] `docs/decisions/b2.md`
+- [x] Gate: a merchant without `custom_domain` never sees that section; an admin-locked field is locked with an accurate quota that a rejection refunds; a staff user cannot reach billing by URL; an أساسي merchant sees no analytics screen; all copy natural Arabic RTL
 
 ### B3 — Demo generator and the whole demo surface (owns `src/server/demo` generator code, `src/app/(admin)/demos/**`, `src/app/(public)/**` incl. its layout)
 - [ ] Path 1 — pack picker under `(admin)/demos` creates the demo via `billing.createDemo()`
@@ -367,7 +373,7 @@ create, since `isCapabilityVisible()` is fail-closed (raised by A2 at review).
 
 ### Group B merge (main session, Fable 5 / Opus)
 - [x] Review + merge `phase-b1`, gates green — 15 verified findings fixed first; see `docs/DECISIONS.md`
-- [ ] Review + merge `phase-b2`, gates green
+- [x] Review + merge `phase-b2`, gates green — typecheck, lint, 678 unit + integration, `next build` and the full e2e (82 specs) all run in the MAIN checkout, because a Group B worktree cannot build: its `node_modules` is a symlink Turbopack refuses
 - [ ] Review + merge `phase-b3`, gates green
 - [ ] Decision files folded into `docs/DECISIONS.md`
 - [ ] Worktrees and branches removed

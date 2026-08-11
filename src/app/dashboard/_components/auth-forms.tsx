@@ -98,6 +98,16 @@ export function MerchantSignInForm({ noMembership }: { noMembership?: boolean })
       </p>
 
       {/*
+        Q1, STATED to the visitor rather than merely enforced in code — the Phase 1 placeholder
+        said it here and the shared hostname-resolution e2e asserts it, which is how dropping it
+        was caught. It belongs on this card anyway: a sign-in form with no sign-up link beside it
+        leaves a shop owner wondering whether they missed the button.
+      */}
+      {step === 'credentials' ? (
+        <p className="sbd-hint">{t('common', 'auth.noSelfRegistration')}</p>
+      ) : null}
+
+      {/*
         A signed-in user with no membership is a real state, not an error: a super admin who
         opened app.* without impersonating anyone, or someone whose membership was removed while
         they were away. Saying so beats a sign-in form that appears to do nothing when used.

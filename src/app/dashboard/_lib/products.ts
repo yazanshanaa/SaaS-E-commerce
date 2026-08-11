@@ -96,6 +96,27 @@ const VARIANT_PREVIEW = (variants: Array<{ kind: string; format: string; url: st
   variants.find((v) => v.kind === 'thumb' && v.format === 'webp')?.url ??
   null;
 
+/**
+ * A thumbnail is never worth a 500.
+ *
+ * `publicUrl` throws for a key outside the media segment and `storage()` throws outright when no
+ * adapter is registered — which is a deployment problem, not a catalogue problem. A merchant
+ * whose product list refuses to render because the CDN is misconfigured has lost their whole
+ * shop; one whose product list renders without pictures has lost the pictures. A2 makes exactly
+ * the same trade in `src/app/site/_data/media.ts`.
+ */
+async function safePublicUrl(): Promise<(key: string) => string | null> {
+  const { mediaStorage } = await import('@/server/media');
+
+  return (key: string) => {
+    try {
+      return mediaStorage().publicUrl(key);
+    } catch {
+      return null;
+    }
+  };
+}
+
 // -----------------------------------------------------------------------------
 // Reading
 // -----------------------------------------------------------------------------
@@ -141,13 +162,14 @@ export async function listProducts(ctx: MerchantContext): Promise<ProductRow[]> 
   });
 
   // URLs are minted by the media module, which is the only place allowed to know the CDN base.
-  const { mediaStorage } = await import('@/server/media');
-  const store = mediaStorage();
+  const publicUrl = await safePublicUrl();
 
   return rows.map((row) => {
     const first = row.images[0];
     const variants =
-      first?.media.variants.map((v) => ({ ...v, url: store.publicUrl(v.key) })) ?? [];
+      first?.media.variants
+        .map((v) => ({ ...v, url: publicUrl(v.key) }))
+        .filter((v): v is typeof v & { url: string } => v.url !== null) ?? [];
 
     return {
       id: row.id,
@@ -200,8 +222,7 @@ export async function getProduct(
 
   if (!row) return null;
 
-  const { mediaStorage } = await import('@/server/media');
-  const store = mediaStorage();
+  const publicUrl = await safePublicUrl();
 
   return {
     ...row,
@@ -213,7 +234,9 @@ export async function getProduct(
       isPrimary: image.isPrimary,
       ready: image.media.status === 'ready',
       previewUrl: VARIANT_PREVIEW(
-        image.media.variants.map((v) => ({ ...v, url: store.publicUrl(v.key) })),
+        image.media.variants
+          .map((v) => ({ ...v, url: publicUrl(v.key) }))
+          .filter((v): v is typeof v & { url: string } => v.url !== null),
       ),
     })),
   };

@@ -167,8 +167,48 @@ export function storefrontHost(slug: string): string {
   return `${slug}.${getEnv().DOMAIN}`;
 }
 
+/**
+ * The port the platform actually answers on, or none.
+ *
+ * In production there is no port and this is the empty string. In development and in the e2e
+ * stack the platform listens on one, and a URL built without it points at a server that is not
+ * there. `BETTER_AUTH_URL` is the only place that port is written down, which is why it is the
+ * source here — the same derivation `platformOrigins()` already makes for trusted origins, and
+ * for the same reason.
+ */
+export function publicPortSuffix(): string {
+  const configured = getEnv().BETTER_AUTH_URL;
+  if (!configured) return '';
+
+  try {
+    const port = new URL(configured).port;
+    return port ? `:${port}` : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * A URL a HUMAN will open, on one of this platform's own hosts.
+ *
+ * IT CARRIES THE PORT, and that is not a detail. better-auth validates `callbackURL` against
+ * `trustedOrigins`, which `platformOrigins()` builds WITH the port — so a reset link built
+ * without one produced two origins that could never match and answered
+ * `{"code":"INVALID_CALLBACK_URL"}`. Every owner invitation A1 sends and every staff invitation
+ * B2 sends goes through this function, so in development and in the e2e stack the whole
+ * invitation path was dead: the mail arrived, the link resolved, and better-auth refused it.
+ *
+ * Production was unaffected — there is no port there, so the two agreed by accident. That is
+ * precisely what made it survive: the one environment where it worked is the one nobody was
+ * building in. It is also the second time this exact mismatch has cost this platform a login;
+ * `platformOrigins()` carries the note from the first.
+ *
+ * Q18's export link goes through here too, so a suspended merchant's download works in dev now
+ * as well.
+ */
 export function absoluteUrl(host: string, pathname = '/'): string {
-  return `${getEnv().PUBLIC_SCHEME}://${host}${pathname.startsWith('/') ? pathname : `/${pathname}`}`;
+  const path = pathname.startsWith('/') ? pathname : `/${pathname}`;
+  return `${getEnv().PUBLIC_SCHEME}://${host}${publicPortSuffix()}${path}`;
 }
 
 /** `app.{DOMAIN}/export/{token}` — the stable, revocable Q18 link. Never a storage URL. */

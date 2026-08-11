@@ -595,3 +595,66 @@ track.
 - **Pinned by an integration test that drives the real API** (`membership-and-actor.test.ts`),
   because the bug lived exactly in the gap between a hand-built session object and a real one — the
   existing suite asserted the RLS policy and the `authDb(userId)` call and was green throughout.
+
+---
+
+## B2 — Merchant dashboard
+
+Track decisions in full in `docs/decisions/b2.md`. What a later phase would otherwise re-derive:
+
+### Two more sync points, both found by building the screens
+
+- **`absoluteUrl()` dropped the port, so every invitation link was dead in dev and in e2e.**
+  `platformOrigins()` builds the trusted origins WITH the port; `absoluteUrl()` built the link
+  without one, and better-auth validates `callbackURL` against those origins — so the mail
+  arrived, the link resolved, and the API answered `INVALID_CALLBACK_URL`. Production was
+  unaffected (there is no port there), which is exactly why it survived: the one environment
+  where it worked is the one nobody builds in. It is the second time this mismatch has cost this
+  platform a login. `absoluteUrl` now derives the port from `BETTER_AUTH_URL`, the same source
+  `platformOrigins` uses, and Q18's export link and the demo link get the fix with it.
+- **`/reset-password` on `app.{DOMAIN}` did not exist.** It is the `redirectTo` A1 passes for
+  every owner invitation, so every account ever opened received a working link to a 404. It is
+  B2's page and is now built, along with `/forgot-password`.
+
+### The dashboard's own rules
+
+- **A refused scope is a 404, not a 403** — for a wrong role and a missing feature alike. Telling
+  a staff member a billing screen exists is a map of what to try next; telling a basic-plan
+  merchant that analytics sits behind a plan is a sales pitch the page was not asked to make.
+- **The nav is built on the server from both axes.** Hiding items client-side would ship a staff
+  member an inventory of what is not theirs, and would drift from the routes.
+- **`editable_by = admin` renders the field, filled in and read-only, with the change request on
+  the same submit.** The payload builders sit beside the writers in `_lib/site.ts` so the two
+  always describe the same change; A1 applies them verbatim.
+- **The export LINK is gated on `can(data_export)`, not on the `export` scope.**
+  `checkMerchantAccess` deliberately leaves that scope un-feature-gated so the suspension export
+  never consults a flag — so the scope is true for every owner, and using it showed a basic-plan
+  merchant a link to a page that 404s.
+- **Category CRUD lives in B2.** Nobody else can create one, and A2's categories section would
+  otherwise stay empty forever on every real account.
+- **Custom domains are a recorded request, not a provisioning flow.** Phase 4 owns verification
+  and the globally unique hostname column `proxy.ts` resolves strangers against.
+
+### Two defects the tests found rather than the review
+
+- **Prices went through a float.** `Math.round(Number(v) * 100)` turns 19.955 shekels into 19.95,
+  because `19.955 * 100` is `1995.4999999999998`. The parser now splits the string and rounds on
+  the third digit.
+- **A substring check for a colon accepted zod 4's own English sentences as i18n keys** — its
+  messages read `Too small: expected string to have >=3 characters`. They never reached a merchant
+  (the resolver refuses an unknown namespace), but every ordinary validation failure became
+  indistinguishable from a message written on purpose. B2 matches the key SHAPE now. **A1's
+  `fieldErrorsFromZod` still has the substring check**; same fix, different owner.
+
+### Carried forward
+
+- **`pnpm build` and `pnpm e2e` cannot run from a Group B worktree** — its `node_modules` is a
+  symlink into the main checkout and Turbopack refuses it. Both gates were run here at the merge.
+  Whoever bootstraps a worktree next should run `pnpm install` in it rather than linking.
+- **`STORAGE_DRIVER=local` under `NODE_ENV=production` throws**, which the e2e stack hits: the
+  dashboard now degrades (a product list renders without thumbnails, the library says it cannot
+  read the images) instead of answering 500, but B1's purge still fails there. That is the Group A
+  carry-forward about the e2e stack needing an adapter — **Phase 7**.
+- **`staffInviteTemplate` is still unused.** Staff invitations reuse better-auth's password-reset
+  flow, exactly as A1 does for a new owner, because the reset URL exists only inside the
+  `sendResetPassword` hook in the auth config. The screen's Arabic promises what actually happens.

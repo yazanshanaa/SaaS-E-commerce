@@ -43,3 +43,67 @@ describe('the platform trusted origins', () => {
     expect(platformOrigins('not a url')).toContain(`http://${platformHost('admin')}`);
   });
 });
+
+/**
+ * The OTHER half of the same mismatch, found by B2's e2e.
+ *
+ * `platformOrigins()` carries the port; `absoluteUrl()` did not. Every link a human opens on one
+ * of our own hosts is built by `absoluteUrl` — password invitations, the impersonation handoff,
+ * the Q18 export link, the demo link — and better-auth validates `callbackURL` against the
+ * trusted origins. So in development and in the e2e stack the whole invitation path was dead:
+ * the mail arrived, the link resolved, and better-auth answered `INVALID_CALLBACK_URL`.
+ *
+ * Production was fine, because there is no port there and the two agreed by accident — which is
+ * exactly why it survived: the only environment where it worked was the one nobody builds in.
+ */
+describe('a link a human will open', () => {
+  const withBaseUrl = async <T,>(
+    value: string | undefined,
+    fn: () => Promise<T>,
+  ): Promise<T> => {
+    const { resetEnvCache } = await import('@/env');
+    const previous = process.env.BETTER_AUTH_URL;
+
+    if (value === undefined) delete process.env.BETTER_AUTH_URL;
+    else process.env.BETTER_AUTH_URL = value;
+    resetEnvCache();
+
+    try {
+      // AWAITED inside the try. Returning the promise instead runs `finally` first, which
+      // restores the environment before the callback has read it — and the test then measures
+      // the ambient `.env` rather than the value it set.
+      return await fn();
+    } finally {
+      if (previous === undefined) delete process.env.BETTER_AUTH_URL;
+      else process.env.BETTER_AUTH_URL = previous;
+      resetEnvCache();
+    }
+  };
+
+  it('carries the port the platform actually answers on', async () => {
+    const url = await withBaseUrl('http://app.souqbartaa.test:3100', async () => {
+      const { absoluteUrl, platformHost: host } = await import('@/env');
+      return absoluteUrl(host('app'), '/reset-password');
+    });
+
+    expect(url).toBe('http://app.souqbartaa.test:3100/reset-password');
+  });
+
+  it('matches a trusted origin exactly — the comparison better-auth makes', async () => {
+    await withBaseUrl('http://app.souqbartaa.test:3100', async () => {
+      const { absoluteUrl, platformHost: host } = await import('@/env');
+      const link = absoluteUrl(host('app'), '/reset-password');
+
+      expect(platformOrigins('http://app.souqbartaa.test:3100')).toContain(new URL(link).origin);
+    });
+  });
+
+  it('omits the port in production, where there is none', async () => {
+    const url = await withBaseUrl(undefined, async () => {
+      const { absoluteUrl, platformHost: host } = await import('@/env');
+      return absoluteUrl(host('app'), '/reset-password');
+    });
+
+    expect(url).toBe('http://app.souqbartaa.test/reset-password');
+  });
+});

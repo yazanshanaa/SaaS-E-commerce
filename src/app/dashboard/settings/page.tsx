@@ -3,6 +3,7 @@ import { formatDate, formatNumber, t } from '@/shared/i18n';
 import { getSiteDetails, listAnnouncements, listSocialLinks, socialPlatformSchema } from '../_lib/site';
 import { loadCapabilityContext, listOwnChangeRequests } from '../_lib/change-requests';
 import { merchantCan } from '../_lib/context';
+import { canSelfServeExport } from '../_lib/export';
 import { param, requireMerchantPage } from '../_components/guard';
 import { ActionForm } from '../_components/action-form';
 import { CapabilityTag, LockedNotice, isExhausted } from '../_components/locked-field';
@@ -58,7 +59,15 @@ export default async function SettingsPage({
       listAnnouncements(ctx),
       loadCapabilityContext(ctx),
       listOwnChangeRequests(ctx, 10),
-      merchantCan(ctx, 'export'),
+      /**
+       * The EXPORT link is gated on `canSelfServeExport`, not on the `export` scope.
+       *
+       * `checkMerchantAccess` deliberately leaves `export` un-feature-gated, because the
+       * SUSPENSION export runs on every plan (Q18) and must never consult a flag. So the scope
+       * is true for any owner, and using it here showed a basic-plan merchant a link to a page
+       * that 404s — an invitation to discover a feature they do not have by bouncing off it.
+       */
+      canSelfServeExport(ctx),
       merchantCan(ctx, 'domain'),
     ]);
 

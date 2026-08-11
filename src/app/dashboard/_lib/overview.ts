@@ -1,7 +1,7 @@
 import { can } from '@/server/entitlements';
 import { storageUsage, type StorageUsageView } from '@/server/media';
 import { isAnalyticsConfigured, websiteVisits, type VisitStats } from '@/server/admin/analytics';
-import { storefrontHost } from '@/env';
+import { absoluteUrl, storefrontHost } from '@/env';
 import type { MerchantContext } from './context';
 
 /**
@@ -92,7 +92,9 @@ export async function loadOverview(ctx: MerchantContext): Promise<OverviewView |
   return {
     tenantName: tenant.name,
     siteName: site?.name ?? tenant.name,
-    storefrontUrl: `https://${storefrontHost(tenant.slug)}`,
+    // Through `absoluteUrl` so the link carries the port in dev and the e2e stack; in
+    // production there is none and this is the bare origin the merchant hands to customers.
+    storefrontUrl: absoluteUrl(storefrontHost(tenant.slug)),
     isSuspended: tenant.state === 'suspended',
     steps,
     doneCount: steps.filter((step) => step.done).length,

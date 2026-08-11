@@ -111,6 +111,9 @@ test.describe('from an account being opened to a merchant running their shop', (
     await page.locator('#ownerEmail').fill(MERCHANT.ownerEmail);
     await page.locator('#planKey').selectOption('basic');
     await page.locator('#billingPeriod').selectOption('monthly');
+    // A1 sends the invitation only when asked to — an operator opening an account for someone
+    // they are about to phone should not fire an email at them first.
+    await page.locator('#sendPasswordLink-on').check();
     await page.getByRole('button', { name: 'افتح الحساب' }).click();
 
     await expect(page.getByRole('heading', { name: MERCHANT.shop })).toBeVisible();
@@ -137,9 +140,15 @@ test.describe('from an account being opened to a merchant running their shop', (
     await expect(page.getByText(MERCHANT.shop).first()).toBeVisible();
     await expect(page.getByRole('heading', { name: 'خطوات تجهيز المتجر' })).toBeVisible();
 
-    const cookies = await page.context().cookies();
+    /**
+     * Scoped to the APP origin, because this context also holds the admin session from the
+     * account creation above — and `crossSubDomainCookies` is disabled precisely so the two
+     * never mix. Asking for all cookies and taking the first would have found the admin's.
+     */
+    const cookies = await page.context().cookies(APP);
     const session = cookies.find((cookie) => cookie.name.includes('session'));
     expect(session?.domain).toContain(`app.${E2E.domain}`);
+    expect(session?.httpOnly).toBe(true);
   });
 
   test('the merchant adds a product and sees it in their catalogue', async ({ page }) => {
