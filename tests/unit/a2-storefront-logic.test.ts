@@ -418,7 +418,15 @@ describe('a stored section that no longer fits its schema', () => {
 
     expect(() => config).not.toThrow();
     expect(config.limit).toBe(12);
-    expect(config.columns).toBe(3);
+    /**
+     * ABSENT, not 3 — and the degraded row is the case that shows why the schema stopped
+     * defaulting it. `columns` has no default any more, because `ProductsGridSection` reads
+     * `config.columns ?? template.layout.gridColumns` and an absent value is how a template's own
+     * grid is honoured. So a section whose stored column count is unusable falls back to the grid
+     * the merchant's template was designed around, rather than to a hardcoded three that overrode
+     * warsheh and neon-souq everywhere (docs/decisions/b3.md §9).
+     */
+    expect(config).not.toHaveProperty('columns');
   });
 
   it('survives a config that is not even an object', () => {
