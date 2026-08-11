@@ -54,6 +54,14 @@ export interface ExportArtifact {
   sizeBytes: number;
   mode: ExportMode;
   generatedAt: Date;
+  /**
+   * Whether the suspension stamp landed on the Subscription.
+   *
+   * `false` means the row moved while the archive was being built — reactivated, or re-suspended
+   * into a new window — so the artifact was discarded and NOTHING may be sent about it. Always
+   * `true` in self-serve mode, which stamps nothing by design.
+   */
+  stamped: boolean;
   /** What actually went in — so the caller can tell the merchant, and B1 can assert. */
   contents: {
     products: number;

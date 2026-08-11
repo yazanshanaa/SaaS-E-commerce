@@ -191,6 +191,34 @@ async function forgetTombstonesExcept(keep: Set<string>): Promise<void> {
   }
 }
 
+/**
+ * Move a suspension backwards in time, in the DATABASE.
+ *
+ * The retention window is enforced by the `subscription_export_token_lookup` policy, whose
+ * predicate is `retention_until > now()` — Postgres's clock, which `vi.setSystemTime` cannot
+ * touch. A "day 29" assertion built on the JS clock therefore measures nothing: it passes
+ * identically on day 4000, which is the one answer that would mean the window is broken. Ageing
+ * the ROW is what actually puts the assertion inside the window.
+ *
+ * Through the owner connection because the point is to fabricate a state that took a month to
+ * reach, not to reach it through a transition.
+ */
+async function ageSuspension(tenantId: string, days: number): Promise<void> {
+  const client = new PgClient({ connectionString: process.env.DATABASE_URL_ADMIN });
+  await client.connect();
+  try {
+    await client.query(
+      `UPDATE subscriptions
+          SET suspended_at    = suspended_at    - make_interval(days => $2::int),
+              retention_until = retention_until - make_interval(days => $2::int)
+        WHERE tenant_id = $1`,
+      [tenantId, days],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
 let preexistingTombstones: Set<string>;
 
 beforeAll(async () => {
@@ -453,6 +481,117 @@ describe('extending retention', () => {
     const fresh = (await subscriptionOf(tenant.id))!.exportDownloadToken!;
     expect((await resolveExportDownload(fresh)).ok).toBe(true);
   });
+
+  /**
+   * ROTATING IS HALF THE FEATURE, AND THE HALF THAT HURTS ON ITS OWN.
+   *
+   * The button exists for a merchant who called because they cannot find their link. Rotation
+   * kills the one already in their phone the instant it is pressed, so an implementation that
+   * stops there leaves them with nothing — and the screen deliberately never prints a link, so
+   * the operator cannot read it out either. The spec says "rotates the token AND re-sends the
+   * message"; this is the second half.
+   */
+  it('re-sends the message, because rotating alone leaves the merchant with nothing', async () => {
+    const tenant = await createTenant({ slug: 'resend-whatsapp' });
+    await suspend(tenant.id);
+    await runJobsToCompletion();
+
+    const before = await eventsFor(tenant.id, 'subscription.suspended');
+    expect(before).toHaveLength(1);
+
+    const { url } = await reissueExportLink(tenant.id);
+
+    const after = await eventsFor(tenant.id, 'subscription.suspended');
+    expect(after).toHaveLength(2);
+
+    // The outbound message carries the NEW link — a platform route, never a storage URL.
+    const resent = after[1]!.payload as { exportUrl: string; tenantName: string };
+    expect(resent.exportUrl).toBe(url);
+    expect(resent.exportUrl).toContain('/export/');
+    expect(resent.tenantName).not.toBe('');
+
+    // …and the merchant's own record of it, so support can answer "you never sent me anything".
+    expect(
+      await adminDb().notification.count({
+        where: { tenantId: tenant.id, audience: 'merchant', key: 'notifications.suspended' },
+      }),
+    ).toBe(2);
+  });
+
+  /** Never a second promise of a copy that does not exist. */
+  it('rotates but sends nothing when the artifact never built', async () => {
+    const tenant = await createTenant({ slug: 'resend-no-artifact' });
+    await suspend(tenant.id);
+    // Deliberately do NOT run the export job.
+
+    await reissueExportLink(tenant.id);
+
+    expect(await eventsFor(tenant.id, 'subscription.suspended')).toHaveLength(0);
+  });
+});
+
+describe('a reactivation that lands while the archive is still being written', () => {
+  /**
+   * The window the two-commit design opens and nothing was closing.
+   *
+   * Phase 2 of the export holds no transaction — deliberately, because zipping a pro catalogue
+   * is minutes of I/O — so the merchant can pay and be reactivated between the state the job read
+   * and the object it writes. What must NOT happen then: a live account left carrying a standing
+   * snapshot of its own catalogue (nothing would ever collect it — `_exports/` is excluded from
+   * orphan cleanup), and a WhatsApp telling a paying merchant their site is closed, with a link
+   * built from the token reactivation just revoked.
+   */
+  it('discards the artifact and stays silent instead of stamping a live account', async () => {
+    const tenant = await createTenant({ slug: 'raced-reactivate' });
+    const suspension = await suspend(tenant.id);
+
+    const racing = new LocalStorageAdapter(storageRoot);
+    const realPut = racing.put.bind(racing);
+    let reactivatedDuringBuild = false;
+
+    racing.put = async (key, body, options) => {
+      if (!reactivatedDuringBuild && key.includes('_exports/')) {
+        reactivatedDuringBuild = true;
+        // The merchant pays, mid-build.
+        await reactivate(tenant.id, { currentPeriodEnd: addDays(new Date(), 30) });
+      }
+      return realPut(key, body, options);
+    };
+    setStorageAdapter(racing);
+
+    try {
+      await runJobsToCompletion();
+    } finally {
+      setStorageAdapter(new LocalStorageAdapter(storageRoot));
+    }
+
+    expect(reactivatedDuringBuild).toBe(true);
+
+    const row = await subscriptionOf(tenant.id);
+    expect(row?.status).toBe('active');
+    // The stamp must not land on the row it no longer belongs to.
+    expect(row?.exportKey).toBeNull();
+    expect(row?.exportGeneratedAt).toBeNull();
+    expect(row?.retentionUntil).toBeNull();
+
+    // And the object is taken back, not left under a key nothing points at.
+    const adapter = new LocalStorageAdapter(storageRoot);
+    expect(await adapter.list(`${tenantPrefix(tenant.id)}_exports/`)).toHaveLength(0);
+
+    // Never tell a merchant who has just paid that their site is closed.
+    expect(await eventsFor(tenant.id, 'subscription.suspended')).toHaveLength(0);
+    expect(
+      await adminDb().notification.count({
+        where: { tenantId: tenant.id, key: 'notifications.suspended' },
+      }),
+    ).toBe(0);
+
+    // The revoked token is dead either way — there is nothing behind it.
+    expect(await resolveExportDownload(suspension.exportDownloadToken)).toEqual({
+      ok: false,
+      reason: 'invalid_token',
+    });
+  });
 });
 
 describe('what the sweep must never touch', () => {
@@ -600,11 +739,25 @@ describe('the export download link', () => {
 
     // SigV4 caps a presign at seven days and R2 enforces the S3 limit, so a 30-day promise built
     // on one dies on day 8 — for the merchant most likely to need it, the one who waited.
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(addDays(suspension.suspendedAt, 29));
+    //
+    // The row is aged rather than the clock faked: the window lives in a Postgres policy
+    // (`retention_until > now()`), so `vi.setSystemTime` moves nothing this path reads.
+    await ageSuspension(tenant.id, 29);
 
     const resolved = await resolveExportDownload(suspension.exportDownloadToken);
     expect(resolved.ok).toBe(true);
+
+    /**
+     * And the SAME token is refused once the window closes.
+     *
+     * This half is what proves the half above was measuring anything: without it, an assertion
+     * that never consults the deadline passes whether the deadline is honoured or ignored.
+     */
+    await ageSuspension(tenant.id, 2);
+    expect(await resolveExportDownload(suspension.exportDownloadToken)).toEqual({
+      ok: false,
+      reason: 'invalid_token',
+    });
   });
 
   it('answers "not ready" rather than handing out a link to nothing', async () => {
@@ -690,6 +843,13 @@ describe('when the export never appears', () => {
         where: { tenantId: tenant.id, audience: 'super_admin', key: 'notifications.exportFailed' },
       }),
     ).toBe(1);
+
+    /**
+     * The OUTBOUND alarm counts too, and asserting only the in-platform row hid the fact that it
+     * did not. The sweep re-schedules a verify every night for the rest of the window, so an
+     * unguarded emit is up to thirty identical webhooks about one failure.
+     */
+    expect(await eventsFor(tenant.id, 'subscription.export_failed')).toHaveLength(1);
 
     setStorageAdapter(new LocalStorageAdapter(storageRoot));
 
@@ -963,18 +1123,56 @@ describe('after a purge nothing live survives', () => {
     const adapter = new LocalStorageAdapter(storageRoot);
     await adapter.put(`${tenantPrefix(tenant.id)}media/m2/full.webp`, Buffer.from([9]));
 
-    // The job that "was already dequeued": it fails closed on the purging state rather than
-    // writing into a prefix the sweep is about to empty.
+    /**
+     * A REAL queued job, and a drainer that behaves like the real one.
+     *
+     * A drainer stubbed to return a number proves only that a number was returned: it removes
+     * nothing, so the assertion that no objects survive is satisfied by the fact that nothing
+     * was ever going to write one. This mirrors `removeTenantJobs` instead — matching on the
+     * payload's `tenantId`, which is what actually decides whether B1's own SystemJobs are
+     * dropped — and then checks the second layer separately.
+     */
+    pending.push({
+      queue: 'media',
+      job: { scope: 'tenant', name: 'process-upload', tenantId: tenant.id, data: {} } as Job,
+    });
+
     let drained = 0;
-    setJobDrainer(async () => {
-      drained += 1;
-      return 2;
+    setJobDrainer(async (tenantId) => {
+      const before = pending.length;
+      pending = pending.filter((record) => {
+        const data = record.job.data as { tenantId?: string };
+        const owner = record.job.scope === 'tenant' ? record.job.tenantId : data.tenantId;
+        return owner !== tenantId;
+      });
+      drained += before - pending.length;
+      return before - pending.length;
     });
 
     const { purgeTenant } = await import('@/server/billing');
-    await purgeTenant({ tenantId: tenant.id, reason: 'super_admin_purge' });
+    const result = await purgeTenant({ tenantId: tenant.id, reason: 'super_admin_purge' });
 
+    // Layer one: the queued job is gone, and the purge reports what it actually dropped.
     expect(drained).toBe(1);
+    expect(result.jobsDropped).toBe(1);
+    expect(pending).toHaveLength(0);
+
+    // Layer two: whatever WAS already dequeued cannot write. The tenant is gone by now, so the
+    // wrapper every TenantJob runs inside refuses it rather than letting it recreate a prefix.
+    await expect(
+      withTenantTxn(tenant.id, async (tx) =>
+        tx.media.create({
+          data: {
+            tenantId: tenant.id,
+            key: `${tenantPrefix(tenant.id)}media/late/full.webp`,
+            mimeType: 'image/webp',
+            sizeBytes: 1,
+            status: 'ready',
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+
     expect(await adapter.list(tenantPrefix(tenant.id))).toHaveLength(0);
 
     setJobDrainer(async () => 0);

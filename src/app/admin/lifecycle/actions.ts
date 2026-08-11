@@ -133,6 +133,20 @@ export async function rebuildExportAction(form: FormData): Promise<void> {
   }
 
   const stamp = account.subscription.suspendedAt.toISOString();
+
+  /**
+   * A DISTINCT job id, and this is the whole reason the button works.
+   *
+   * It used to reuse `suspend-export:{id}:{stamp}` — the id the suspension itself enqueued. But
+   * BullMQ treats `add` with an existing job id as a no-op, and the failed job is still in the
+   * queue: that is exactly the state an operator presses this button in. So the recovery action
+   * for a failed export was silently dropped by the broker while reporting success, and the only
+   * thing that ever rebuilt anything was the nightly sweep.
+   *
+   * Minute granularity keeps the property that mattered — a double-click is still one job —
+   * without colliding with the attempt that already failed.
+   */
+  const attemptId = new Date().toISOString().slice(0, 16);
   const scheduled = await billing.dispatchJob(
     'lifecycle',
     systemJob(LIFECYCLE_JOBS.suspend, {
@@ -141,8 +155,7 @@ export async function rebuildExportAction(form: FormData): Promise<void> {
       subscriptionId: account.subscription.id,
       suspendedAt: stamp,
     }),
-    // Same id the suspension itself would have used: pressing the button twice is one job.
-    { jobId: `suspend-export:${account.subscription.id}:${stamp}` },
+    { jobId: `suspend-export-manual:${account.subscription.id}:${stamp}:${attemptId}` },
   );
 
   if (!scheduled) {

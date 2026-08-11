@@ -122,18 +122,60 @@ export async function runSuspensionExport(tenantId: string): Promise<SuspendJobR
         suspendedAt: state.suspendedAt,
       });
 
-  const key = artifact?.key ?? state.exportKey!;
-  const exportUrl = state.exportDownloadToken ? exportDownloadUrl(state.exportDownloadToken) : '';
+  /**
+   * The archive was built holding no transaction, so the row may have moved under it. The stamp
+   * is conditional on this suspension still being the current one and reports whether it landed;
+   * when it did not, `exportTenantData` has already taken the object back.
+   *
+   * Nothing may be sent in that case. The message would say "your site is closed" to a merchant
+   * who has just paid, and carry a link built from a token that reactivation revoked.
+   */
+  if (artifact && !artifact.stamped) {
+    logger().info({ tenantId }, 'suspension export discarded: state changed during the build');
+    return { phase: 'export', exported: false, reason: 'not_suspended' };
+  }
 
-  await withTenantTxn(tenantId, async (tx) => {
+  const key = artifact?.key ?? state.exportKey!;
+
+  /**
+   * RE-READ THE TOKEN HERE, not from the pre-build snapshot.
+   *
+   * `reissueExportLink` rotates it, so a build that started before an operator pressed "re-send"
+   * would otherwise mail out the link that rotation had already killed. The transaction also
+   * re-asserts the state one last time: it opens with `withTenantTxn`, which refuses a purging
+   * tenant and throws for one that is already gone — so an export racing a purge cannot announce
+   * itself either.
+   */
+  const sent = await withTenantTxn(tenantId, async (tx) => {
+    const fresh = await tx.subscription.findUnique({
+      where: { tenantId },
+      select: {
+        status: true,
+        suspendedAt: true,
+        retentionUntil: true,
+        exportDownloadToken: true,
+        tenant: { select: { name: true } },
+      },
+    });
+
+    if (
+      !fresh ||
+      fresh.status !== 'suspended' ||
+      fresh.suspendedAt?.getTime() !== state.suspendedAt!.getTime()
+    ) {
+      return false;
+    }
+
     await emitEvent(tx, {
       tenantId,
       type: 'subscription.suspended',
       payload: {
-        tenantName: state.tenant.name,
-        suspendedAt: state.suspendedAt!.toISOString(),
-        retentionUntil: state.retentionUntil?.toISOString() ?? '',
-        exportUrl,
+        tenantName: fresh.tenant.name,
+        suspendedAt: fresh.suspendedAt.toISOString(),
+        retentionUntil: fresh.retentionUntil?.toISOString() ?? '',
+        exportUrl: fresh.exportDownloadToken
+          ? exportDownloadUrl(fresh.exportDownloadToken)
+          : '',
       },
     });
 
@@ -142,11 +184,18 @@ export async function runSuspensionExport(tenantId: string): Promise<SuspendJobR
       key: LIFECYCLE_NOTIFICATIONS.suspended,
       level: 'warning',
       data: {
-        tenant: state.tenant.name,
-        date: state.retentionUntil?.toISOString() ?? '',
+        tenant: fresh.tenant.name,
+        date: fresh.retentionUntil?.toISOString() ?? '',
       },
     });
+
+    return true;
   });
+
+  if (!sent) {
+    logger().info({ tenantId }, 'suspension message not sent: no longer the same suspension');
+    return { phase: 'export', exported: false, reason: 'not_suspended' };
+  }
 
   return {
     phase: 'export',
@@ -189,17 +238,29 @@ export async function verifySuspensionExport(tenantId: string): Promise<SuspendJ
       },
     });
 
-    await emitEvent(tx, {
-      tenantId,
-      type: 'subscription.export_failed',
-      payload: {
-        tenantName: subscription.tenant.name,
-        retentionUntil: subscription.retentionUntil?.toISOString() ?? '',
-        // The CONFIGURED attempt budget, not an observed count: a processor cannot see BullMQ's
-        // retry state, and this number is what the recipient needs to know was exhausted.
-        attempts: EXPORT_JOB_ATTEMPTS,
-      },
-    });
+    /**
+     * The OUTBOUND alarm rides on the same idempotency as the in-platform one.
+     *
+     * The nightly sweep re-schedules a verify for every suspended tenant still missing its
+     * artifact, so an emit outside this guard fires a fresh webhook every morning for the rest
+     * of the retention window — up to thirty identical messages about one failure. That is the
+     * shape of an alert channel people learn to ignore, which is the failure this function
+     * exists to prevent, not to cause. `notifySuperAdmin` already writes at most one unread
+     * alert per key per tenant; `created` is that decision, and the event follows it.
+     */
+    if (created) {
+      await emitEvent(tx, {
+        tenantId,
+        type: 'subscription.export_failed',
+        payload: {
+          tenantName: subscription.tenant.name,
+          retentionUntil: subscription.retentionUntil?.toISOString() ?? '',
+          // The CONFIGURED attempt budget, not an observed count: a processor cannot see BullMQ's
+          // retry state, and this number is what the recipient needs to know was exhausted.
+          attempts: EXPORT_JOB_ATTEMPTS,
+        },
+      });
+    }
 
     return { phase: 'verify', ok: false, alerted: created };
   });

@@ -166,10 +166,12 @@ async function loadSubscription(tx: TenantTx, tenantId: string) {
       currentPeriodEnd: true,
       retentionUntil: true,
       retentionExtensions: true,
+      suspendedAt: true,
       exportKey: true,
       exportDownloadToken: true,
       exportFirstDownloadedAt: true,
       plan: { select: { hidden: true, key: true } },
+      tenant: { select: { name: true } },
     },
   });
   if (!subscription) throw new Error(`No subscription for tenant ${tenantId}`);
@@ -331,6 +333,19 @@ export async function suspend(
         suspendedAt,
         retentionUntil,
         exportDownloadToken: token,
+        /**
+         * Clear the previous window's export columns as part of the same commit.
+         *
+         * `reactivate` clears them on the ordinary path, but it is not the only way a row can
+         * arrive here carrying a stale key: an export that lands after a reactivation stamps one
+         * back (see `runSuspensionExport`, which now refuses to). If any stale key survived,
+         * `runSuspensionExport` would read it, SKIP the build, and send this merchant a working
+         * link to the previous period's catalogue — wrong data delivered, which is worse than a
+         * missing artifact because nothing looks broken.
+         */
+        exportKey: null,
+        exportGeneratedAt: null,
+        exportFirstDownloadedAt: null,
       },
     });
 
@@ -425,6 +440,39 @@ export async function scheduleSuspensionExport(
 }
 
 /**
+ * Stamp a finished suspension artifact onto the subscription it was built for — IF that is still
+ * the subscription in front of us. Returns whether it landed.
+ *
+ * This lives in `billing` and not in `src/server/export` for the reason invariant 5 exists: the
+ * predicate is lifecycle state (`status`, `suspendedAt`), and deciding whether a suspension is
+ * still the current one is this folder's job. `tests/unit/guardrails.test.ts` enforces exactly
+ * that boundary — `export` may write export METADATA and may not reason about lifecycle fields.
+ *
+ * Why it is conditional at all: the archive is built holding no transaction, because zipping a
+ * pro catalogue is minutes of I/O. An unconditional stamp therefore wrote `exportKey` onto
+ * whatever row it found when it finished, and that row may have been:
+ *   - REACTIVATED meanwhile — leaving a live, paying account carrying a standing snapshot of its
+ *     own catalogue, which is precisely what reactivation exists to remove, and which nothing
+ *     would ever collect (`_exports/` is excluded from orphan cleanup by design);
+ *   - RE-SUSPENDED into a NEW window whose own build is in flight — where the loser overwrites
+ *     the winner and points the merchant's link at the wrong archive.
+ *
+ * `updateMany` carrying the suspension's identity in the WHERE clause either matches that same
+ * suspension or matches nothing, and tells the caller which.
+ */
+export async function stampSuspensionExport(
+  tx: TenantTx,
+  input: { tenantId: string; suspendedAt: Date; key: string; generatedAt: Date },
+): Promise<boolean> {
+  const { count } = await tx.subscription.updateMany({
+    where: { tenantId: input.tenantId, status: 'suspended', suspendedAt: input.suspendedAt },
+    data: { exportKey: input.key, exportGeneratedAt: input.generatedAt },
+  });
+
+  return count > 0;
+}
+
+/**
  * The ONLY door back to active — and its full effect matters:
  *   status=active, suspendedAt and retentionUntil nulled, exportDownloadToken CLEARED (which
  *   revokes the link instantly, something a presigned URL could never offer),
@@ -469,7 +517,9 @@ export async function reactivate(
       tenantId,
       type: 'subscription.reactivated',
       payload: {
-        tenantName: '',
+        // The name, not an empty string: this payload is what n8n renders into the WhatsApp
+        // message, and a merchant with more than one shop cannot tell which one came back.
+        tenantName: subscription.tenant.name,
         currentPeriodEnd: options.currentPeriodEnd.toISOString(),
       },
     });
@@ -539,7 +589,7 @@ export async function extendRetention(
       tenantId,
       type: 'subscription.retention_extended',
       payload: {
-        tenantName: '',
+        tenantName: subscription.tenant.name,
         // The ACTUAL new date. Arabic copy renders this, never a hardcoded "30 days".
         retentionUntil: retentionUntil.toISOString(),
         exportUrl: subscription.exportDownloadToken
@@ -555,8 +605,23 @@ export async function extendRetention(
 }
 
 /**
- * Rotates the token and lets the caller re-send the message — for the ordinary case where the
- * merchant lost the WhatsApp. Rotating invalidates the old link by construction.
+ * Rotates the token AND re-sends the message — for the ordinary case where the merchant lost the
+ * WhatsApp. Rotating invalidates the old link by construction.
+ *
+ * THE RE-SEND IS THE POINT, and leaving it out inverted the feature. Rotation kills the link
+ * already in the merchant's phone the instant the button is pressed; if nothing then goes out,
+ * the merchant who called us because they could not find their link ends up with no working link
+ * at all — and the screen deliberately never prints one, so the operator cannot read it out
+ * either. Returning the URL to a caller that discards it is not a delivery mechanism.
+ *
+ * It re-emits `subscription.suspended` rather than a new event type, and that is deliberate:
+ *   - the vocabulary in `src/server/events/types.ts` is a forbidden shared file, so a new type
+ *     would be a sync point;
+ *   - more importantly, `WebhookEndpoint.eventTypes` filters delivery. A brand-new type reaches
+ *     nobody until every endpoint is reconfigured — which would leave this function silently not
+ *     sending all over again, the exact bug being fixed.
+ * The payload is identical to the original message with a fresh link, which is what "re-send"
+ * means to the person receiving it.
  */
 export async function reissueExportLink(tenantId: string): Promise<{ url: string }> {
   const token = await withTenantTxn(tenantId, async (tx) => {
@@ -579,6 +644,34 @@ export async function reissueExportLink(tenantId: string): Promise<{ url: string
         after: { reissued: true },
       },
     });
+
+    /**
+     * Only when there is something to link TO. If the artifact never built, the honest outcome is
+     * a rotated token and no message — never a second promise of a copy that does not exist.
+     */
+    if (subscription.exportKey) {
+      await emitEvent(tx, {
+        tenantId,
+        type: 'subscription.suspended',
+        payload: {
+          tenantName: subscription.tenant.name,
+          suspendedAt: subscription.suspendedAt?.toISOString() ?? '',
+          retentionUntil: subscription.retentionUntil?.toISOString() ?? '',
+          exportUrl: exportDownloadUrl(next),
+        },
+      });
+
+      const { LIFECYCLE_NOTIFICATIONS, notifyMerchant } = await import('@/server/jobs/notify');
+      await notifyMerchant(tx, {
+        tenantId,
+        key: LIFECYCLE_NOTIFICATIONS.suspended,
+        level: 'warning',
+        data: {
+          tenant: subscription.tenant.name,
+          date: subscription.retentionUntil?.toISOString() ?? '',
+        },
+      });
+    }
 
     return next;
   });
@@ -1309,7 +1402,7 @@ export async function convertDemo(input: ConvertDemoInput): Promise<ConvertDemoR
   const tokensRevoked = await withTenantTxn(input.tenantId, async (tx) => {
     const tenant = await tx.tenant.findUnique({
       where: { id: input.tenantId },
-      select: { isDemo: true, subscription: { select: { id: true, status: true } } },
+      select: { name: true, isDemo: true, subscription: { select: { id: true, status: true } } },
     });
     if (!tenant) throw new Error(`No tenant ${input.tenantId} to convert`);
     if (!tenant.isDemo) throw new NotADemoError(input.tenantId);
@@ -1370,7 +1463,7 @@ export async function convertDemo(input: ConvertDemoInput): Promise<ConvertDemoR
     await emitEvent(tx, {
       tenantId: input.tenantId,
       type: 'demo.converted',
-      payload: { tenantName: '', planKey: plan.key },
+      payload: { tenantName: tenant.name, planKey: plan.key },
     });
 
     return revoked.count;

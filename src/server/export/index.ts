@@ -315,16 +315,60 @@ export async function exportTenantData(
   /**
    * ONLY the suspension mode stamps the Subscription. Self-serve must never touch these
    * columns: they back the link a suspended merchant already has in a WhatsApp message.
+   *
+   * THE STAMP IS CONDITIONAL ON THE SUSPENSION IT WAS BUILT FOR STILL BEING THE CURRENT ONE.
+   *
+   * Phase 2 holds no transaction — deliberately, because zipping a pro catalogue is minutes of
+   * I/O — so the world can move underneath it. An unconditional `update` here wrote `exportKey`
+   * onto whatever row it found, and the row it found could be:
+   *   - REACTIVATED in the meantime. The merchant paid, `reactivate` nulled the columns and
+   *     deleted the artifact key it saw (null at that moment, so it deleted nothing), and this
+   *     stamp then handed a live paying account a standing snapshot of its own catalogue —
+   *     the one thing the spec says reactivation exists to remove. Nothing would ever collect
+   *     it: the orphan sweep only visits live tenants' `media/` and skips `_exports/`.
+   *   - RE-SUSPENDED into a NEW window, whose own build is in flight. The loser would overwrite
+   *     the winner's key and point the merchant's link at the wrong archive.
+   *
+   * The conditional write itself lives in `src/server/billing`, because its WHERE clause is
+   * lifecycle state and invariant 5 says this folder does not reason about that. Here we only
+   * act on the answer.
    */
+  let stamped = true;
+
   if (mode === 'suspension') {
+    const { stampSuspensionExport } = await import('@/server/billing');
     const stamp = (tx: TenantTx) =>
-      tx.subscription.update({
-        where: { tenantId },
-        data: { exportKey: key, exportGeneratedAt: generatedAt },
+      stampSuspensionExport(tx, {
+        tenantId,
+        suspendedAt: options.suspendedAt!,
+        key,
+        generatedAt,
       });
 
-    if (options.tx) await stamp(options.tx);
-    else await withTenantTxn(tenantId, stamp);
+    stamped = options.tx ? await stamp(options.tx) : await withTenantTxn(tenantId, stamp);
+
+    /**
+     * Take the object back when the stamp did not land.
+     *
+     * Leaving it is not neutral: it is a complete copy of a merchant's catalogue under a key no
+     * row points at, and `_exports/` is excluded from orphan cleanup by design — so "no row
+     * references it" means "nothing will ever find it", not "it will be tidied up".
+     */
+    if (!stamped) {
+      try {
+        await storage().delete(key);
+      } catch (error) {
+        logger().error(
+          { tenantId, key, error: (error as Error).message },
+          'an unstamped export artifact could not be removed — it needs manual deletion',
+        );
+      }
+
+      logger().warn(
+        { tenantId, key },
+        'suspension export discarded: the subscription is no longer the one it was built for',
+      );
+    }
   }
 
   const artifact: ExportArtifact = {
@@ -332,6 +376,7 @@ export async function exportTenantData(
     sizeBytes: stored.size,
     mode,
     generatedAt,
+    stamped,
     contents: {
       products: read.bundle.contents.products,
       categories: read.bundle.contents.categories,

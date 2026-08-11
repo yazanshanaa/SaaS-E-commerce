@@ -95,21 +95,44 @@ export async function sweepSubscriptions(options: SweepOptions = {}): Promise<Sw
         tx.subscription.findMany({
           where: {
             status: 'suspended',
+            // Demos are excluded HERE TOO, and not only on the two active-side queries. A demo
+            // has no period to end, so it is never suspended by this sweep — but a demo
+            // suspended by any other route would otherwise be warned about a deletion date and
+            // then purged WITH A TOMBSTONE, which is precisely what `closeDemo` exists to avoid.
+            currentPeriodEnd: { not: null },
             retentionUntil: { not: null, lte: new Date(now.getTime() + 7 * 86_400_000), gt: now },
           },
           take: batch,
           select: { tenantId: true, retentionUntil: true },
         }),
         tx.subscription.findMany({
-          where: { status: 'suspended', retentionUntil: { not: null, lte: now } },
+          where: {
+            status: 'suspended',
+            currentPeriodEnd: { not: null },
+            retentionUntil: { not: null, lte: now },
+          },
           take: batch,
           select: { tenantId: true },
         }),
         tx.subscription.findMany({
           where: {
             status: 'suspended',
+            currentPeriodEnd: { not: null },
             exportKey: null,
             suspendedAt: { not: null, lte: new Date(now.getTime() - EXPORT_OVERDUE_MS) },
+            /**
+             * NEVER rebuild an export for a tenant this same pass is about to purge.
+             *
+             * Without this bound, one sweep fans out a purge AND an export rebuild for the same
+             * tenant, and the lifecycle queue runs five jobs at a time. The export holds no
+             * transaction while it zips, so its `put()` can land after the purge has already
+             * swept the prefix — writing a complete copy of the merchant's catalogue into a
+             * prefix whose Tenant row is then deleted. The purging guard stops a job that STARTS
+             * late; it cannot stop one already in flight. Not scheduling it is what closes the
+             * window, and there is nothing to gain either way: an artifact built minutes before
+             * deletion is a link nobody will ever open.
+             */
+            retentionUntil: { gt: now },
           },
           take: batch,
           select: { tenantId: true, id: true, suspendedAt: true },
