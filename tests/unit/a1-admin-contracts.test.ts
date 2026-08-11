@@ -202,11 +202,24 @@ describe('invariant 5, from A1s side of the boundary', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('builds no admin screen for demos — that whole surface belongs to B3', () => {
-    const adminRoutes = walk(path.join(repoRoot, 'src', 'app', 'admin')).map((file) =>
-      path.relative(repoRoot, file).split(path.sep).join('/'),
-    );
+  /**
+   * This replaces the placeholder that held the demo surface open for B3 ("builds no admin screen
+   * for demos"), which went red the moment that track landed. It is deliberately NOT the
+   * assertion `docs/decisions/b3.md` §1 proposed: `adminSources` above already walks
+   * `src/app/admin/**`, so re-checking `demos/` for `.tenant.create` or `.subscription.update`
+   * would restate the three tests above it over a smaller set of files.
+   *
+   * What the demo surface genuinely ADDS is a screen whose whole purpose is destroying a tenant.
+   * Nothing above forbade that, because until B3 no admin screen could do it. «إغلاق النسخة»
+   * must reach `billing.closeDemo()` — which quiesces the queues, sweeps R2 and writes the audit
+   * row — and never a cascade issued from the route. A direct delete would look identical on
+   * screen and leave the objects behind.
+   */
+  it('deletes a tenant nowhere in the admin panel — closing a demo goes through billing', () => {
+    const offenders = adminSources
+      .filter(({ source }) => /\.tenant\.delete(Many)?\s*\(/.test(source))
+      .map(({ rel }) => rel);
 
-    expect(adminRoutes.filter((route) => /\/demos?\//.test(route))).toEqual([]);
+    expect(offenders).toEqual([]);
   });
 });

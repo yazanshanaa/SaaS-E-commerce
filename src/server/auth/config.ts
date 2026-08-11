@@ -29,6 +29,22 @@ import { t } from '@/shared/i18n';
 const TWO_FACTOR_ISSUER = 'Souq Bartaa';
 
 /**
+ * May a session be issued for this user?
+ *
+ * Exported as a function rather than left inline in the hook below because it is the whole of
+ * Q17 in two conditions, and the two failure modes point in opposite directions: drop the
+ * `loginDisabled` half and a demo tenant's owner becomes an account a stranger can hold; drop
+ * the `impersonatedBy` half and the sales tour that owner exists for stops working. A branch
+ * with a security consequence on each side is worth being able to test directly.
+ *
+ * See the hook for why `impersonatedBy` can be trusted here.
+ */
+export function maySignIn(user: { loginDisabled?: boolean | null } | null, impersonatedBy: string | null | undefined): boolean {
+  if (!user?.loginDisabled) return true;
+  return Boolean(impersonatedBy);
+}
+
+/**
  * argon2id, not scrypt. Phase 6 requires it; wiring it now means no password written in
  * Phase 1 has to be rehashed later.
  */
@@ -202,13 +218,27 @@ export function createAuth() {
              * sales tour (Q17) — it must never be able to authenticate. It has no credential
              * account, so this is belt to that braces: even if one were created by hand, no
              * session would be issued.
+             *
+             * EXCEPT UNDER IMPERSONATION, and the exception is the second half of Q17 rather than
+             * a hole in the first. `impersonateUser` MINTS a session for the demo's owner, so an
+             * unconditional refusal here closed the very tour the login-disabled owner exists to
+             * make possible — the guard was one condition short, not wrong. B3 could not fix it:
+             * `src/server/auth/**` is forbidden to every track.
+             *
+             * `impersonatedBy` is safe to branch on. It is written by the admin plugin AFTER
+             * better-auth has re-verified the caller against `adminRoles: ['super_admin']` using
+             * the admin's own cookie (see `startImpersonation`), and no sign-in route sets it —
+             * so it cannot be reached by a stranger, only by a verified platform operator.
+             * The session it issues still expires in an hour and is fully attributed.
              */
             const user = await authDb().user.findUnique({
               where: { id: session.userId },
               select: { loginDisabled: true },
             });
 
-            if (user?.loginDisabled) {
+            const impersonatedBy = (session as { impersonatedBy?: string | null }).impersonatedBy;
+
+            if (!maySignIn(user, impersonatedBy)) {
               logger().warn({ userId: session.userId }, 'refused session for a login-disabled user');
               throw new Error(t('common', 'auth.accountDisabled'));
             }

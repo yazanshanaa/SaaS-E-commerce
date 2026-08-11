@@ -19,19 +19,14 @@ import { E2E, origin } from './support/env';
  * NO REDIS is running in the e2e stack. The rate limiter therefore takes its degraded in-process
  * path, which is exactly the branch a production cache blink would take.
  *
- * WHAT THIS SUITE CANNOT COVER TODAY, and why it is a `describe.skip` rather than a silence:
- * `playwright.config.ts` runs the built app with `NODE_ENV=production` and `STORAGE_DRIVER=local`,
- * and `storage()` refuses that pair outright — "STORAGE_DRIVER=local is not allowed in production:
- * media must be delivered by the CDN in front of R2, never from the app server disk" (invariant 4,
- * `src/server/storage/index.ts:40`). The config says as much in its own comment: *"nothing in this
- * suite serves media"*. That was true until B3, whose central act WRITES fifteen images — so every
- * demo CREATION fails in this stack with an Arabic «صار خلل» and the flows below cannot run.
- *
- * It is not a defect in this branch and it cannot be fixed from it: `playwright.config.ts`,
- * `src/env.ts` and `src/server/storage/**` are all forbidden shared files. Sync point 4 in
- * `docs/decisions/b3.md` carries the options. The equivalent coverage exists meanwhile in
- * `tests/integration/b3-demo.test.ts`, which runs the real builder against a real database and a
- * real disk — everything except the browser.
+ * MEDIA IN THIS STACK: the suite runs the built app with `NODE_ENV=production`, and `storage()`
+ * refuses the local driver there by invariant 4 — media must come from the CDN in front of R2,
+ * never from the app server's disk. That was harmless while nothing in the suite served media, and
+ * stopped being harmless with B3, whose central act writes fifteen images: every demo CREATION
+ * failed with an Arabic «صار خلل», and the three flows below were skipped rather than silently
+ * dropped (docs/decisions/b3.md §6). Resolved at the Group B merge by `E2E_ALLOW_LOCAL_STORAGE=1`
+ * — one greppable opt-out, set only in `playwright.config.ts`, pointing at a temp directory. The
+ * guard still refuses a real deployment, and logs a warning wherever the flag is honoured.
  */
 
 const ADMIN = origin('admin');
@@ -178,7 +173,7 @@ test('rejecting keeps the row and its deletion date, and says so', async ({ page
  * word restores the coverage. `tests/integration/b3-demo.test.ts` asserts the same behaviour
  * meanwhile, against a real database and a real disk.
  */
-test.describe.skip('once the e2e stack can write media (sync point 4)', () => {
+test.describe('the approve → link → storefront → close chain', () => {
   test('approving builds a demo with the requesters own WhatsApp, and a link to send', async ({
     page,
   }) => {

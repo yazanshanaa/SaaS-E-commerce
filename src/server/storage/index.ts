@@ -1,4 +1,5 @@
 import { getEnv } from '@/env';
+import { logger } from '@/server/logger';
 import { LocalStorageAdapter } from './local-driver';
 import type { StorageAdapter } from './types';
 
@@ -37,9 +38,25 @@ export function storage(): StorageAdapter {
    * build a perfectly valid development checkout. Enforcing at the point of use still refuses
    * to SERVE a byte from local disk in production — which is the thing invariant 4 protects.
    */
-  if (env.NODE_ENV === 'production') {
+  if (env.NODE_ENV === 'production' && !env.E2E_ALLOW_LOCAL_STORAGE) {
     throw new Error(
       'STORAGE_DRIVER=local is not allowed in production: media must be delivered by the CDN in front of R2, never from the app server disk.',
+    );
+  }
+
+  /**
+   * The harness opt-out, and it is loud on purpose.
+   *
+   * `pnpm e2e` runs the real production build so the suite tests the artefact that ships, which
+   * puts it on the wrong side of the check above. One flag, set in one file
+   * (`playwright.config.ts`), lets that stack write to a temp directory — and anything else that
+   * ever sets it announces itself at boot rather than serving a merchant's images off local disk
+   * in silence. A production deployment that trips this line is misconfigured, and the log is
+   * where that gets noticed.
+   */
+  if (env.NODE_ENV === 'production') {
+    logger().warn(
+      'E2E_ALLOW_LOCAL_STORAGE is set: serving media from local disk in a production build. This is the test harness opt-out and must never be set on a real deployment.',
     );
   }
 

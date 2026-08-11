@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { platformOrigins } from '@/server/auth/config';
+import { maySignIn, platformOrigins } from '@/server/auth/config';
 import { platformHost } from '@/env';
 
 /**
@@ -105,5 +105,44 @@ describe('a link a human will open', () => {
     });
 
     expect(url).toBe('http://app.souqbartaa.test/reset-password');
+  });
+});
+
+/**
+ * Q17, as the auth layer enforces it.
+ *
+ * A demo tenant's owner is created `loginDisabled` with no credential account, so the prospect
+ * never reaches app.{DOMAIN} — and the same user must still be reachable by `impersonateUser`,
+ * because touring the dashboard during a sales call is the reason that owner row exists at all.
+ * Both halves are in one predicate, and each has a security consequence in the opposite
+ * direction, so both are pinned here.
+ *
+ * This is the second half of the B3 acceptance gate, which could not pass until the merge:
+ * `src/server/auth/**` is forbidden to every track, so B3 shipped the owner and reported the
+ * closed door (docs/decisions/b3.md §4).
+ */
+describe('who may be issued a session', () => {
+  it('lets an ordinary user through', () => {
+    expect(maySignIn({ loginDisabled: false }, null)).toBe(true);
+  });
+
+  it('refuses a login-disabled user — the demo owner, on every ordinary route', () => {
+    expect(maySignIn({ loginDisabled: true }, null)).toBe(false);
+    expect(maySignIn({ loginDisabled: true }, undefined)).toBe(false);
+    // An empty string is not an admin id, and `Boolean('')` is the check that says so.
+    expect(maySignIn({ loginDisabled: true }, '')).toBe(false);
+  });
+
+  it('admits the impersonated session a super admin minted for that same owner', () => {
+    expect(maySignIn({ loginDisabled: true }, 'admin-user-id')).toBe(true);
+  });
+
+  /**
+   * A user better-auth cannot find is not a user this predicate may wave through on a technicality
+   * — but it is also not this function's decision to make. It returns true and the lookup's own
+   * absence is what fails downstream, which is the behaviour the hook had before the guard existed.
+   */
+  it('says nothing about a user that was not found', () => {
+    expect(maySignIn(null, null)).toBe(true);
   });
 });

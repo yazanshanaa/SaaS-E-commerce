@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
-import { E2E, mailFile, pgUrl } from './tests/e2e/support/env';
+import { E2E, mailFile, pgUrl, storageDir } from './tests/e2e/support/env';
 
 /**
  * Hostname-based tenant resolution is the whole point of proxy.ts, so the browser has to see
@@ -83,8 +83,17 @@ export default defineConfig({
       SMTP_PORT: String(E2E.smtpPort),
       SMTP_SECURE: 'false',
 
-      // The dev media route refuses to run in production; nothing in this suite serves media.
+      /**
+       * A temp directory stands in for R2, and the production guard is opened for it explicitly.
+       *
+       * The comment here used to read "nothing in this suite serves media", which was true until
+       * B3: creating a demo writes fifteen images, so `storage()` refused the whole flow and three
+       * cases had to be skipped. `E2E_ALLOW_LOCAL_STORAGE` is the single greppable hole that lets
+       * this stack — and only this stack — write locally while still running the production build.
+       */
       STORAGE_DRIVER: 'local',
+      E2E_ALLOW_LOCAL_STORAGE: '1',
+      LOCAL_STORAGE_DIR: storageDir,
       E2E_MAIL_FILE: mailFile,
     },
   },

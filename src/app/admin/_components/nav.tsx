@@ -26,6 +26,10 @@ const ITEMS = [
   // track that built /lifecycle could not give itself a way in. Next to /accounts because that is
   // where an operator already is when they need the call list or the deletion deadline.
   { href: '/lifecycle', key: 'lifecycle' },
+  // B3's screens, wired in at the same wall for the same reason. `/demos` is the pack picker and
+  // the list; the request inbox hangs off it at `/demos/requests`, and `isActive` already lights
+  // the parent for both because it matches on the `${href}/` prefix.
+  { href: '/demos', key: 'demos' },
   { href: '/change-requests', key: 'changeRequests' },
   { href: '/plans', key: 'plans' },
   { href: '/audit', key: 'audit' },

@@ -57,6 +57,24 @@ const schema = z.object({
   // --- Storage --------------------------------------------------------------
   STORAGE_DRIVER: z.enum(['local', 'r2']).default('local'),
   LOCAL_STORAGE_DIR: z.string().default('./storage'),
+  /**
+   * The ONE hole in invariant 4's production check, and it is deliberately greppable.
+   *
+   * The e2e stack runs the real production build (`NODE_ENV=production`) against a private
+   * postgres and a temp directory, because testing anything else would not be testing the
+   * artefact that ships. That combination hits `storage()`'s refusal of `local` in production —
+   * which was harmless until B3, whose central act writes fifteen images, and which silently cost
+   * that track three e2e cases (docs/decisions/b3.md §6).
+   *
+   * Set in exactly one place: `playwright.config.ts`. It is NOT in `.env.example` as a value
+   * anyone should copy, and a real deployment that set it would still be serving media off the
+   * app server's disk — so the guard reads it as an opt-out for a harness, never as a driver
+   * choice, and says so when it lets one through.
+   */
+  E2E_ALLOW_LOCAL_STORAGE: z
+    .enum(['0', '1'])
+    .optional()
+    .transform((value) => value === '1'),
   R2_ACCOUNT_ID: z.string().optional(),
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),
@@ -107,6 +125,26 @@ const schema = z.object({
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().optional(),
+  /**
+   * How long a push may sit on the vendor's server waiting for a device to come back online.
+   * A shop offer is perishable — a notification that arrives four days late is worse than one
+   * that never arrives, because the merchant is judged for it.
+   */
+  PUSH_TTL_SECONDS: z.coerce.number().int().positive().max(2_419_200).default(86_400),
+  /** How many endpoints one delivery job pushes to concurrently. */
+  PUSH_SEND_CONCURRENCY: z.coerce.number().int().positive().max(100).default(20),
+
+  // --- Domains (Phase 4) ----------------------------------------------------
+  /**
+   * Verification asks PUBLIC resolvers, never the container's.
+   *
+   * A merchant adds the CNAME and clicks verify a minute later. A caching resolver that has
+   * already answered NXDOMAIN for that name will keep answering it for the whole negative TTL —
+   * so the merchant, who did everything right, is told their DNS is wrong. Asking 1.1.1.1 and
+   * 8.8.8.8 directly is the closest we get to what the ACME server will see.
+   */
+  DNS_RESOLVERS: z.string().default('1.1.1.1,8.8.8.8'),
+  DNS_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
 
   // --- Internal service-to-service (worker -> web) --------------------------
   // The worker is a separate container and `revalidateTag()` only works inside the Next
@@ -126,6 +164,16 @@ const schema = z.object({
   RATE_LIMIT_LOGIN_PER_15MIN: z.coerce.number().int().positive().default(10),
   RATE_LIMIT_UPLOAD_PER_MINUTE: z.coerce.number().int().positive().default(30),
   RATE_LIMIT_EXPORT_DOWNLOAD_PER_HOUR: z.coerce.number().int().positive().default(20),
+  /** Each verify attempt is up to four live DNS queries against public resolvers. */
+  RATE_LIMIT_DOMAIN_VERIFY_PER_HOUR: z.coerce.number().int().positive().default(20),
+  /** A visitor subscribing to push. Generous for a person, useless for a loop. */
+  RATE_LIMIT_PUSH_SUBSCRIBE_PER_HOUR: z.coerce.number().int().positive().default(20),
+  /**
+   * Per TENANT, per rolling day. This is not an abuse control so much as a reputation one:
+   * a shop that pushes six times a day is a shop everyone mutes, and the permission is
+   * revoked at the OS level where no merchant can win it back.
+   */
+  RATE_LIMIT_PUSH_SEND_PER_DAY: z.coerce.number().int().positive().default(5),
 });
 
 export type Env = z.infer<typeof schema>;

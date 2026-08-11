@@ -20,6 +20,12 @@ export const E2E = {
 
 export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 export const mailFile = path.join(repoRoot, '.tmp', 'e2e-mail.json');
+/**
+ * Where the suite's media lands. Under `.tmp/` with the rest of the e2e artefacts rather than in
+ * `./storage`, which is a developer's own dev-driver disk — a suite that writes fifteen images per
+ * demo has no business mixing its output into that.
+ */
+export const storageDir = path.join(repoRoot, '.tmp', 'e2e-storage');
 export const pgDataDir = path.join(repoRoot, '.pgdata-e2e');
 
 export function pgUrl(user: string, password: string, database: string = E2E.database): string {

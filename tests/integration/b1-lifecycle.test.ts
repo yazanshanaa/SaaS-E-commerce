@@ -956,31 +956,23 @@ describe('when the export never appears', () => {
 });
 
 describe('the demo lifecycle B1 owns and B3 fills in', () => {
-  it('leaves nothing behind when the content builder fails', async () => {
-    /**
-     * B3 has not landed, so `buildDemoContent` still throws — which makes this the one moment the
-     * unwind path can be tested against a genuinely failing builder rather than a mock.
-     *
-     * What must NOT survive: a tenant with a subscription and a site but no catalogue, invisible
-     * on the demo list (it has no link) and indistinguishable from a real account everywhere else.
-     */
-    const { createDemo, DEMO_PACK_KEYS } = await import('@/server/billing');
-
-    const before = await adminDb().tenant.count();
-    const users = await adminDb().user.count();
-
-    await expect(
-      createDemo({
-        packKey: DEMO_PACK_KEYS[0]!,
-        slugPrefix: 'demo-unwind',
-        actor: SUPER_ADMIN,
-      }),
-    ).rejects.toThrow(/B3/);
-
-    expect(await adminDb().tenant.count()).toBe(before);
-    // The login-disabled owner goes too, or its address would block the operator's next attempt.
-    expect(await adminDb().user.count()).toBe(users);
-  });
+  /**
+   * The unwind case that used to sit here asserted `createDemo()` rejects with /B3/ — the builder
+   * throwing because that track had not landed. It was written for exactly that window ("the one
+   * moment the unwind path can be tested against a genuinely failing builder rather than a mock")
+   * and B3 landing closed it.
+   *
+   * The coverage moved rather than went: `tests/integration/b3-demo.test.ts` → "leaves nothing
+   * behind when the build fails half way" drives the same path from a failure the product can
+   * actually have — object storage refusing the fourth image — and asserts strictly more: the
+   * tenant count, the login-disabled owner AND that the three objects already written were taken
+   * back instead of being left to the orphan sweep.
+   *
+   * A trap for whoever adds the next demo-creating case to THIS file: the `demo` plan seeded in
+   * its `beforeAll` carries no features, so `resolveStorageLimits` finds no `image_max_mb` /
+   * `storage_mb` and a real build fails closed with `media error: limitsUnavailable` before it
+   * writes anything. Seed it the way `ensureDemoPlan()` in the B3 file does.
+   */
 
   it('closes a demo without writing a tombstone, and takes its request with it', async () => {
     const demo = await createTenant({ slug: 'closing-demo', isDemo: true, planKey: 'demo' });
