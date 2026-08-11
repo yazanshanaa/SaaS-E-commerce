@@ -1,4 +1,4 @@
-import { withTenantTxn, type TenantTx } from '@/server/db';
+import { TenantNotFoundError, TenantPurgingError, withTenantTxn, type TenantTx } from '@/server/db';
 import { storage, exportsPrefix, selfServeExportsPrefix } from '@/server/storage';
 import { logger } from '@/server/logger';
 import { jerusalemDateKey } from '@/server/time';
@@ -345,7 +345,37 @@ export async function exportTenantData(
         generatedAt,
       });
 
-    stamped = options.tx ? await stamp(options.tx) : await withTenantTxn(tenantId, stamp);
+    /**
+     * A THROWN stamp is the same outcome as a refused one, and used not to be treated as one.
+     *
+     * `withTenantTxn` refuses a `purging` tenant and throws for one already gone — and it throws
+     * BEFORE `fn` runs, so no write is even attempted. That is precisely the state an
+     * operator-initiated purge leaves us in when it lands mid-build: the prefix was swept seconds
+     * ago, the `put()` above wrote into it anyway, and the exception used to propagate straight
+     * out of this function, skipping the compensation below. What stayed behind was a complete
+     * copy of the merchant's catalogue under a key no row points at, in a prefix
+     * `cleanup-orphans` skips by design — quiet retention arriving through the one door the
+     * sweep's `retentionUntil > now` bound does not cover.
+     *
+     * ONLY these two errors compensate. Any other failure leaves the object alone on purpose: we
+     * cannot prove the transaction rolled back (a connection lost after COMMIT is
+     * indistinguishable from here), and deleting an object a committed stamp points at would hand
+     * the merchant a link to nothing. The key is deterministic per suspension, so the retry
+     * overwrites rather than orphaning a second copy.
+     */
+    try {
+      stamped = options.tx ? await stamp(options.tx) : await withTenantTxn(tenantId, stamp);
+    } catch (error) {
+      if (!(error instanceof TenantNotFoundError) && !(error instanceof TenantPurgingError)) {
+        throw error;
+      }
+
+      logger().warn(
+        { tenantId, key, refusal: (error as Error).name },
+        'suspension export raced a purge — taking the artifact back',
+      );
+      stamped = false;
+    }
 
     /**
      * Take the object back when the stamp did not land.

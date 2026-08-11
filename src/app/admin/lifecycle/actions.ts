@@ -210,6 +210,16 @@ export async function purgeNowAction(form: FormData): Promise<void> {
       typed: parsed.data.confirmSlug,
     });
   } catch (error) {
+    /**
+     * A refusal, not a failure, and the operator has to be able to tell them apart: this one
+     * clears by itself in a couple of minutes, and the honest instruction is "wait". Reporting it
+     * as `failed` would read as "try again", which on this screen means pressing the one button
+     * on the platform that cannot be undone.
+     */
+    if (error instanceof billing.ExportInFlightError) {
+      back(PENDING_PURGE, { error: 'billing:lifecycle.notice.exportInFlight' });
+    }
+
     logger().error(
       { tenantId: parsed.data.tenantId, error: (error as Error).message },
       'purge failed from the lifecycle screen',
