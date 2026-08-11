@@ -271,7 +271,19 @@ test.describe('the approve → link → storefront → close chain', () => {
     await page.locator('#confirmSlug').fill(realSlug ?? '');
     await page.getByRole('button', { name: 'سكّر واحذف نهائياً' }).click();
 
-    await expect(page.getByText('تم حذف النسخة التجريبية وكل بياناتها.')).toBeVisible();
+    /**
+     * Same reason as the build above, from the other end of the demo's life.
+     *
+     * `closeDemo` quiesces before it sweeps — `drainTenantJobs` must clear the queue or nothing
+     * would stop a dequeued media job writing fresh objects into a prefix that is about to vanish.
+     * The broker in this stack is deliberately unreachable, so that drain always spends its full
+     * five-second bound before giving up and letting the purging-state guard take over. Add the
+     * R2 sweep and the cascade and the whole action starts just above `expect`'s 5s default, which
+     * makes this assertion a coin toss rather than a check.
+     */
+    await expect(page.getByText('تم حذف النسخة التجريبية وكل بياناتها.')).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByRole('row').filter({ hasText: PREFIX })).toHaveCount(0);
 
     // The originating request went with it, which is what the public notice promised.
