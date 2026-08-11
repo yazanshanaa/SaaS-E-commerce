@@ -22,10 +22,18 @@ const payloadSchema = z.object({
 export default async function process(ctx: { job: TenantJob; tx: TenantTx }) {
   const payload = payloadSchema.parse(ctx.job.data);
 
+  /**
+   * The processor's own transaction is handed down rather than left behind.
+   *
+   * `createWorker` already opened one for this TenantJob. Without passing it, `exportTenantData`
+   * would open a SECOND transaction on a SECOND connection — two snapshots of the same tenant,
+   * so the CSV and the image inventory could disagree, and two connections held for one job.
+   */
   return exportTenantData(ctx.job.tenantId, {
     mode: payload.mode,
     subscriptionId: payload.subscriptionId,
     suspendedAt: payload.suspendedAt,
     actorUserId: payload.actorUserId ?? null,
+    tx: ctx.tx,
   });
 }

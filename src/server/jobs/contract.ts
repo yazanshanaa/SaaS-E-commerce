@@ -28,6 +28,39 @@ export const QUEUE_NAMES = [
 
 export type QueueName = (typeof QUEUE_NAMES)[number];
 
+/**
+ * The lifecycle job vocabulary, named once.
+ *
+ * These strings are keys into the REGISTRY in `src/server/queues.ts`, which is a forbidden shared
+ * file — a track cannot add a job name, only fill in one that Phase 1 declared. Writing them as
+ * constants makes that coupling visible at every call site, so a typo is a compile error rather
+ * than a job that enqueues successfully and never runs.
+ */
+export const LIFECYCLE_JOBS = {
+  sweep: 'sweep-subscriptions',
+  suspend: 'suspend-tenant',
+  purge: 'purge-tenant',
+  reminder: 'send-reminder',
+} as const;
+
+export const EXPORT_JOBS = {
+  build: 'build-export',
+  cleanupSelfServe: 'cleanup-self-serve',
+} as const;
+
+/**
+ * The two phases of `suspend-tenant`, carried in the job payload.
+ *
+ * A second registered job name would have been clearer and is not available, so the phase rides
+ * in `data` instead:
+ *   `export` — effect 2 of suspension: build the artifact, then emit `subscription.suspended`.
+ *   `verify` — enqueued with a delay by the same transition. If `exportKey` is still null by
+ *              then, every retry of the export job has failed and the platform owner is told.
+ *              Without it, an export that died at 10:00 would go unnoticed until the 03:00 sweep.
+ */
+export const SUSPENSION_PHASES = { export: 'export', verify: 'verify' } as const;
+export type SuspensionPhase = (typeof SUSPENSION_PHASES)[keyof typeof SUSPENSION_PHASES];
+
 export const tenantJobSchema = z.object({
   scope: z.literal('tenant').default('tenant'),
   /** Required. This is the whole point of the kind. */
