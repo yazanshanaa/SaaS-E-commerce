@@ -1,0 +1,428 @@
+# Souq Bartaa — the production stack.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Every value comes from `.env` on the server (see `.env.example` for the full surface, and
+# docs/DEPLOY.md for the subset that is production-only). Nothing is defaulted here that would be
+# dangerous to get wrong: a missing secret must stop a container, not start one with a guess.
+#
+# Only `caddy` publishes ports. Postgres, Redis, n8n, Umami, Uptime Kuma and the app itself are
+# reachable on the compose network and nowhere else — which is also what makes `/internal/*` safe
+# to leave unauthenticated inside the network while Caddy 404s it on every public hostname.
+#
+# What is deliberately NOT here:
+#   - a `mailpit`. Production mail is Resend, or SMTP at a real provider (docs/EMAIL.md).
+#   - a published Postgres port. If you need psql, `docker compose exec postgres psql`.
+#   - `STORAGE_DRIVER=local` anywhere. `src/server/storage/index.ts` throws on it under
+#     NODE_ENV=production, and that throw is correct: merchant media is served by the CDN in front
+#     of R2, never off this disk (invariant 4).
+
+name: souq-bartaa
+
+x-app-environment: &app-environment
+  NODE_ENV: production
+  TZ: ${TZ:-Asia/Jerusalem}
+  DOMAIN: ${DOMAIN:?DOMAIN is required}
+  PUBLIC_SCHEME: https
+  ADMIN_HOST_PREFIX: ${ADMIN_HOST_PREFIX:-admin}
+  APP_HOST_PREFIX: ${APP_HOST_PREFIX:-app}
+
+  # THE CARRIED-FORWARD ITEM FROM THE GROUP A MERGE, CLOSED HERE.
+  #
+  # `DATABASE_URL_SYSTEM` is optional in src/env.ts and falls back to DATABASE_URL. Unset in
+  # production, `systemClient()` runs the cross-tenant sweeps as `app_web` with no tenant context —
+  # where the generic RLS policy on `members` compares tenant_id against an unset GUC and returns
+  # ZERO rows. `usersWithNoOtherMembership` then sees every user as a sole member, and a purge
+  # deletes the User row of somebody who still owns a different shop. Phase 6 added a guard that
+  # asserts `current_user = 'app_system'` and skips loudly rather than trusting that empty answer,
+  # which turns silent data loss into a logged broken promise. This line is what stops both.
+  DATABASE_URL: postgresql://app_web:${APP_WEB_PASSWORD:?APP_WEB_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-souq_bartaa}?schema=public
+  DATABASE_URL_SYSTEM: postgresql://app_system:${APP_SYSTEM_PASSWORD:?APP_SYSTEM_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-souq_bartaa}?schema=public
+
+  REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
+  REDIS_CACHE_DB: ${REDIS_CACHE_DB:-0}
+  REDIS_QUEUE_DB: ${REDIS_QUEUE_DB:-1}
+
+  BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET is required}
+  BETTER_AUTH_URL: https://${APP_HOST_PREFIX:-app}.${DOMAIN}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+  WEBHOOK_HMAC_SECRET: ${WEBHOOK_HMAC_SECRET:?WEBHOOK_HMAC_SECRET is required}
+
+  # Media is CDN-over-R2 in production, always.
+  STORAGE_DRIVER: r2
+  R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
+  R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+  R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
+  R2_BUCKET: ${R2_BUCKET:-souq-bartaa}
+  R2_ENDPOINT: ${R2_ENDPOINT}
+  R2_SSE_ALGORITHM: ${R2_SSE_ALGORITHM:-AES256}
+  CDN_PUBLIC_BASE_URL: ${CDN_PUBLIC_BASE_URL:?CDN_PUBLIC_BASE_URL is required}
+
+  MAIL_DRIVER: ${MAIL_DRIVER:-resend}
+  MAIL_FROM: ${MAIL_FROM:?MAIL_FROM is required}
+  MAIL_FROM_NAME: ${MAIL_FROM_NAME:-سوق برطعة}
+  MAIL_REPLY_TO: ${MAIL_REPLY_TO}
+  RESEND_API_KEY: ${RESEND_API_KEY}
+  SMTP_HOST: ${SMTP_HOST}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_SECURE: ${SMTP_SECURE:-false}
+  SMTP_USER: ${SMTP_USER}
+  SMTP_PASSWORD: ${SMTP_PASSWORD}
+
+  # SERVER-TO-SERVER, on the compose network. The public hostname sits behind Caddy basic auth
+  # (it is an admin UI), and A1 provisions one Umami website per tenant through this API at
+  # account creation — through the proxy it would get a 401 and every new account would come up
+  # with no analytics at all. The SCRIPT url is the public one, because a visitor's browser loads
+  # it, and it is also what the storefront CSP's script-src is derived from.
+  UMAMI_BASE_URL: http://umami:3000
+  UMAMI_SCRIPT_URL: https://umami.${DOMAIN}/script.js
+  UMAMI_API_USERNAME: ${UMAMI_API_USERNAME}
+  UMAMI_API_PASSWORD: ${UMAMI_API_PASSWORD}
+  UMAMI_API_TOKEN: ${UMAMI_API_TOKEN}
+
+  N8N_BASE_URL: https://n8n.${DOMAIN}
+  N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL}
+
+  # Setting this turns on error reporting in all three server processes AND adds a Sentry line to
+  # every tenant's generated Arabic privacy policy. There is no state where one happens without
+  # the other. No browser DSN: the SDK is server-side only (docs/DECISIONS.md).
+  SENTRY_DSN: ${SENTRY_DSN}
+  SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+  SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
+
+  CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID}
+  TRUST_CLOUDFLARE: ${TRUST_CLOUDFLARE:-true}
+
+  VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+  VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+  VAPID_SUBJECT: ${VAPID_SUBJECT}
+
+  # `/internal/revalidate` returns 503 in production when this is unset rather than accepting a
+  # cache drop from anything that can reach the container. The worker is the caller.
+  INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?INTERNAL_API_SECRET is required}
+
+  # These two are published as fact in every tenant's generated Arabic privacy policy, and the
+  # backup sidecar below reads the same variables. One value, one schedule, one published claim.
+  BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-6}
+  BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+services:
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?POSTGRES_SUPERUSER_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-souq_bartaa}
+      # Arabic collation matters for ORDER BY on product names.
+      POSTGRES_INITDB_ARGS: '--locale-provider=icu --icu-locale=ar --encoding=UTF8'
+      # Consumed by the init script below, which refuses to run without them.
+      APP_WEB_PASSWORD: ${APP_WEB_PASSWORD}
+      APP_SYSTEM_PASSWORD: ${APP_SYSTEM_PASSWORD}
+      APP_MIGRATE_PASSWORD: ${APP_MIGRATE_PASSWORD:?APP_MIGRATE_PASSWORD is required}
+      N8N_DB_PASSWORD: ${N8N_DB_PASSWORD:?N8N_DB_PASSWORD is required}
+      N8N_DB_NAME: ${N8N_DB_NAME:-n8n}
+      UMAMI_DB_PASSWORD: ${UMAMI_DB_PASSWORD:?UMAMI_DB_PASSWORD is required}
+      UMAMI_DB_NAME: ${UMAMI_DB_NAME:-umami}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # A DIFFERENT directory from the dev stack's. This one creates the n8n and Umami databases
+      # and takes every password from env; the dev one hardcodes passwords to the role names and
+      # creates a shadow database `migrate deploy` does not need. Mounting the dev directory here
+      # would put `app_web/app_web` on the internet.
+      - ./docker/postgres/production-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_SUPERUSER:-postgres} -d ${POSTGRES_DB:-souq_bartaa}']
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [internal]
+
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # `--requirepass` even though Redis is unpublished. It holds sessions' rate-limit state, the
+    # entitlement cache and every queued job payload — which carry tenantId — so a second process
+    # landing on this network should not simply be able to read them.
+    command:
+      - redis-server
+      - --appendonly
+      - 'yes'
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli -a "$$REDIS_PASSWORD" ping | grep -q PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks: [internal]
+
+  # ---------------------------------------------------------------------------
+  # Schema migration as its own one-shot service, so `web` and `worker` cannot start against a
+  # database that has not been migrated. It runs as app_migrate — the schema owner — which is the
+  # only role that may, and which the application itself never uses.
+  migrate:
+    build:
+      context: .
+      target: web
+      args:
+        CDN_PUBLIC_BASE_URL: ${CDN_PUBLIC_BASE_URL}
+        PUBLIC_SCHEME: https
+    restart: 'no'
+    depends_on:
+      postgres: { condition: service_healthy }
+    # `.env` IS the production surface, and this line is what makes that true.
+    #
+    # Without it the containers see only the map below, and every other key `.env.example`
+    # documents silently falls back to its zod default in `src/env.ts` — every `RATE_LIMIT_*`,
+    # `AUTH_LOCKOUT_*`, `SESSION_*`, `TOMBSTONE_RETENTION_DAYS`, `LIFECYCLE_SWEEP_CRON`. Worse,
+    # `SEED_SUPER_ADMIN_EMAIL` and `SEED_SUPER_ADMIN_PASSWORD` are read by `prisma/seed.ts`
+    # through plain `process.env`, and `.dockerignore` keeps `.env` out of the image — so the
+    # first-deploy `pnpm db:seed` would have created the platform owner as
+    # `admin@souqbartaa.test` / `ChangeMe!2026`, both of which are in this repository, on an
+    # internet-facing super-admin account with cross-tenant authority.
+    #
+    # The `environment:` map below still wins where the two overlap: those are values the STACK
+    # decides (container hostnames, the roles' connection strings), not the operator.
+    env_file: [.env]
+    environment:
+      <<: *app-environment
+      DATABASE_URL_MIGRATE: postgresql://app_migrate:${APP_MIGRATE_PASSWORD}@postgres:5432/${POSTGRES_DB:-souq_bartaa}?schema=public
+    command: ['pnpm', 'db:deploy']
+    networks: [internal]
+
+  # ---------------------------------------------------------------------------
+  web:
+    build:
+      context: .
+      target: web
+      args:
+        # Both are read by next.config.ts at BUILD time — `images.remotePatterns` and the
+        # Cross-Origin-Opener-Policy header. Passing them only as runtime environment produces an
+        # image that boots fine and refuses every CDN image.
+        CDN_PUBLIC_BASE_URL: ${CDN_PUBLIC_BASE_URL}
+        PUBLIC_SCHEME: https
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    # `.env` IS the production surface, and this line is what makes that true.
+    #
+    # Without it the containers see only the map below, and every other key `.env.example`
+    # documents silently falls back to its zod default in `src/env.ts` — every `RATE_LIMIT_*`,
+    # `AUTH_LOCKOUT_*`, `SESSION_*`, `TOMBSTONE_RETENTION_DAYS`, `LIFECYCLE_SWEEP_CRON`. Worse,
+    # `SEED_SUPER_ADMIN_EMAIL` and `SEED_SUPER_ADMIN_PASSWORD` are read by `prisma/seed.ts`
+    # through plain `process.env`, and `.dockerignore` keeps `.env` out of the image — so the
+    # first-deploy `pnpm db:seed` would have created the platform owner as
+    # `admin@souqbartaa.test` / `ChangeMe!2026`, both of which are in this repository, on an
+    # internet-facing super-admin account with cross-tenant authority.
+    #
+    # The `environment:` map below still wins where the two overlap: those are values the STACK
+    # decides (container hostnames, the roles' connection strings), not the operator.
+    env_file: [.env]
+    environment: *app-environment
+    networks: [internal]
+
+  # ---------------------------------------------------------------------------
+  # A SEPARATE container on purpose: a queue backlog must never be able to starve the web server's
+  # event loop, and the worker is the only process that may run system-scope sweeps.
+  worker:
+    build:
+      context: .
+      target: worker
+      args:
+        # The same args as `web`, and not because the worker reads them. Both targets share the
+        # `builder` stage, and Compose keys the build cache on the args — mismatched args mean a
+        # second full `next build` on every single deploy, for an image that then throws it away.
+        CDN_PUBLIC_BASE_URL: ${CDN_PUBLIC_BASE_URL}
+        PUBLIC_SCHEME: https
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    # `.env` IS the production surface, and this line is what makes that true.
+    #
+    # Without it the containers see only the map below, and every other key `.env.example`
+    # documents silently falls back to its zod default in `src/env.ts` — every `RATE_LIMIT_*`,
+    # `AUTH_LOCKOUT_*`, `SESSION_*`, `TOMBSTONE_RETENTION_DAYS`, `LIFECYCLE_SWEEP_CRON`. Worse,
+    # `SEED_SUPER_ADMIN_EMAIL` and `SEED_SUPER_ADMIN_PASSWORD` are read by `prisma/seed.ts`
+    # through plain `process.env`, and `.dockerignore` keeps `.env` out of the image — so the
+    # first-deploy `pnpm db:seed` would have created the platform owner as
+    # `admin@souqbartaa.test` / `ChangeMe!2026`, both of which are in this repository, on an
+    # internet-facing super-admin account with cross-tenant authority.
+    #
+    # The `environment:` map below still wins where the two overlap: those are values the STACK
+    # decides (container hostnames, the roles' connection strings), not the operator.
+    env_file: [.env]
+    environment:
+      <<: *app-environment
+      # revalidateTag() only works inside the Next server, and the image pipeline finishes
+      # variants here — so the worker drops a tenant's storefront cache over HTTP.
+      INTERNAL_BASE_URL: http://web:3000
+    networks: [internal]
+
+  # ---------------------------------------------------------------------------
+  caddy:
+    build:
+      context: ./docker/caddy
+    restart: unless-stopped
+    depends_on: [web]
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+      # Zone:DNS:Edit on this zone and nothing else. It writes the _acme-challenge TXT record for
+      # the wildcard and cannot touch anything a compromise would want.
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}
+      # Basic auth in front of n8n. `caddy hash-password` produces the hash; the plaintext never
+      # reaches the server. See docs/DEPLOY.md.
+      N8N_PROXY_AUTH_USER: ${N8N_PROXY_AUTH_USER:?N8N_PROXY_AUTH_USER is required}
+      N8N_PROXY_AUTH_HASH: ${N8N_PROXY_AUTH_HASH:?N8N_PROXY_AUTH_HASH is required}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # caddy_data holds the ISSUED CERTIFICATES and the ACME account key. Losing it means
+      # re-issuing every certificate on the box at once, against a weekly Let's Encrypt quota
+      # shared by every merchant. It is the one volume here whose loss is measured in days.
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [internal]
+
+  # ---------------------------------------------------------------------------
+  # n8n (Q9): inside this compose, on its OWN Postgres database, behind mandatory authentication,
+  # with its execution history pruned hard and roughly 1GB of RAM budgeted.
+  n8n:
+    image: n8nio/n8n:1.121.1
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: '5432'
+      DB_POSTGRESDB_DATABASE: ${N8N_DB_NAME:-n8n}
+      DB_POSTGRESDB_USER: n8n
+      DB_POSTGRESDB_PASSWORD: ${N8N_DB_PASSWORD}
+
+      N8N_HOST: n8n.${DOMAIN}
+      N8N_PORT: '5678'
+      N8N_PROTOCOL: https
+      WEBHOOK_URL: https://n8n.${DOMAIN}/
+      N8N_EDITOR_BASE_URL: https://n8n.${DOMAIN}/
+      # n8n sits behind Caddy, which is the only thing terminating TLS here.
+      N8N_PROXY_HOPS: '1'
+      GENERIC_TIMEZONE: ${TZ:-Asia/Jerusalem}
+
+      # Encrypts stored credentials inside n8n's own database. Rotating it orphans every stored
+      # credential, so it is generated once and never changed casually.
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?N8N_ENCRYPTION_KEY is required}
+      # n8n's own user management, on top of Caddy's basic auth. Two layers because the outer one
+      # is a shared password and the inner one is per-person with a real session.
+      N8N_USER_MANAGEMENT_DISABLED: 'false'
+      N8N_DIAGNOSTICS_ENABLED: 'false'
+      N8N_VERSION_NOTIFICATIONS_ENABLED: 'false'
+
+      # PRIVACY, NOT HOUSEKEEPING (Phase 6 owns these values; this is where they are consumed).
+      # n8n stores every node's input and output in its execution history, which on this platform
+      # means delivered export links and merchant phone numbers — and Q9 puts this database in the
+      # backup set, so an unpruned history is personal data with a fourteen-day tail on top.
+      EXECUTIONS_DATA_PRUNE: ${N8N_EXECUTIONS_DATA_PRUNE:-true}
+      EXECUTIONS_DATA_MAX_AGE: ${N8N_EXECUTIONS_DATA_MAX_AGE:-168}
+      EXECUTIONS_DATA_PRUNE_MAX_COUNT: ${N8N_EXECUTIONS_DATA_PRUNE_MAX_COUNT:-10000}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    # ~1GB, as budgeted. The cap is what keeps a runaway workflow from taking the storefronts down
+    # with it: without it, n8n and the Next server compete for the same 8GB and the OOM killer
+    # picks by RSS, which is usually the web container.
+    mem_limit: 1g
+    mem_reservation: 512m
+    networks: [internal]
+
+  # ---------------------------------------------------------------------------
+  umami:
+    image: ghcr.io/umami-software/umami:postgresql-v2.20.0
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      DATABASE_TYPE: postgresql
+      DATABASE_URL: postgresql://umami:${UMAMI_DB_PASSWORD}@postgres:5432/${UMAMI_DB_NAME:-umami}
+      APP_SECRET: ${UMAMI_APP_SECRET:?UMAMI_APP_SECRET is required}
+      DISABLE_TELEMETRY: '1'
+      # Storefronts load the tracker from https://umami.${DOMAIN}/script.js, and the storefront
+      # CSP's script-src is derived from UMAMI_SCRIPT_URL — so this hostname and that variable
+      # have to agree or the script is blocked by a policy the platform itself sets.
+      TRACKER_SCRIPT_NAME: script
+    mem_limit: 512m
+    networks: [internal]
+
+  # ---------------------------------------------------------------------------
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    restart: unless-stopped
+    volumes:
+      - uptime_kuma_data:/app/data
+      # Read-only access to the host's Docker socket is what lets Kuma monitor CONTAINERS rather
+      # than only URLs — a worker that has crash-looped for an hour serves no HTTP and would
+      # otherwise be invisible to a purely external monitor.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    mem_limit: 384m
+    networks: [internal]
+
+  # ---------------------------------------------------------------------------
+  # Q10. Encrypted dumps of BOTH the application database and n8n's, pushed to R2 — never left
+  # only on this server, because the failure this defends against takes the server with it.
+  backup:
+    build:
+      context: ./docker/backup
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      PGHOST: postgres
+      PGPORT: '5432'
+      # The superuser, because this reads three databases owned by three different roles.
+      PGUSER: ${POSTGRES_SUPERUSER:-postgres}
+      PGPASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-souq_bartaa}
+      BACKUP_DATABASES: ${BACKUP_DATABASES:-${POSTGRES_DB:-souq_bartaa},${N8N_DB_NAME:-n8n},${UMAMI_DB_NAME:-umami}}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-6}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_PREFIX: ${BACKUP_PREFIX:-souq-bartaa}
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:?BACKUP_AGE_RECIPIENT is required}
+      # Internal by default: the public status hostname is behind basic auth, and a ping with no
+      # credentials would 401 — turning "alert when the backup stops succeeding" into "alert on
+      # every successful backup", which is the version an operator mutes within a week.
+      BACKUP_HEARTBEAT_URL: ${BACKUP_HEARTBEAT_URL}
+      R2_BACKUP_BUCKET: ${R2_BACKUP_BUCKET:?R2_BACKUP_BUCKET is required}
+      R2_BACKUP_ENDPOINT: ${R2_BACKUP_ENDPOINT:-${R2_ENDPOINT}}
+      AWS_ACCESS_KEY_ID: ${R2_BACKUP_ACCESS_KEY_ID:?R2_BACKUP_ACCESS_KEY_ID is required}
+      AWS_SECRET_ACCESS_KEY: ${R2_BACKUP_SECRET_ACCESS_KEY:?R2_BACKUP_SECRET_ACCESS_KEY is required}
+    volumes:
+      - backup_workdir:/var/tmp/backup
+    networks: [internal]
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:
+  n8n_data:
+  uptime_kuma_data:
+  backup_workdir:

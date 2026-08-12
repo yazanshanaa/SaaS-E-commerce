@@ -16,7 +16,20 @@ export default defineConfig({
   testMatch: '**/*.spec.ts',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  /**
+   * Two retries on CI, unless a job says otherwise.
+   *
+   * The override exists for exactly one caller: the Lighthouse job (Phase 7), which sets it to 0.
+   * That test now takes its own sample of three runs and keeps the best, so a Playwright retry on
+   * top would be a second sampler stacked on the first — nine measurements, any one of which
+   * could hide a real regression. Everywhere else the retry is doing its ordinary job of
+   * absorbing a flaky click, and stays.
+   */
+  retries: process.env.PLAYWRIGHT_RETRIES
+    ? Number(process.env.PLAYWRIGHT_RETRIES)
+    : process.env.CI
+      ? 2
+      : 0,
   workers: 1,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : [['list']],
   timeout: 60_000,

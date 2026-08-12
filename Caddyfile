@@ -87,6 +87,78 @@
 		respond 404
 	}
 
+	# --- the three operations hostnames (Phase 7) -------------------------------
+	#
+	# They live INSIDE this site block rather than in blocks of their own, and that is a decision
+	# rather than a shortcut. Caddy matches exactly one site block per request, so a separate block
+	# would need its own copy of the wildcard `tls`, its own HSTS header and — the one that
+	# matters — its own `handle /internal/*`. Three more copies of a 404 that is the ONLY layer
+	# protecting the on-demand-TLS ask is three more places to forget it. Here they inherit all of
+	# it, including the `/internal/*` refusal above, which is evaluated first.
+	#
+	# `basic_auth` in front of each is what Q9 means by "mandatory authentication": n8n and Uptime
+	# Kuma both have their own user management, but both also expose a FIRST-RUN SETUP page, and
+	# whoever reaches that page first becomes the owner. The window between `docker compose up` and
+	# the operator's first login is the whole vulnerability, and it is the window a proxy password
+	# closes. n8n's own accounts stay on underneath, because a shared password is not an identity.
+	@n8n host n8n.{$DOMAIN}
+
+	# Uptime Kuma is split for the same reason Umami is: two of its paths are the product working.
+	#
+	# `/api/push/{token}` is the ingest endpoint a push monitor exists for, and it is
+	# unauthenticated BY DESIGN — the token in the URL is the credential. Behind basic auth it
+	# answers 401 to a ping that carries no header, which does not merely disable the monitor: it
+	# INVERTS it. Kuma alerts on silence, so a backup round that succeeded and then failed to ping
+	# looks exactly like a backup that never ran, and the operator is paged by every healthy night
+	# until they mute the one alert that would have told them the backups had stopped.
+	@status_push {
+		host status.{$DOMAIN}
+		path /api/push/*
+	}
+	@status host status.{$DOMAIN}
+
+	# Umami is split, because two of its paths are the product working.
+	#
+	# Every storefront loads the tracker from `umami.{$DOMAIN}/script.js` and reports to
+	# `/api/send`. Putting basic auth over the whole hostname would return 401 to every visitor's
+	# browser and silently end analytics for every merchant on the متجر and احترافي plans — while
+	# the dashboard the operator checks kept working perfectly. Only these two paths are public;
+	# the admin UI behind them is not.
+	@umami_public {
+		host umami.{$DOMAIN}
+		path /script.js /api/send /api/send/*
+	}
+	@umami host umami.{$DOMAIN}
+
+	handle @n8n {
+		basic_auth {
+			{$N8N_PROXY_AUTH_USER} {$N8N_PROXY_AUTH_HASH}
+		}
+		reverse_proxy n8n:5678
+	}
+
+	handle @umami_public {
+		reverse_proxy umami:3000
+	}
+
+	handle @status_push {
+		reverse_proxy uptime-kuma:3001
+	}
+
+	handle @umami {
+		basic_auth {
+			{$N8N_PROXY_AUTH_USER} {$N8N_PROXY_AUTH_HASH}
+		}
+		reverse_proxy umami:3000
+	}
+
+	handle @status {
+		basic_auth {
+			{$N8N_PROXY_AUTH_USER} {$N8N_PROXY_AUTH_HASH}
+		}
+		reverse_proxy uptime-kuma:3001
+	}
+
 	handle {
 		reverse_proxy web:3000 {
 			header_up Host {host}

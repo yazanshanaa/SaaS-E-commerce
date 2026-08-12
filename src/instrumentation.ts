@@ -1,3 +1,5 @@
+import * as Sentry from '@sentry/nextjs';
+
 /**
  * Web-server bootstrap. Next runs `register()` once per server start, before the first request.
  *
@@ -18,6 +20,20 @@
  * development checkout on the local-disk driver is unaffected.
  */
 export async function register(): Promise<void> {
+  /**
+   * Sentry FIRST, and before the runtime guard below (Phase 7, Q15).
+   *
+   * `Sentry.init` has to run in the edge runtime too — Next evaluates this file under both, and
+   * `proxy.ts` is edge code, which makes it the one place a tenant-resolution failure would
+   * otherwise be invisible. Everything else in this function is node-only, so the guard stays,
+   * just underneath.
+   *
+   * It is a no-op without `SENTRY_DSN`. See `src/server/observability/sentry.ts` for what the
+   * scrubber removes and which two sentences of published Arabic privacy copy it implements.
+   */
+  const { startSentry } = await import('@/server/observability/sentry');
+  startSentry();
+
   // Node-only: the media storage module reaches for the S3 client and Node built-ins, neither of
   // which exists in the edge runtime Next also evaluates this file under.
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
@@ -25,3 +41,10 @@ export async function register(): Promise<void> {
   const { registerMediaStorage } = await import('@/server/media/storage');
   registerMediaStorage();
 }
+
+/**
+ * App Router server errors. Next calls this for every uncaught error in a server component, route
+ * handler or server action — the errors that reach a merchant as the Arabic `error.tsx` page with
+ * nothing but a digest on it. Without this hook the digest is all anyone ever has.
+ */
+export const onRequestError = Sentry.captureRequestError;

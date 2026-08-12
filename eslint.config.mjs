@@ -40,6 +40,14 @@ export default tseslint.config(
       'prisma/generated/**',
       'test-results/**',
       'playwright-report/**',
+      /**
+       * `.tmp/` is the repository's scratch directory — `.gitignore` has listed it since Phase 1,
+       * the integration harness writes its database handoff there, and the e2e stack its storage.
+       * It was not in this list, so an operator's throwaway `.ts` file in it failed `pnpm lint`
+       * for the whole repository. A gate that goes red for something outside the tracked tree
+       * teaches people to ignore the gate.
+       */
+      '.tmp/**',
     ],
   },
 

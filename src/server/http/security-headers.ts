@@ -145,6 +145,22 @@ export function buildCsp({ surface }: CspInput): string {
   const img = ["'self'", 'data:', 'blob:'];
   if (cdn) img.push(cdn);
 
+  /**
+   * `connect-src` gains NOTHING for Sentry, and that is a decision rather than an omission
+   * (Phase 7, Q15).
+   *
+   * Sentry is wired on the server, the edge runtime and the worker — never in the browser. A
+   * browser SDK would POST its envelope to a third-party ingest host from a VISITOR'S browser, on
+   * a platform whose whole analytics design turns on issuing zero cross-origin requests before
+   * consent. Error reporting is not tracking, and the envelope carries no identifier once
+   * `src/shared/sentry-scrub.ts` has been through it — but "we only contact third parties you
+   * agreed to" is a property worth more than client-side stack traces, and the storefront is
+   * server-rendered, so the errors that matter are caught server-side anyway.
+   *
+   * The consequence, stated so nobody looks for the missing reports: a hydration error or a
+   * client-component crash in the merchant dashboard is not reported. `docs/DECISIONS.md` records
+   * what it would take to change that.
+   */
   const connect = ["'self'"];
   if (analytics) connect.push(analytics);
 

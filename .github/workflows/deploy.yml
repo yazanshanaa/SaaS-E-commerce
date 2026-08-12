@@ -1,0 +1,209 @@
+name: Deploy
+
+# Staging automatically on a green CI run of `main`; production on manual approval.
+#
+# The trigger is `workflow_run` on CI rather than `push`, and that is the whole safety property:
+# a push-triggered deploy races the gate and can put a red commit on a server. This one cannot
+# start until CI has finished and reported success, and it deploys `workflow_run.head_sha` — the
+# exact commit that passed, not whatever `main` points at by the time the runner picks it up.
+#
+# NO THIRD-PARTY ACTIONS IN THE DEPLOY PATH. Every step here is `ssh` and `rsync` from the runner
+# image. An action in this job runs with the deploy key in its environment, so each one is a
+# supply-chain dependency with production access — and the convenience it buys is about six lines
+# of shell. The checkout and setup actions above are GitHub's own.
+#
+# SECRETS THIS WORKFLOW NEEDS (repository settings -> Secrets and variables -> Actions):
+#   SSH_PRIVATE_KEY        the deploy key, in OpenSSH format
+#   SSH_KNOWN_HOSTS        `ssh-keyscan -H <host>` output. Not optional and not replaceable by
+#                          StrictHostKeyChecking=no: without it the first connection accepts
+#                          whatever answers, which is the one thing a deploy must not do.
+#   STAGING_HOST / STAGING_USER / STAGING_PATH
+#   PRODUCTION_HOST / PRODUCTION_USER / PRODUCTION_PATH
+#
+# The `production` environment must carry a required reviewer — that is what "on approval" means
+# here. Without one this workflow deploys to production automatically, and the manual gate that
+# docs/PHASES.md specifies would exist only in this comment.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # A re-deploy of an already-green commit, for the case where the box was rebuilt rather than
+  # the code changed.
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Which environment to deploy
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+
+concurrency:
+  # Never two deploys at once. `docker compose up -d` on a half-finished build is how a box ends
+  # up running two different commits in two different containers.
+  group: deploy-${{ github.event.inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    name: staging
+    if: >-
+      github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging' ||
+      github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The commit CI actually passed. On a dispatch there is no workflow_run, so this is
+          # empty and the default checkout applies.
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: configure ssh
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: deploy
+        env:
+          HOST: ${{ secrets.STAGING_HOST }}
+          USER: ${{ secrets.STAGING_USER }}
+          DEPLOY_PATH: ${{ secrets.STAGING_PATH }}
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          ssh -i ~/.ssh/id_deploy "$USER@$HOST" bash -euo pipefail <<REMOTE
+            cd "$DEPLOY_PATH"
+            git fetch --all --prune
+            git checkout --detach "$SHA"
+
+            # `up -d` runs the one-shot `migrate` service first (the compose declares
+            # service_completed_successfully on it), so web and worker can never start against an
+            # unmigrated database.
+            docker compose -f docker-compose.prod.yml build
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            docker image prune -f
+          REMOTE
+
+      - name: verify
+        env:
+          HOST: ${{ secrets.STAGING_HOST }}
+          USER: ${{ secrets.STAGING_USER }}
+          DEPLOY_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          # `up -d` returning 0 means the containers were CREATED. This is the difference between
+          # that and the application being alive — the same distinction `/internal/health` was
+          # written to answer, reachable only inside the compose network because Caddy 404s
+          # `/internal/*` on every public hostname.
+          ssh -i ~/.ssh/id_deploy "$USER@$HOST" bash -euo pipefail <<REMOTE
+            cd "$DEPLOY_PATH"
+            for attempt in \$(seq 1 30); do
+              if docker compose -f docker-compose.prod.yml exec -T web \
+                   node -e "fetch('http://127.0.0.1:3000/internal/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"; then
+                echo "web is healthy"
+                docker compose -f docker-compose.prod.yml ps
+                exit 0
+              fi
+              sleep 5
+            done
+            echo "web never became healthy" >&2
+            docker compose -f docker-compose.prod.yml logs --tail=200 web worker >&2
+            exit 1
+          REMOTE
+
+  production:
+    name: production
+    # `needs: staging` is the ordering, and the `production` environment's required reviewer is
+    # the approval. Both matter: the first stops an untried commit reaching production, the second
+    # stops an unattended one.
+    #
+    # `always()` is required, and its absence made the manual production deploy unreachable. A
+    # dispatch with `environment: production` skips the staging job by design — and a skipped
+    # dependency skips the dependent too under the implicit `success()`, so the run went green in
+    # seconds having done nothing, while `docs/DEPLOY.md` pointed at that button as the rollback
+    # path. The two branches below are explicit about which `staging` result each trigger expects:
+    # a CI-driven deploy demands success, a manual production deploy expects the skip.
+    needs: staging
+    if: >-
+      always() && (
+        (github.event_name == 'workflow_run' && needs.staging.result == 'success') ||
+        (github.event_name == 'workflow_dispatch' &&
+         github.event.inputs.environment == 'production' &&
+         needs.staging.result == 'skipped')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: configure ssh
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      # A backup BEFORE the deploy, on top of the six-hourly schedule.
+      #
+      # The window this closes is the one that actually hurts: a migration that goes wrong five
+      # hours and fifty minutes after the last dump. The sidecar's `once` mode is the same code
+      # path as the scheduled round, so this is not a second implementation to keep in step.
+      - name: take a pre-deploy backup
+        env:
+          HOST: ${{ secrets.PRODUCTION_HOST }}
+          USER: ${{ secrets.PRODUCTION_USER }}
+          DEPLOY_PATH: ${{ secrets.PRODUCTION_PATH }}
+        run: |
+          ssh -i ~/.ssh/id_deploy "$USER@$HOST" bash -euo pipefail <<REMOTE
+            cd "$DEPLOY_PATH"
+            docker compose -f docker-compose.prod.yml run --rm backup /usr/local/bin/backup.sh once
+          REMOTE
+
+      - name: deploy
+        env:
+          HOST: ${{ secrets.PRODUCTION_HOST }}
+          USER: ${{ secrets.PRODUCTION_USER }}
+          DEPLOY_PATH: ${{ secrets.PRODUCTION_PATH }}
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          ssh -i ~/.ssh/id_deploy "$USER@$HOST" bash -euo pipefail <<REMOTE
+            cd "$DEPLOY_PATH"
+            git fetch --all --prune
+            git checkout --detach "$SHA"
+            docker compose -f docker-compose.prod.yml build
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            docker image prune -f
+          REMOTE
+
+      - name: verify
+        env:
+          HOST: ${{ secrets.PRODUCTION_HOST }}
+          USER: ${{ secrets.PRODUCTION_USER }}
+          DEPLOY_PATH: ${{ secrets.PRODUCTION_PATH }}
+        run: |
+          ssh -i ~/.ssh/id_deploy "$USER@$HOST" bash -euo pipefail <<REMOTE
+            cd "$DEPLOY_PATH"
+            for attempt in \$(seq 1 30); do
+              if docker compose -f docker-compose.prod.yml exec -T web \
+                   node -e "fetch('http://127.0.0.1:3000/internal/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"; then
+                echo "web is healthy"
+                docker compose -f docker-compose.prod.yml ps
+                exit 0
+              fi
+              sleep 5
+            done
+            echo "web never became healthy" >&2
+            docker compose -f docker-compose.prod.yml logs --tail=200 web worker >&2
+            exit 1
+          REMOTE

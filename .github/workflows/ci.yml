@@ -1,10 +1,12 @@
 name: CI
 
 # The gate CLAUDE.md has described since Phase 1, finally enforced by something other than a
-# person remembering. Phase 6 adds it because "dependency scanning in CI" needs a CI to be in.
+# person remembering. Phase 6 added it because "dependency scanning in CI" needs a CI to be in;
+# Phase 7 finished it — the Lighthouse gate runs now, and the export machinery runs against a real
+# S3 rather than an in-process stand-in.
 #
-# Deploy is NOT here: docs/PHASES.md gives Phase 7 the SSH deploy to staging and the manual
-# approval to production, and a half-built deploy job is worse than none.
+# Deploy lives in `deploy.yml`, which triggers on a SUCCESSFUL run of this workflow. Nothing
+# reaches a server without every job below going green first.
 
 on:
   push:
@@ -20,9 +22,9 @@ concurrency:
 
 env:
   # The suites bring their own Postgres (embedded-postgres for integration, the e2e harness for
-  # Playwright), so no service container is declared. What they do need is a valid env surface —
-  # src/env.ts throws on a missing required key, which would fail every job with a confusing
-  # message about MAIL_FROM rather than about the test.
+  # Playwright), so no service container is declared for it. What they do need is a valid env
+  # surface — src/env.ts throws on a missing required key, which would fail every job with a
+  # confusing message about MAIL_FROM rather than about the test.
   DOMAIN: souqbartaa.test
   PUBLIC_SCHEME: http
   MAIL_FROM: no-reply@souqbartaa.test
@@ -52,8 +54,50 @@ jobs:
 
       - run: pnpm typecheck
       - run: pnpm lint
+
+      # A REAL S3, for the one suite that needs one.
+      #
+      # `tests/integration/phase7-export-storage.test.ts` falls back to an in-process
+      # signature-verifying stand-in when `S3_TEST_ENDPOINT` is unset — that exists so the suite
+      # is runnable on a developer machine without Docker, and its header is explicit that it does
+      # not recompute header-authenticated signatures. THIS is the authoritative run.
+      #
+      # Started as a step rather than declared as a service because the minio image needs
+      # `server /data` as its command, which the `services:` block cannot express without
+      # overriding the entrypoint.
+      #
+      # MINIO_KMS_SECRET_KEY is not optional here: every export object is written with
+      # `encrypt: true` -> `ServerSideEncryption: AES256`, and minio answers SSE-S3 with
+      # NotImplemented unless a KMS key is configured. Without it the artifact never gets written
+      # and the failure looks like a bug in the export rather than in the fixture.
+      - name: start minio
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=souqtestaccess \
+            -e MINIO_ROOT_PASSWORD=souqtestsecret \
+            -e MINIO_KMS_SECRET_KEY=souq-ci-key:QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE= \
+            minio/minio:latest server /data
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null; then
+              echo "minio is up"; exit 0
+            fi
+            sleep 2
+          done
+          echo "minio did not become healthy" >&2
+          docker logs minio >&2
+          exit 1
+
       # Unit + integration. The integration project boots its own Postgres cluster.
       - run: pnpm test
+        env:
+          S3_TEST_ENDPOINT: http://127.0.0.1:9000
+          S3_TEST_ACCESS_KEY_ID: souqtestaccess
+          S3_TEST_SECRET_ACCESS_KEY: souqtestsecret
+          S3_TEST_REGION: us-east-1
+
+      - name: minio logs on failure
+        if: failure()
+        run: docker logs minio || true
 
   e2e:
     name: build · e2e · axe
@@ -75,16 +119,52 @@ jobs:
       # `playwright.config.ts` runs `pnpm build` itself as part of webServer, against the real
       # production build — testing anything else would not be testing the artefact that ships.
       #
-      # The Lighthouse spec is EXCLUDED here and that is a carried-forward decision rather than an
-      # oversight: TODO.md records seven local runs scoring 86–95 with no regression, i.e. machine
-      # variance at the threshold. A gate that fails a third of the time teaches people to re-run
-      # it, which is worse than not having it. Phase 7 decides best-of-N or median-of-three.
+      # Lighthouse is excluded HERE and runs in its own job below. Phase 7 settled the sampling
+      # question (best-of-3, see tests/e2e/support/lighthouse.ts) and the reason for the split is
+      # arithmetic rather than taste: this job retries twice on CI, and three Playwright attempts
+      # at a three-run Lighthouse sample is nine measurements to reach one verdict — which does not
+      # fit in forty-five minutes alongside a production build.
       - run: pnpm e2e --grep-invert @lighthouse
 
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  lighthouse:
+    name: lighthouse (best of 3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: npx playwright install --with-deps chromium
+
+      # PLAYWRIGHT_RETRIES=0, and it is the point of this job existing.
+      #
+      # The old comment here said a gate that fails a third of the time teaches people to re-run
+      # it. Playwright's own retry is exactly that re-run, automated — and now that the harness
+      # samples three times and keeps the best, a Playwright retry would be a second sampler
+      # stacked on the first, hiding a real regression behind nine chances to get lucky. The
+      # sampler IS the retry; anything on top of it is the flakiness it was built to remove.
+      - run: pnpm lighthouse
+        env:
+          PLAYWRIGHT_RETRIES: '0'
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: lighthouse-report
           path: playwright-report/
           retention-days: 7
 

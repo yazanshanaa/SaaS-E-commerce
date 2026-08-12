@@ -5,7 +5,20 @@ import { disconnectAll } from '@/server/db';
 import { logger } from '@/server/logger';
 import { registerMediaStorage } from '@/server/media/storage';
 import { scheduleMediaCleanup } from '@/server/media/schedule';
+import { startSentry } from '@/server/observability/sentry';
 import { getEnv } from '@/env';
+
+/**
+ * Error reporting before anything can fail (Phase 7, Q15).
+ *
+ * This process is the one with no other witness. A failing route handler reaches a merchant as an
+ * Arabic error page and eventually as a support message; a job that throws in here produces
+ * nothing at all except a line in a container log. The suspension export is the case that matters:
+ * exhaust its retries and a merchant is simply never sent the copy of their shop the platform
+ * promised them, on the day their site went dark, and the first anyone hears of it is the
+ * complaint. A no-op without SENTRY_DSN.
+ */
+startSentry();
 
 /**
  * Install the R2 adapter before anything can ask for one — A3 sync point 3.

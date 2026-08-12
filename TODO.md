@@ -228,7 +228,7 @@ Recorded in full in `docs/PHASES.md` → **Resolved decisions**. Nothing here bl
 - [x] Review + merge `phase-a2`, gates green (incl. axe + Lighthouse)
 - [x] Review + merge `phase-a3`, gates green (incl. the 8MB upload check)
 - [x] Track decision files folded into `docs/DECISIONS.md`
-- [ ] Worktrees and branches removed
+- [x] Worktrees and branches removed
 
 **A1 was built twice** — on `phase-a1` and in the main session. The main-session build was kept
 (it solves the cross-host impersonation handoff the branch left open); the branch's two findings
@@ -240,8 +240,8 @@ the orphan sweep is scheduled (A3 #1); A1's plan CRUD writes all six `PlanCapabi
 create, since `isCapabilityVisible()` is fail-closed (raised by A2 at review).
 
 **Still open, carried forward** — full detail in `docs/DECISIONS.md`:
-- [ ] `DATABASE_URL_SYSTEM` set in production; no production compose exists yet — **Phase 7**
-- [ ] CDN origin restricted to the `media/` segment, or a separate bucket for `_exports/` — **Phase 7**
+- [x] `DATABASE_URL_SYSTEM` set in production — **closed in Phase 7**: `docker-compose.prod.yml` sets it for web, worker and migrate
+- [!] CDN origin restricted to the `media/` segment, or a separate bucket for `_exports/` — **Phase 7 delivered the half that can be code**: `publicUrl()` still refuses a non-media key, and `docs/DEPLOY.md` §3 carries the WAF rule, the separate-bucket alternative and the `curl` that proves it. Applying it needs a Cloudflare zone that does not exist yet
 - [x] E2E stack needs an adapter minting CDN URLs, or its image assertions run on an empty set —
       **done at the Group B merge**: `E2E_ALLOW_LOCAL_STORAGE=1` lets the suite write real media to
       `.tmp/e2e-storage`, which unskipped B3's three demo cases and turned B1's purge case from an
@@ -272,8 +272,7 @@ create, since `isCapabilityVisible()` is fail-closed (raised by A2 at review).
 - [x] A merchant's session did not resolve its tenant, and `absoluteUrl()` dropped the port so every
       invitation link was refused as an invalid callback in dev and e2e — **both serviced in the main
       session during B2**; see `docs/DECISIONS.md`
-- [ ] Lighthouse gate is flaky at its threshold (7 runs: 86–95, median ~90, no regression — machine
-      variance in LCP/SI). Decide best-of-N or median-of-three before CI depends on it — **Phase 7**
+- [x] Lighthouse gate flake — **settled in Phase 7**: best-of-3, because the noise is one-directional (a loaded machine only ever makes LCP and SI worse), running in its own CI job with retries off
 - [x] `revalidateStorefront()` is not callable from the worker, which is where variants finish —
       **done in the Group B pre-flight**: `src/server/revalidation` + `/internal/revalidate`
 
@@ -551,25 +550,82 @@ The review (three reviewers, each finding then handed to a separate agent told t
 
 ## Phase 7 — Final QA and deployment (sequential, main session)
 
-- [ ] Playwright suite: tenant isolation, expiry and suspension, retention extension, purge, adding a domain, image upload and compression, color change in both modes, demo create / close / convert, admin feature toggle taking effect
-- [ ] **Export machinery end-to-end against REAL storage** (or minio) — B1's fake-timers units stub the storage layer, which is exactly where the presign ceiling and the orphan-cleanup interaction hide: suspend a basic-plan tenant → artifact exists and the link downloads → run orphan cleanup and the artifact survives → advance past day 8 and it still downloads → extend retention and re-assert → reactivate and the artifact is gone and the link 404s → purge and both objects and link are dead while the tombstone records delivery
-- [ ] Realistic seed: 10 merchants across the three plans in different states
-- [ ] Production docker-compose: web, worker, postgres, redis, caddy, n8n, umami, uptime-kuma
-- [ ] n8n has its **own Postgres database**, not a schema in the app database
-- [ ] Mandatory authentication in front of `n8n.{DOMAIN}` (it is internet-exposed)
-- [ ] `EXECUTIONS_DATA_PRUNE` with a short MAX_AGE on n8n
-- [ ] ~1GB RAM budgeted for n8n
-- [ ] Sentry SaaS free tier wired via env DSN
-- [ ] Uptime Kuma monitors + disk-space alert
-- [ ] `pg_dump` every 6 hours, **encrypted**, pushed to **R2** — never left only on the server
-- [ ] **Dumps retained 14 days, then removed by an R2 lifecycle rule** — without a ceiling every purged tenant stays restorable forever and the Phase 6 deletion copy is untrue
-- [ ] Backup set covers **both** the application database **and** the n8n database
-- [ ] Monthly restore test on staging written into the runbook
-- [ ] **Purge replay in the restore runbook**: after any restore (including the monthly staging test), re-run `purgeTenant` for every `TenantTombstone` whose `purgedAt` precedes the restore point — the tombstone survives the cascade precisely so this list exists
-- [ ] `docs/DEPLOY.md` states the RPO explicitly (worst case 6 hours of product edits; WhatsApp orders were never stored server-side)
-- [ ] GitHub Actions: typecheck + lint + test + e2e + build + axe
-- [ ] Deploy over SSH to staging; production on manual approval
-- [ ] Gate: fully green pipeline + staging running an identical copy + **one restore actually performed** from an encrypted R2 dump, covering both databases
+### Before anything else: the image had never built
+- [x] `Dockerfile` fixed — three independent defects, any one of which fails the build: a root
+      `proxy.ts` that has never existed in this repository, `node_modules/.prisma` which pnpm does
+      not create (the client lives inside the content-addressed store), and no `.dockerignore`, so
+      `COPY . .` dropped the host's Windows `node_modules` over the Linux one and baked `.env` into
+      a layer `next build` then auto-loads. Six phases of green gates never noticed, because the
+      e2e suite and CI both run `pnpm build` directly and nothing had asked Docker to build the
+      artefact that ships
+- [x] `.dockerignore` written; `--chown=node:node` on the runtime copies (`next start` writes
+      `.next/cache`); `HEALTHCHECK` against `/internal/health`, which had no consumer until now
+- [x] `CDN_PUBLIC_BASE_URL` and `PUBLIC_SCHEME` passed as BUILD args — `next.config.ts` reads both
+      at build time, and an image built without them boots fine and refuses every CDN image
+
+### QA
+- [x] Playwright suite: tenant isolation, expiry and suspension, retention extension, purge, adding a domain, image upload and compression, color change in both modes, demo create / close / convert, admin feature toggle taking effect — `tests/e2e/phase7-critical-paths.spec.ts`, 10 new cases closing the gaps the existing 121 left: a signed-in merchant reading the neighbouring shop BY ID, a purge that finishes, `convertDemo` (which had no e2e coverage at all), both colour modes reaching the storefront, and the media endpoint's two Arabic refusals
+- [x] Two paths could NOT be reached from e2e and say so in the file rather than faking it: the SWEEP-driven expiry (no clock seam from a browser, and the sweep fans out to a broker this stack deliberately leaves dead) and a SUCCESSFUL upload (the ingest path enqueues through the raw queue helper, which cannot settle without Redis)
+- [x] **Export machinery end-to-end against REAL storage** — `tests/integration/phase7-export-storage.test.ts`: suspend a basic-plan tenant → artifact exists and the delivered link downloads real ZIP bytes → an orphan sweep reports `protectedExports: 1` and `deleted: 1`, so the artifact survives a pass that was not a no-op → past day 9 it still downloads → extend retention and the SAME token still works → reactivate and the artifact is gone while the tenant's media survives → purge and nothing is left while the tombstone records delivery. Plus: a thirty-day `signedUrl` comes back `X-Amz-Expires=3600`, and the artifact is refused unsigned and refused with a stale signature
+- [x] The backend is a real minio when `S3_TEST_ENDPOINT` is set (CI starts one — the authoritative run) and an in-process signature-verifying S3 otherwise, because this machine has no Docker and a test only CI can run is a test its author cannot iterate on. `tests/helpers/s3-endpoint.ts` states exactly what each proves
+- [x] Realistic seed: 10 merchants across the three plans in different states — `prisma/seed-scenario.ts`, `pnpm db:seed:scenario`. Arabic trade names, +970 numbers, real prices; active monthly and yearly, two expiring soon, three suspended (one near purge, one with a retention extension), domains in all three states, orders and payments, change requests applied/open/rejected, a non-uniform feature matrix. A SEPARATE script, never part of `prisma/seed.ts`: `seed.test.ts` pins the base seed's exact shape and `start-stack.ts` runs it for every e2e boot
+- [x] Lighthouse threshold flake settled: **best-of-3**, because the noise is one-directional — a loaded machine can only make LCP and SI worse, so the sample maximum is the least contaminated estimator and the median is the one that moves with the machine. It runs in CI now, in its own job with `PLAYWRIGHT_RETRIES=0`: the sampler IS the retry
+
+### The stack
+- [x] Production docker-compose: web, worker, postgres, redis, caddy, n8n, umami, uptime-kuma — plus a one-shot `migrate` service web and worker wait on, and a backup sidecar. Only caddy publishes a port
+- [x] `DATABASE_URL_SYSTEM` set — the Group A carry-forward, closed. Unset, the sweeps run as `app_web` with no tenant context and a purge deletes the identity of somebody who still owns a different shop
+- [x] n8n has its **own Postgres database**, not a schema in the app database — created by `docker/postgres/production-init`, which also takes every role password from env instead of hardcoding it to the role name the way the dev stack does
+- [x] Mandatory authentication in front of `n8n.{DOMAIN}` — Caddy basic auth on n8n, Umami's admin UI and Uptime Kuma. All three ship a first-run setup page that belongs to whoever reaches it first, and the window between `compose up` and the operator's first login is the whole exposure
+- [x] Umami's `/script.js` and `/api/send` are exempt — auth over the whole hostname would 401 every visitor's browser and silently end analytics for every متجر and احترافي merchant, while the dashboard the operator checks kept working perfectly
+- [x] `EXECUTIONS_DATA_PRUNE` with a short MAX_AGE on n8n — the first consumer the three variables Phase 6 declared have ever had
+- [x] ~1GB RAM budgeted for n8n (`mem_limit`), so a runaway workflow cannot take the storefronts down with it
+- [x] Sentry SaaS free tier wired via env DSN — web, edge runtime and worker. **No browser SDK**, deliberately: it would make a visitor's browser contact a third party from a storefront that promises zero cross-origin requests before consent. The scrubber in `src/shared/sentry-scrub.ts` implements the two sentences the Arabic privacy line already published, and setting the DSN adds Sentry to every tenant's PROCESSORS section — there is no state where data is sent and the policy is silent
+- [x] Uptime Kuma monitors + disk-space alert — the table is in `docs/DEPLOY.md` §7, including the container monitors (a crash-looped worker serves no HTTP and is otherwise invisible) and a push monitor for backup success
+
+### Backups (Q10)
+- [x] `pg_dump` every 6 hours, **encrypted**, pushed to **R2** — `docker/backup/`. `age` rather than `openssl enc`: authenticated, and recipient-based so the server holds only the public key. The script refuses to start if `BACKUP_AGE_RECIPIENT` looks like an identity
+- [x] Verified with `pg_restore --list` BEFORE encryption, and the upload confirmed by comparing the `HEAD` size — the difference between "the request was accepted" and "the backup exists"
+- [x] The schedule is `BACKUP_INTERVAL_HOURS` and nothing else — a sleep loop rather than cron, because that number is interpolated into every tenant's privacy policy as fact and a second place to configure it is a second place for the claim and the schedule to diverge
+- [x] **Dumps retained 14 days, then removed by an R2 lifecycle rule** — the script never deletes (a client-side delete loop stops the moment the client breaks); it CHECKS the rule on every run and complains unmissably when it is missing or disagrees with the published number
+- [x] Backup set covers **both** the application database **and** the n8n database (and Umami's)
+- [x] Monthly restore test on staging written into the runbook — `docs/DEPLOY.md` §6, as a checklist, with the reminder that a restore test nobody wrote down did not happen
+- [x] **Purge replay in the restore runbook** — and the specification was pointed the wrong way. `TenantTombstone` is global and survives the CASCADE, but it lives in the same DATABASE: a dump at t0 carries the tombstones as of t0, so the restored database holds the resurrected tenants and none of their tombstones. The list has to be CAPTURED from a database newer than the dump, and the comparison is `purgedAt > restorePoint`, not «precedes». `scripts/purge-replay.ts` has a `--capture` mode for exactly that, reports a resurrected-but-active tenant as BLOCKED rather than suspending it to get past the guard (that would offer a deleted merchant their data over WhatsApp), and exits non-zero while anything is left over
+- [x] `docs/DEPLOY.md` states the RPO explicitly (worst case 6 hours of product edits; WhatsApp orders were never stored server-side) — and names the one thing six hours is NOT defensible for, settled payments, which is the documented trigger to move to WAL archiving
+
+### Pipeline
+- [x] GitHub Actions: typecheck + lint + test + e2e + build + axe — plus a real minio for the export suite and a dedicated Lighthouse job
+- [x] Deploy over SSH to staging; production on manual approval — `.github/workflows/deploy.yml`, triggered by a SUCCESSFUL CI run rather than by a push, deploying `workflow_run.head_sha` so it is the commit that passed and not whatever `main` points at by then. No third-party actions in the deploy path: each one would run with the deploy key in its environment. Production takes a backup first, because `prisma migrate deploy` rolls nothing back and a rollback across a migration is a restore
+- [x] Gate: typecheck + lint + **994 unit and integration tests (60 files)** + the full **131-spec e2e** including axe and the Lighthouse gate, all green in the main checkout
+- [!] Gate, the remainder: **staging running an identical copy** and **one restore actually performed** from an encrypted R2 dump. Blocked on infrastructure that does not exist yet — a VPS, a Cloudflare zone, R2 credentials. Every mechanism is written and everything verifiable without a server has been verified; this is the operator's first task and `docs/DEPLOY.md` §6 is the checklist. Deliberately NOT ticked
+
+### What the phase found in its own work
+
+Three by building it, and eight more by an adversarial review — five reviewers over the diff
+(deployment, backup and restore, security, whether the new tests prove what they claim, whether the
+prose describes the code), every finding handed to a separate agent told to refute it, plus a final
+pass asking what nobody had looked at. Full reasoning in `docs/DECISIONS.md`.
+
+Found by building it:
+- [x] The purge replay — the runbook's central step, which as specified would have run clean and done nothing: the comparison was the wrong way round AND the tombstones a restore needs are not in the restored database
+- [x] A fixture that aged nothing: `SET suspended_at = now() - interval '3 hours'` subtracts three hours from a clock already three ahead, because the column is `timestamp` holding UTC while the session answers in Asia/Jerusalem. Aged relative to its own value now, the way `ageSuspension` already did
+- [x] Naming `cf-connecting-ip` and `x-forwarded-for` in the Sentry scrubber tripped invariant 9's one-`getClientIp()` scan — correctly. Headers are dropped wholesale now, which also matches the Arabic copy more closely
+
+Found by the review:
+- [x] **The production compose never gave the containers `.env`.** Every key outside the explicit map took its zod default, and `prisma/seed.ts` reads the seed credentials through plain `process.env` — so the first-deploy `pnpm db:seed` would have created the platform owner as `admin@souqbartaa.test` / `ChangeMe!2026`, both published in this repository, on an internet-facing super-admin account
+- [x] **The Sentry scrubber shipped the export token.** It stripped the query string; Q18's link puts the token in the PATH. Redacted by pattern, and `tests/unit/phase7-sentry-scrub.test.ts` now pins the whole policy — there had been no test on it at all
+- [x] **`beforeSend` does not run on transactions**, so a sampled request to that route would have carried the token past the scrubber anyway. `beforeSendTransaction` wired to the same function, and the event type is the union of both so the next omission is a compile error
+- [x] **`dump_database` returned success after a failed encryption or upload** — `set -e` is suspended inside a command substitution used as an `if` condition, so the round reported zero failures and the heartbeat fired over a backup that did not exist
+- [x] **The same function wrote its log lines into the manifest**, making it invalid JSON at exactly the field the restore runbook reads
+- [x] **`restore.sh into` dropped the target database on the strength of a download that never happened** (`| tail -1` swallows the failure), and its sha256 check always compared against the first database in the manifest
+- [x] **Caddy basic auth inverted the backup alarm**: Uptime Kuma's push endpoint is unauthenticated by design, so every healthy backup would have paged until someone muted the one alert that mattered. Same shape on Umami, where the platform's own per-tenant provisioning would have got a 401
+- [x] **`restorePoint` was stamped after the dumps**, so a tenant purged during the round fell into a gap the replay skips
+- [x] Two smaller: `workflow_dispatch` to production could never run (a skipped `staging` skips its dependent), which is the documented rollback path; and the worker omitted its build args, paying for a second full `next build` on every deploy
+- [x] **The completeness critic's find:** staging must NOT share `R2_BUCKET` with production. The worker's 04:00 orphan sweep would delete every image uploaded by a live merchant after the dump — permanently, since originals are discarded and media is not in the dumps. `docs/DEPLOY.md` now says so, with the fallback if a second bucket is impossible
+
+### Still open, carried forward
+- [!] **Purge-by-URL on the CDN edge** still needs a Cloudflare token scoped for cache purge, and there is no zone to scope it against yet. `CLOUDFLARE_ZONE_ID` is the waiting slot. The mitigation shipped in Phase 6 — a deleted image is fetchable for at most two days rather than eight, and the Arabic copy states that number
+- [ ] `src/server/media/upload.ts` enqueues through the raw queue helper rather than billing's bounded `dispatchJob`, so an upload against a dead broker has no bound on it. Invisible in production (Redis is up) and the reason a successful upload cannot be asserted from e2e — raised by the critical-path author, left alone because it is A3's ingest path and not Phase 7's to redesign
+- [ ] `seed-assets` still has two candidate homes (`.gitignore` anticipates a repository-root folder, B3 put the lookup inside its own folder). Unchanged by this phase
 
 ### Before launch (manual)
 - [ ] Full merchant day: create an account, upload products, change colors, place a WhatsApp order, suspend the subscription, **download the export from the message**, restore it, **confirm the copy is gone**

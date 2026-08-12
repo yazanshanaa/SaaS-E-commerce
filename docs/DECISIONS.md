@@ -1748,3 +1748,328 @@ changed, so the audit also runs weekly. **Lighthouse is excluded from CI** — T
 local runs scoring 86–95 with no regression, i.e. machine variance at the threshold, and a gate that
 fails a third of the time teaches people to re-run it. Phase 7 decides best-of-N or median-of-three.
 Deploy is not here: Phase 7 owns it, and a half-built deploy job is worse than none.
+
+---
+
+## Phase 7 — Final QA and deployment
+
+The phase that turns a repository into a deployment. Three things it found on the way are worth
+more than anything it built: the image had never built, the restore runbook's central step was
+pointed the wrong way, and a fixture that looked like it aged a row aged nothing at all.
+
+### The Dockerfile had never built, and nothing noticed for six phases
+
+Three independent defects, any one of which fails the build outright:
+
+1. **`COPY package.json next.config.ts proxy.ts tsconfig.json ./`** — there has never been a root
+   `proxy.ts` in this repository. The file is `src/proxy.ts`, already carried by `COPY src ./src`,
+   and Docker fails a multi-source `COPY` when any source is missing. `git log --all -- proxy.ts`
+   returns nothing: the line was wrong the day it was written.
+2. **`COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma`** — under pnpm that
+   path does not exist. `@prisma/client` resolves `.prisma/client` relative to its own real
+   location inside the content-addressed store, so the generated client lives at
+   `node_modules/.pnpm/@prisma+client@<version>_<hash>/node_modules/.prisma`. Both runtime stages
+   now take the whole `node_modules` from `builder` — the stage that ran `prisma generate` — which
+   carries it wherever pnpm put it. Patching the `.prisma` path instead would have to know pnpm's
+   content hash, which changes with every lockfile.
+3. **No `.dockerignore` existed.** `COPY . .` in the builder runs one line after the Linux
+   `node_modules` arrives from `deps`, so the host's Windows tree — `.CMD` shims, win32 binaries
+   for sharp and argon2 — overwrote it. And `.env`, with real secrets, was baked into a layer that
+   `next build` then auto-loads.
+
+The reason none of this surfaced is worth recording: the e2e suite runs `pnpm build` and
+`next start` directly, and CI does the same. Nothing in six phases had ever asked Docker to build
+the image the deployment ships. A gate that tests the artefact by a different route than the one
+that ships is not testing the artefact.
+
+Two things went in alongside: `--chown=node:node` on the runtime copies, because `next start`
+writes `.next/cache` for ISR and a root-owned tree under `USER node` fails at the first
+revalidation, long after the deploy looked fine; and a `HEALTHCHECK` against `/internal/health`,
+which had existed since Phase 1 with no consumer.
+
+**`CDN_PUBLIC_BASE_URL` and `PUBLIC_SCHEME` are build args now.** `next.config.ts` reads both at
+build time — the first fills `images.remotePatterns`, the second decides whether
+`Cross-Origin-Opener-Policy` is emitted. An image built without them boots perfectly and refuses
+every CDN image at runtime, on a platform whose invariant 4 says media is always CDN-delivered.
+
+### The purge replay was pointed the wrong way, and the tombstones are not where it looked
+
+`docs/PHASES.md` specifies: after any restore, "re-run `purgeTenant` for every `TenantTombstone`
+whose `purgedAt` precedes the restore point". Implemented literally against the restored database,
+that step does nothing at all, for two compounding reasons.
+
+**The direction.** A tenant purged *before* the dump is already absent from it — a no-op. The
+tenants a restore actually resurrects are those purged *after* it. The comparison is
+`purgedAt > restorePoint`.
+
+**The source.** `TenantTombstone` is global and survives the tenant cascade, which is what makes the
+list exist — but global is not external. The table lives in the same database, so a dump taken at t0
+carries the tombstones as they were at t0, and a purge at t1 > t0 leaves no trace in it. The
+restored database therefore contains the resurrected tenants and *none* of their tombstones. A query
+against it alone returns an empty set and reports success.
+
+So `scripts/purge-replay.ts` has two modes. `--capture` reads the list from a database newer than
+the dump — production, which stays up throughout the monthly staging test — and writes it out; the
+replay then runs against the restored database with that file. The runbook orders the steps so the
+capture cannot be forgotten, because forgetting it produces a clean-looking run.
+
+It also refuses to guess in one place. `purgeTenant` accepts only a suspended subscription, and a
+tenant that was still active when the dump was taken comes back active. Those are reported as
+BLOCKED with a non-zero exit rather than suspended to get past the guard — `suspend()` builds an
+export and offers the merchant their data over WhatsApp, and this merchant was deleted.
+
+**The honest limit, now in `docs/DEPLOY.md` rather than implied:** in a true disaster, purges
+performed inside the RPO window are unrecoverable from the restore, because their tombstones died
+with the database. That is at most six hours of purges, and where else to look for them — n8n's
+execution history, which keeps 168 hours — is written down.
+
+### `now()` is not the clock the rows are on
+
+The critical-path spec needed a suspension to look three hours old, to clear the guard that refuses
+an operator purge while the export may still be building. It wrote
+`SET suspended_at = now() - interval '3 hours'`.
+
+That subtracts three hours from a clock that is already three hours ahead. `suspended_at` is
+`timestamp` without a time zone and Prisma writes UTC into it; the session's `now()` answers in
+Asia/Jerusalem. The row landed back on the present, the guard fired, and the screen correctly said
+«wait» while the test waited for a success notice that could never arrive — for 150 seconds, which
+is what finally made it look like a hang rather than a failure.
+
+`tests/integration/b1-lifecycle.test.ts` already had the answer in `ageSuspension`: move the column
+by an interval relative to **its own value**, and the session's idea of the time never enters it.
+Guessing the offset once would have worked until the clocks changed.
+
+### The export machinery, finally measured against something that signs
+
+`tests/integration/phase7-export-storage.test.ts`. Every previous test of this machinery ran on
+`LocalStorageAdapter`, whose `signedUrl` is not a presign at all — it is an HMAC over `key:expires`
+that a route in this application verifies. Two things had therefore never been exercised anywhere:
+the presign (its expiry, its ceiling, whether a signed URL is fetchable by something that checks),
+and the orphan sweep over a real `ListObjectsV2`.
+
+The suite runs against a real minio when `S3_TEST_ENDPOINT` is set — CI starts one, and that is the
+authoritative run — and against an in-process S3 otherwise. The stand-in exists because the machine
+this was written on has no Docker, and a test that only runs in CI is a test its author cannot
+iterate on. `tests/helpers/s3-endpoint.ts` states exactly what each backend proves: the stub speaks
+the real wire protocol and **fully verifies presigned GET signatures and their expiry**, and it does
+not recompute header-authenticated signatures. Saying so in the file is the difference between a
+fixture and an overclaim.
+
+What the run shows that no assertion showed before: `scanned: 2, deleted: 1, protectedExports: 1` —
+the sweep enumerated the export artifact, protected it deliberately, and deleted a genuine orphan in
+the same pass, so "the artifact survived" is not a statement about a no-op. And a thirty-day
+`signedUrl` request comes back with `X-Amz-Expires=3600`: there is no code path in this platform
+that can hand out a durable signature, which is the measurement behind Q18's whole shape.
+
+### Lighthouse: best-of-3, and why that tightens the gate rather than loosening it
+
+TODO.md recorded seven runs scoring 86–95 against a threshold of 90, with no regression — machine
+variance, and a gate that fails a third of the time teaches people to re-run it.
+
+Best-of-3, not median-of-three, and the reason is that **the noise here is one-directional**. A
+loaded machine can only make LCP and Speed Index worse; contention never makes a page paint sooner
+than it can. So the sample maximum is the least contaminated estimator of what the page actually
+does on an unloaded client, while the median moves with the machine. The recorded spread sits
+entirely below the ceiling rather than around a centre, which is that asymmetry measured. A real
+regression lowers every run and still fails all three.
+
+It runs in CI now, in **its own job with `PLAYWRIGHT_RETRIES=0`**. Playwright's retry is exactly the
+manual re-run this change exists to remove; stacked on a three-run sampler it would be nine
+measurements for one verdict, and nine chances for a real regression to get lucky. The sampler is
+the retry.
+
+### Sentry is wired on the server, and nowhere near a visitor's browser
+
+Q15 asked for Sentry SaaS from an env DSN. It is initialised in `src/instrumentation.ts` (node and
+edge — the edge runtime matters, because `proxy.ts` is where a tenant-resolution failure would
+otherwise be invisible) and in `src/worker/index.ts`. The worker needed it most: a job that throws
+in a background container produces no 500 anybody sees, and a suspension export that exhausts its
+retries is a merchant who is never sent their data.
+
+**No browser SDK, and that is a decision.** It would make a visitor's browser POST to a third-party
+ingest host from a storefront, on a platform whose analytics design turns on issuing zero
+cross-origin requests before consent. Error reporting is not tracking, and the envelope carries no
+identifier once the scrubber has been through it — but "we only contact third parties you agreed to"
+is worth more than client-side stack traces, and the storefront is server-rendered, so the errors
+that matter are caught anyway. The cost, stated so nobody hunts for missing reports: a hydration
+error or a client-component crash in the merchant dashboard is not reported. `connect-src` is
+therefore unchanged, and the two suites that assert a storefront logs nothing to the console keep
+their meaning instead of gaining an exception.
+
+**The scrubber is an implementation of published text, not a preference.** Once `SENTRY_DSN` is set,
+`facts.ts` names Sentry in every tenant's privacy policy, and the Arabic line already sitting in
+`messages/ar/legal.json` promises the reader two things: the error and the path of the page, with
+form contents and access keys excluded. `src/shared/sentry-scrub.ts` rebuilds the request from
+exactly those fields rather than filtering a deny-list — a deny-list stops covering a field the SDK
+starts attaching in a future version, and nothing fails; it just begins shipping.
+
+It drops every header rather than filtering the dangerous ones, and the guardrails are why. Naming
+`cf-connecting-ip` and `x-forwarded-for` in code tripped invariant 9's "one `getClientIp()`" scan —
+correctly. A second place that decides what to do with those headers is what that invariant exists
+to prevent, and against that a header buys nothing: an error is diagnosed from the stack and the
+path, which is what the policy says arrives.
+
+`withSentryConfig` is deliberately not applied. What it adds — source-map upload and a tunnel route
+— both need credentials this deployment does not have, and wrapping the Next config silently
+changes webpack behaviour in a phase whose job is making deployment predictable. Native Next
+instrumentation gives full server capture without it. The cost is minified client traces, which is
+free here because there are no client traces.
+
+### The stack, and the three things it consumes that Phase 6 only declared
+
+`docker-compose.prod.yml`: caddy, web, worker, a one-shot migrate, postgres, redis, n8n, umami,
+uptime-kuma and a backup sidecar. Only caddy publishes a port — which is also what keeps
+`/internal/*` safe to leave unauthenticated inside the network while Caddy 404s it on every public
+hostname.
+
+**`DATABASE_URL_SYSTEM` is set, closing the Group A carry-forward.** Unset, `systemClient()` falls
+back to `DATABASE_URL`, the sweeps run as `app_web` with no tenant context, and
+`usersWithNoOtherMembership` reads zero rows from a policy comparing against an unset GUC — so every
+user looks like a sole member and a purge deletes the identity of somebody who still owns a
+different shop. Phase 6 added a guard that asserts `current_user = 'app_system'` and skips loudly;
+this is the line that means it never has to.
+
+**n8n gets its own database, its own role, and `EXECUTIONS_DATA_PRUNE` at the 168 hours Phase 6
+declared** — the first consumer those variables have ever had. Its execution history holds delivered
+export links and merchant phone numbers, and Q9 puts its database in the backup set, so an unpruned
+history is personal data with a fourteen-day tail on top.
+
+**The three operations hostnames live inside the platform site block**, as named matchers rather
+than site blocks of their own. A separate block would need its own copy of the wildcard `tls`, its
+own HSTS header and — the one that matters — its own `handle /internal/*`, which is the only layer
+protecting the on-demand-TLS ask. Here they inherit all of it. As a side effect the two unit tests
+that count HSTS headers and `/internal/*` handles keep asserting what they were written to assert,
+rather than being widened to accommodate the change.
+
+Umami is split: `/script.js` and `/api/send` are public, everything else sits behind the same basic
+auth as n8n and Uptime Kuma. Putting auth over the whole hostname would return 401 to every
+visitor's browser and end analytics for every متجر and احترافي merchant on the platform, while the
+dashboard the operator checks kept working perfectly. The auth exists at all because all three tools
+ship a first-run setup page that belongs to whoever reaches it first, and the window between
+`compose up` and the operator's first login is the whole exposure.
+
+### Backups: what the code does and what it deliberately does not
+
+Encrypted `pg_dump --format=custom` of every database in `BACKUP_DATABASES` — the application's and
+n8n's, per Q9 and Q10 — verified with `pg_restore --list` **before** encryption, so a truncated dump
+fails on the machine that made it while there is still a healthy database to try again against.
+
+**`age` rather than `openssl enc`**, for two reasons. It is authenticated, so tampering is detected
+rather than restored as garbage. And it is recipient-based: the server holds only the public key, so
+taking the box gets an attacker the live database — which they were always going to get — and not
+fourteen days of every tenant that has ever existed. The script refuses to start if
+`BACKUP_AGE_RECIPIENT` looks like an identity, because an operator who pastes the secret key there
+has undone the entire property while everything downstream still appears to work.
+
+**The schedule is `BACKUP_INTERVAL_HOURS` and nothing else** — a sleep loop, not cron. Phase 6 moved
+that number into env precisely because `src/server/legal/facts.ts` interpolates it into every
+tenant's privacy policy as a statement of fact; a cron expression would be a second place to
+configure the period, and therefore a second place for the published claim and the running schedule
+to diverge silently across every tenant.
+
+**Retention is an R2 lifecycle rule and the script never deletes.** A client-side delete loop stops
+deleting the moment the client is broken, and then every purged tenant stays restorable forever and
+the deletion sentence in every policy quietly becomes untrue. What the script does instead is check
+on every run that the rule exists and says what was published, and complain unmissably when it does
+not — without refusing to run, because a missing retention rule is an operator problem and not a
+reason to stop protecting data.
+
+### The adversarial review, and the eight things it changed
+
+Five reviewers over the phase diff — deployment, backup and restore, security, whether the new
+tests prove what they claim, and whether the prose describes the code — each dimension's findings
+then handed to a separate agent told to refute them, and a final pass asking what nobody had looked
+at. Twenty-eight raised, twenty-two survived refutation, most of them the same three or four
+mechanisms found independently from different angles. Eight distinct defects, in rough order of how
+badly they would have gone.
+
+**The production compose never gave the containers `.env`.** The `environment:` map named about
+twenty keys; `.env.example` documents roughly sixty. Everything else — every `RATE_LIMIT_*`,
+`AUTH_LOCKOUT_*`, `SESSION_*`, `TOMBSTONE_RETENTION_DAYS`, `LIFECYCLE_SWEEP_CRON` — silently took
+its zod default, while the file's own header said "every value comes from `.env`". The sharp end is
+`prisma/seed.ts`: it reads `SEED_SUPER_ADMIN_EMAIL` and `SEED_SUPER_ADMIN_PASSWORD` through plain
+`process.env`, and `.dockerignore` correctly keeps `.env` out of the image — so the first-deploy
+`pnpm db:seed` that `docs/DEPLOY.md` §4 instructs would have created the platform owner as
+`admin@souqbartaa.test` / `ChangeMe!2026`. Both strings are in this repository. An internet-facing
+super-admin account with cross-tenant authority, published credentials, and no 2FA yet enrolled —
+and the operator could not even have logged in to fix it, because DEPLOY.md tells them to sign in
+with the address they configured, which would not exist. `env_file: [.env]` on the three app
+services, with the explicit map still winning where the stack decides the value.
+
+**The Sentry scrubber shipped the export token.** It stripped the query string, which is where
+every other credential on this platform lives — and Q18's link is `app.{DOMAIN}/export/{token}`,
+where the token IS the path segment. Any unhandled error on that route would have sent a live
+bearer credential for a merchant's entire catalogue to a third party in plain text, from the one
+route most likely to be opened twice by someone confused. That is the exact rule Phase 1 wrote and
+Phase 6 re-signed. Redacted by pattern now, with `tests/unit/phase7-sentry-scrub.test.ts` pinning
+it — there was no test on the scrubber at all, which is why this got as far as it did.
+
+**And `beforeSend` does not run on transactions.** A performance transaction is a separate envelope
+with its own hook and the same `request.url` on it, so at the default sample rate one request in
+ten to that route would have carried the token past the scrubber written to stop it.
+`beforeSendTransaction` is wired to the same function, and the shared event type is now the union
+of both — so the next person to forget gets a compile error rather than a leak.
+
+**`dump_database` returned success after a failed encryption or upload.** `set -e` is suspended
+inside a command substitution used as an `if` condition, which is exactly how it was called, so a
+failing `age` or `aws s3 cp` fell through to the function's final `printf` and returned 0. The round
+reported zero failures, the manifest listed the database, the heartbeat fired and the monitor stayed
+green over a backup that did not exist. Every step is checked explicitly now.
+
+**The same function wrote its log lines into the manifest.** It returned its JSON fragment on
+stdout while `log()` also wrote there, and the caller captured the lot — so `manifest.json` was log
+text with JSON glued on the end, invalid at exactly the place the restore runbook reads
+`restorePoint`, and no per-database progress ever reached the container log. Diagnostics go to
+stderr; results move through files.
+
+**`restore.sh into` dropped the target database on the strength of a download that never
+happened.** It read the dump's path back through `$(cmd_fetch … | tail -1)`, and `tail` exits 0
+whatever it is fed — so a failed download or a wrong age identity was swallowed, and the next two
+statements were `DROP DATABASE` and `CREATE DATABASE`. Its sha256 cross-check also grepped the
+whole manifest, which always matched the first database's hash: n8n's dump was "verified" against
+the application's.
+
+**Caddy's basic auth broke both things it was protecting the platform's monitoring for.** Uptime
+Kuma's `/api/push/{token}` is unauthenticated by design — the token in the URL is the credential —
+so behind basic auth the backup heartbeat and the disk-space alert both 401. That does not disable
+the monitor, it INVERTS it: Kuma alerts on silence, so every healthy backup would have paged, and
+the operator would have muted the one alarm that would later have told them the backups had
+stopped. Umami had the same shape one layer over: `UMAMI_BASE_URL` pointed at the public hostname,
+so A1's per-tenant website provisioning would have got a 401 at every account creation and every new
+merchant would have come up with no analytics. It talks to `http://umami:3000` on the compose
+network now; only the tracker script is public.
+
+**`restorePoint` was stamped after the dumps finished**, so a tenant purged while the round was
+running fell into the gap — absent from the dump, but with a tombstone that looked older than the
+restore point, so the replay skipped it. Stamped before the first dump now: that can only ever
+select more tombstones than necessary, and every extra one is a no-op.
+
+Two smaller ones from the same pass: `workflow_dispatch` to production could never run, because a
+skipped `staging` skips its dependent under the implicit `success()` — and that button is the
+rollback path DEPLOY.md points at; and the worker service omitted the build args it shares with
+`web`, so every deploy paid for a second full `next build` that the image then discarded.
+
+**What the completeness critic found that nobody else did: staging is not safe to make identical.**
+`docker-compose.prod.yml` always starts the worker, and the worker sweeps media orphans at 04:00 —
+so a staging stack, or the scratch stack §6 tells you to build over a restored database, sharing
+`R2_BUCKET` with production would delete every image a live merchant uploaded after the dump.
+Permanently: originals are discarded by design and media is not in the dumps. The rowless-prefix
+half of that sweep was hardened against precisely this and demands a tombstone as positive
+evidence; the per-tenant half has no such proof available. `docs/DEPLOY.md` now says the bucket must
+differ, and what to do if it cannot.
+
+**Refuted and worth recording as refuted:** that the purge replay still selected the wrong set (it
+had already been rewritten); that `purgeTenant` refusing a non-suspended tenant left the replay with
+no remedy (it reports BLOCKED and exits non-zero, which is the remedy); that the postgres init
+leaks passwords through `argv` (psql interpolates client-side, so the exposure is the server log on
+a failed statement, not the process table — narrower, and noted rather than argued away).
+
+### What Phase 7 could not do, stated rather than ticked
+
+The acceptance bar includes a staging environment running an identical copy and **one restore
+actually performed from an encrypted R2 dump**. Both need infrastructure that does not exist yet: a
+VPS, a Cloudflare zone, R2 credentials. Every mechanism is written, and everything verifiable
+without a server has been verified — the image defects by reading the Dockerfile against the
+filesystem, the compose and Caddy configuration by reasoning, the seed scenario and the export
+machinery by running them. The restore itself is the operator's first task and `docs/DEPLOY.md` §6
+is the checklist. **It is not ticked in `TODO.md`, and it should not be until it has happened.**

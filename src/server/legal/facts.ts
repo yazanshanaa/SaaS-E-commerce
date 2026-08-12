@@ -68,20 +68,24 @@ function configuredProcessors(input: {
   if (input.pushEnabled) keys.push('pushService');
 
   /**
-   * SENTRY IS NOT LISTED, and the omission is the accurate answer rather than a gap.
+   * Sentry, now that Phase 7 has wired it — and still gated on the DSN rather than on the SDK
+   * being present.
    *
-   * `@sentry/nextjs` is a dependency and `SENTRY_DSN` is a validated env var, but nothing
-   * initialises the SDK: there is no `Sentry.init`, no `withSentryConfig`, no `sentry.*.config.ts`,
-   * and `src/instrumentation.ts` registers only the storage adapter. Not one byte has ever been
-   * sent. Naming a processor on the strength of a configured DSN would be a false disclosure in the
-   * direction nobody audits for — claiming data leaves when it does not — in the one document this
-   * phase promises is true.
+   * Phase 6 declined to name it here and left a pin in `tests/unit/phase6-legal.test.ts` that
+   * fails in whichever direction is wrong: it scans `src/**` for an initialised SDK and asserts
+   * this line exists if and only if one is found. `src/server/observability/sentry.ts` calls
+   * `Sentry.init`, reached from `src/instrumentation.ts` (the web server's node AND edge runtimes)
+   * and from `src/worker/index.ts` — so the line is here. There is no browser half by design.
    *
-   * Phase 7 owns wiring it (docs/PHASES.md). `tests/unit/phase6-legal.test.ts` fails the moment the
-   * SDK is initialised anywhere, so whoever does that is told, in the failing assertion, that the
-   * privacy copy now owes a line. That is the only reliable way to keep a disclosure honest across
-   * a phase boundary.
+   * The DSN gate is what keeps the disclosure true per DEPLOYMENT rather than per repository. All
+   * three call sites are no-ops without one, so an operator running without Sentry sends nothing
+   * and their tenants' policies say nothing — which is the same rule the mail, analytics and n8n
+   * lines above already follow.
+   *
+   * What the Arabic line promises — the error and the page path, with form contents and access
+   * keys excluded — is implemented in `src/shared/sentry-scrub.ts`, not merely intended.
    */
+  if (env.SENTRY_DSN) keys.push('sentry');
 
   // n8n is self-hosted too; what makes it worth naming is where it forwards to.
   if (env.N8N_WEBHOOK_URL) {
