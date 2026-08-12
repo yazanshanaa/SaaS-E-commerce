@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { storage } from '@/server/storage';
 import { getEnv } from '@/env';
 import { logger } from '@/server/logger';
+import { consumeSlot } from '@/server/rate-limit';
 import { readRequestTenant } from '@/server/tenancy';
 import { t } from '@/shared/i18n';
 import { optionalMerchantContext } from '../../../dashboard/_lib/context';
@@ -40,6 +41,34 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (surface !== 'app' && surface !== 'admin') return refuse(403);
 
   if (!(await canSelfServeExport(ctx))) return refuse(403);
+
+  /**
+   * Rate limited per TENANT (Phase 6), and this is the heaviest operation on the platform.
+   *
+   * Every call builds a fresh full archive — catalogue, orders, and since Phase 5's decision (a)
+   * the ONE artifact that carries customer names and phone numbers — then uploads it to R2 under
+   * `tmp/`, where it lives for twenty-five hours. A loop on this endpoint is unbounded CPU, an
+   * unbounded R2 bill, and a growing pile of other people's personal data with no ceiling but the
+   * cleanup delay.
+   *
+   * Keyed on the tenant rather than the IP because that is what the cost is proportional to: the
+   * archive is the same size whichever device asked for it, and an owner switching from their
+   * phone to their laptop must not reset the budget on the one channel authorised to carry
+   * customer PII off the platform. A merchant legitimately exports their shop a handful of times
+   * a day at most.
+   */
+  const limit = await consumeSlot({
+    key: `export:self-serve:${ctx.tenantId}`,
+    limit: getEnv().RATE_LIMIT_SELF_SERVE_EXPORT_PER_DAY,
+    windowSeconds: 86_400,
+  });
+
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { ok: false, message: t('common', 'errors.rateLimited.body') },
+      { status: 429, headers: { 'cache-control': 'no-store', 'retry-after': '3600' } },
+    );
+  }
 
   let key: string;
   try {

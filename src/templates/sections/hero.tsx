@@ -21,9 +21,11 @@ import type { StorefrontContext } from '../view-model';
 export interface HeroSectionProps {
   context: StorefrontContext;
   config: SectionConfig<'hero'>;
+  /** Unique-per-page override from `SectionList`; falls back to the type's stable anchor. */
+  anchor?: string;
 }
 
-export function HeroSection({ context, config }: HeroSectionProps) {
+export function HeroSection({ context, config, anchor }: HeroSectionProps) {
   const { site, template } = context;
   const variant = template.layout.hero;
 
@@ -55,7 +57,7 @@ export function HeroSection({ context, config }: HeroSectionProps) {
 
   if (variant === 'ledger') {
     return (
-      <section id={SECTION_ANCHORS.hero} className="sf-hero sf-hero--ledger">
+      <section id={anchor ?? SECTION_ANCHORS.hero} className="sf-hero sf-hero--ledger">
         <div className="sf-shell sf-hero__inner">
           {copy}
           <dl className="sf-hero__facts">
@@ -85,7 +87,7 @@ export function HeroSection({ context, config }: HeroSectionProps) {
 
   if (variant === 'stage') {
     return (
-      <section id={SECTION_ANCHORS.hero} className="sf-hero sf-hero--stage">
+      <section id={anchor ?? SECTION_ANCHORS.hero} className="sf-hero sf-hero--stage">
         <div className="sf-shell">
           <div className="sf-hero__inner">
             <div className="sf-hero__media">
@@ -105,7 +107,7 @@ export function HeroSection({ context, config }: HeroSectionProps) {
   }
 
   return (
-    <section id={SECTION_ANCHORS.hero} className="sf-hero sf-hero--split">
+    <section id={anchor ?? SECTION_ANCHORS.hero} className="sf-hero sf-hero--split">
       <div className="sf-shell sf-hero__inner">
         {copy}
         <div className="sf-hero__media">

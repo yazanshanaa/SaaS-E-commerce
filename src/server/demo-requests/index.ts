@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { publicDb, superAdminDb, systemClient, type Actor } from '@/server/db';
+import { publicDb, superAdminDb, type Actor } from '@/server/db';
 import { hashIp } from '@/server/crypto';
 import { addDays } from '@/server/time';
 import { getEnv } from '@/env';
@@ -97,14 +97,13 @@ export async function listDemoRequests(actor: Actor, status?: 'pending' | 'appro
 }
 
 /**
- * The daily sweep's half: a request that never became a demo disappears on schedule, which is
- * exactly what B3's Arabic notice promises. Deleting is granted to app_system alone.
+ * `purgeExpiredDemoRequests` used to live here too, with a `lt` where the live one uses `lte` and a
+ * bare `systemClient()` where the live one uses `withSystemTxn`. It had no callers — `lifecycle-sweep`
+ * defines and calls its own — and it was the only raw-client database call in the codebase outside
+ * `src/server/db` and the webhook dispatcher.
+ *
+ * Deleted in Phase 6's manual isolation review rather than left as dead code: an unreferenced
+ * function on a path that sets no GUCs and opens no transaction is an invitation, and check 1 is
+ * easier to answer honestly when the answer is "two files, both the dispatcher, both justified"
+ * instead of "three, one of which nobody calls".
  */
-export async function purgeExpiredDemoRequests(now: Date = new Date()): Promise<number> {
-  const { count } = await systemClient().demoRequest.deleteMany({
-    where: { purgeAfter: { lt: now } },
-  });
-
-  if (count > 0) logger().info({ count }, 'expired demo requests purged');
-  return count;
-}

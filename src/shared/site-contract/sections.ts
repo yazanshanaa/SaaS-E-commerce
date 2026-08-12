@@ -11,6 +11,17 @@ import { z } from 'zod';
  * saved config that carries a field a template no longer reads must still render.
  */
 
+/**
+ * The slug of the page whose sections ARE the storefront's home arrangement.
+ *
+ * Shared rather than repeated because Phase 6 made the distinction load-bearing: `Section` used to
+ * be one arrangement per tenant, and the generated legal pages made it "sections of whichever page
+ * you meant". Every editor — the admin's site-content tab, the merchant's section screen, the demo
+ * build counter — has to say which page it means, and three copies of the string `'home'` is how
+ * one of them ends up meaning something else.
+ */
+export const HOME_PAGE_SLUG = 'home';
+
 export const SECTION_TYPES = [
   'hero',
   'products_grid',

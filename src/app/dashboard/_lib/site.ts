@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { withTenantTxn } from '@/server/db';
 import { canEdit } from '@/server/entitlements';
+import { syncLegalPages } from '@/server/legal';
 import { socialPlatformSchema, type SocialPlatform } from '@/shared/site-contract';
 import type { CapabilityKey } from '@/shared/features';
 import type { MerchantContext } from './context';
@@ -198,6 +199,14 @@ export async function saveDetails(ctx: MerchantContext, raw: unknown): Promise<A
       logoMediaId: logo?.id ?? null,
     },
   });
+
+  /**
+   * The shop's NAME appears in the generated legal copy — it is the party the policy names as
+   * responsible — so renaming the shop has to rewrite it. The contact details themselves are not
+   * frozen anywhere (the identity page delegates to the live `contact_whatsapp` block), which is
+   * why this is the only field on this form that needs a regeneration at all.
+   */
+  await syncLegalPages(ctx.tenantId, { reason: 'business_details_changed', revalidate: false });
 
   await refreshStorefront(ctx.tenantId);
   return null;

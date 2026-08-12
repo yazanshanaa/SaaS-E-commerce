@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { withTenantTxn } from '@/server/db';
 import { can } from '@/server/entitlements';
+import { syncLegalPages } from '@/server/legal';
 import { merchantPaymentsSchema } from '@/server/orders';
 import {
   gatewayReadiness,
@@ -158,6 +159,17 @@ export async function savePayments(
     entityType: 'site',
     after: { sellingEnabled: parsed.data.sellingEnabled },
   });
+
+  /**
+   * The legal pages move WITH the switch, in the same call.
+   *
+   * `legalPagesFor(site.sellingEnabled)` decides which links the footer renders, so turning selling
+   * on adds two links the moment the cache drops — and if the returns and "إلغاء معاملة" pages are
+   * not written in the same breath, both land on "قيد التجهيز" for a shop that has just started
+   * taking money. Turning it off is the mirror image: the pages have to go, or a shop with no
+   * checkout keeps publishing a cancellation policy for transactions it cannot take.
+   */
+  await syncLegalPages(ctx.tenantId, { reason: 'selling_changed', revalidate: false });
 
   await refreshStorefront(ctx.tenantId);
   return null;

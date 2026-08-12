@@ -53,6 +53,9 @@ const REGISTRY: Record<QueueName, Record<string, () => Promise<ProcessorModule>>
     'suspend-tenant': () => import('./jobs/suspend-tenant'),
     'purge-tenant': () => import('./jobs/purge-tenant'),
     'send-reminder': () => import('./jobs/send-reminder'),
+    // Phase 6
+    'sync-compliance': () => import('./jobs/sync-compliance'),
+    'prune-records': () => import('./jobs/prune-records'),
   },
   notifications: {
     'send-mail': () => import('./jobs/send-mail'),

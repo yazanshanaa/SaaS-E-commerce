@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { withTenantTxn } from '@/server/db';
 import {
+  HOME_PAGE_SLUG,
   SECTION_TYPES,
   parseSectionConfig,
   socialPlatformSchema,
@@ -118,8 +119,16 @@ export async function getSiteContent(
         sort: true,
       },
     }),
+    /**
+     * SCOPED TO THE HOME PAGE, and this is not an optimisation.
+     *
+     * Phase 6 writes the generated legal pages as ordinary `Page` + `Section` rows, so `Section`
+     * is no longer one arrangement per tenant. An unscoped read would list forty clauses of a
+     * privacy policy in a section editor whose toggles hide and reorder — and hiding a clause of a
+     * published privacy policy is not an edit anyone should be able to make by accident.
+     */
     ctx.db.section.findMany({
-      where: { tenantId },
+      where: { tenantId, page: { slug: DEFAULT_PAGE_SLUG } },
       orderBy: { sort: 'asc' },
       select: { id: true, type: true, enabled: true, sort: true, pageId: true },
     }),
@@ -423,7 +432,8 @@ const DEFAULT_SECTIONS: ReadonlyArray<{ type: SectionType; enabled: boolean }> =
   { type: 'contact_whatsapp', enabled: true },
 ];
 
-export const DEFAULT_PAGE_SLUG = 'home';
+/** Re-exported from the shared contract so the three section editors cannot drift apart. */
+export const DEFAULT_PAGE_SLUG = HOME_PAGE_SLUG;
 
 /**
  * Create the home page and its sections for a site that has none.
@@ -439,7 +449,17 @@ export async function seedDefaultSections(
   tenantId: string,
   pageTitle: string,
 ): Promise<ActionState | null> {
-  const existing = await ctx.db.section.count({ where: { tenantId } });
+  /**
+   * The guard counts sections ON THE HOME PAGE, not on the tenant.
+   *
+   * Phase 6's legal generator runs at account creation, so a brand-new tenant now has ~40 `Section`
+   * rows before an operator ever opens this screen. Counting them all would make this function a
+   * permanent no-op and every new account would ship with no home arrangement at all — a silent
+   * regression with no error anywhere, which is the shape that survives review.
+   */
+  const existing = await ctx.db.section.count({
+    where: { tenantId, page: { slug: DEFAULT_PAGE_SLUG } },
+  });
   if (existing > 0) return null;
 
   await withTenantTxn(

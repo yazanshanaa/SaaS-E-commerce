@@ -20,9 +20,11 @@ import { SectionBlock } from './block';
 export interface AboutSectionProps {
   context: StorefrontContext;
   config: SectionConfig<'about'>;
+  /** Unique-per-page override from `SectionList`; falls back to the type's stable anchor. */
+  anchor?: string;
 }
 
-export function AboutSection({ context, config }: AboutSectionProps) {
+export function AboutSection({ context, config, anchor }: AboutSectionProps) {
   const body = config.body?.trim() || context.site.about?.trim();
   if (!body) return null;
 
@@ -30,7 +32,10 @@ export function AboutSection({ context, config }: AboutSectionProps) {
   const paragraphs = body.split(/\n\s*\n/).filter((p) => p.trim().length > 0);
 
   return (
-    <SectionBlock anchor={SECTION_ANCHORS.about} title={config.title?.trim() || st('sections.about')}>
+    <SectionBlock
+      anchor={anchor ?? SECTION_ANCHORS.about}
+      title={config.title?.trim() || st('sections.about')}
+    >
       <div className="sf-contact">
         <div className="sf-prose">
           {paragraphs.map((paragraph, index) => (

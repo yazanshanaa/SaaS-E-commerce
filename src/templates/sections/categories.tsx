@@ -19,23 +19,25 @@ import { SectionBlock } from './block';
 export interface CategoriesSectionProps {
   context: StorefrontContext;
   config: SectionConfig<'categories'>;
+  /** Unique-per-page override from `SectionList`; falls back to the type's stable anchor. */
+  anchor?: string;
 }
 
-export function CategoriesSection({ context, config }: CategoriesSectionProps) {
+export function CategoriesSection({ context, config, anchor }: CategoriesSectionProps) {
   const categories = context.categories.slice(0, config.limit ?? 8);
   const title = config.title?.trim() || st('sections.categories');
   const variant = config.style === 'chips' ? 'chips' : context.template.layout.categories;
 
   if (categories.length === 0) {
     return (
-      <SectionBlock anchor={SECTION_ANCHORS.categories} title={title}>
+      <SectionBlock anchor={anchor ?? SECTION_ANCHORS.categories} title={title}>
         <p className="sf-note">{st('categories.empty')}</p>
       </SectionBlock>
     );
   }
 
   return (
-    <SectionBlock anchor={SECTION_ANCHORS.categories} title={title}>
+    <SectionBlock anchor={anchor ?? SECTION_ANCHORS.categories} title={title}>
       {variant === 'index' ? (
         <ul className="sf-index">
           {categories.map((category) => (
@@ -57,7 +59,10 @@ export function CategoriesSection({ context, config }: CategoriesSectionProps) {
         <ul className="sf-chips" aria-label={title}>
           {categories.map((category) => (
             <li key={category.key}>
-              <a className="sf-btn sf-btn--ghost" href={`/products?category=${encodeURIComponent(category.key)}`}>
+              <a
+                className="sf-btn sf-btn--ghost"
+                href={`/products?category=${encodeURIComponent(category.key)}`}
+              >
                 {category.name}
               </a>
             </li>

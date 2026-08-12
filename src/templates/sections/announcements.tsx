@@ -21,15 +21,17 @@ import { SectionBlock } from './block';
 export interface AnnouncementsSectionProps {
   context: StorefrontContext;
   config: SectionConfig<'announcements'>;
+  /** Unique-per-page override from `SectionList`; falls back to the type's stable anchor. */
+  anchor?: string;
 }
 
-export function AnnouncementsSection({ context, config }: AnnouncementsSectionProps) {
+export function AnnouncementsSection({ context, config, anchor }: AnnouncementsSectionProps) {
   const cards = context.announcements.slice(0, config.limit ?? 3);
   if (cards.length === 0) return null;
 
   return (
     <SectionBlock
-      anchor={SECTION_ANCHORS.announcements}
+      anchor={anchor ?? SECTION_ANCHORS.announcements}
       title={config.title?.trim() || st('sections.announcements')}
     >
       <div className="sf-offers">

@@ -1,5 +1,6 @@
 import { type SectionConfig } from '@/shared/site-contract';
 import { normaliseSectionConfig } from '../lib/section-config';
+import { anchorFor } from '../section-anchors';
 import type { StorefrontContext, StorefrontSection } from '../view-model';
 import { AboutSection } from './about';
 import { AnnouncementsSection } from './announcements';
@@ -27,35 +28,60 @@ import { TestimonialsSection } from './testimonials';
 export function SectionRenderer({
   context,
   section,
+  anchor,
 }: {
   context: StorefrontContext;
   section: StorefrontSection;
+  /**
+   * Overrides the section type's stable anchor. Set by `SectionList` for the SECOND and later
+   * blocks of a type on one page — see `anchorFor()`. Left undefined everywhere else, including
+   * B2's live preview, which renders one section at a time.
+   */
+  anchor?: string;
 }) {
   switch (section.type) {
     case 'hero':
       return (
-        <HeroSection context={context} config={config<'hero'>('hero', section)} />
+        <HeroSection context={context} config={config<'hero'>('hero', section)} anchor={anchor} />
       );
     case 'products_grid':
       return (
         <ProductsGridSection
           context={context}
           config={config<'products_grid'>('products_grid', section)}
+          anchor={anchor}
         />
       );
     case 'categories':
       return (
-        <CategoriesSection context={context} config={config<'categories'>('categories', section)} />
+        <CategoriesSection
+          context={context}
+          config={config<'categories'>('categories', section)}
+          anchor={anchor}
+        />
       );
     case 'about':
-      return <AboutSection context={context} config={config<'about'>('about', section)} />;
+      return (
+        <AboutSection
+          context={context}
+          config={config<'about'>('about', section)}
+          anchor={anchor}
+        />
+      );
     case 'gallery':
-      return <GallerySection context={context} config={config<'gallery'>('gallery', section)} />;
+      return (
+        <GallerySection
+          context={context}
+          config={config<'gallery'>('gallery', section)}
+          anchor={anchor}
+        />
+      );
     case 'testimonials':
       return (
         <TestimonialsSection
           context={context}
           config={config<'testimonials'>('testimonials', section)}
+          anchor={anchor}
         />
       );
     case 'announcements':
@@ -63,6 +89,7 @@ export function SectionRenderer({
         <AnnouncementsSection
           context={context}
           config={config<'announcements'>('announcements', section)}
+          anchor={anchor}
         />
       );
     case 'contact_whatsapp':
@@ -70,13 +97,20 @@ export function SectionRenderer({
         <ContactWhatsappSection
           context={context}
           config={config<'contact_whatsapp'>('contact_whatsapp', section)}
+          anchor={anchor}
         />
       );
     case 'map':
-      return <MapSection context={context} config={config<'map'>('map', section)} />;
+      return (
+        <MapSection context={context} config={config<'map'>('map', section)} anchor={anchor} />
+      );
     case 'custom_html':
       return (
-        <CustomHtmlSection context={context} config={config<'custom_html'>('custom_html', section)} />
+        <CustomHtmlSection
+          context={context}
+          config={config<'custom_html'>('custom_html', section)}
+          anchor={anchor}
+        />
       );
     default: {
       /**
@@ -125,11 +159,32 @@ export function SectionList({
 }) {
   const visible = sections.filter((section) => !context.hiddenSectionTypes.includes(section.type));
 
+  /**
+   * Anchors are assigned by OCCURRENCE, over the sections that actually render.
+   *
+   * Counting before the visibility filter would leave a gap — hide the first `map` and the second
+   * would render as `#location-2` with no `#location` above it — so the count runs over `visible`.
+   * The first of each type keeps its stable anchor; only repeats are suffixed. Phase 6's legal
+   * pages are the first thing on this platform to put eight blocks of one type on one page, and
+   * without this every one of them would have carried `id="about"`.
+   */
+  const seen = new Map<StorefrontSection['type'], number>();
+
   return (
     <>
-      {visible.map((section) => (
-        <SectionRenderer key={section.id} context={context} section={section} />
-      ))}
+      {visible.map((section) => {
+        const occurrence = seen.get(section.type) ?? 0;
+        seen.set(section.type, occurrence + 1);
+
+        return (
+          <SectionRenderer
+            key={section.id}
+            context={context}
+            section={section}
+            anchor={anchorFor(section.type, occurrence)}
+          />
+        );
+      })}
     </>
   );
 }

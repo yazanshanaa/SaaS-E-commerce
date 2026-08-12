@@ -15,6 +15,7 @@ import {
   type GatewayState,
   type GatewayStatus,
 } from '@/server/payments';
+import { syncLegalPages } from '@/server/legal';
 import { requestStorefrontRevalidation } from '@/server/revalidation';
 import { auditTenantAction } from './audit';
 import type { AdminContext } from './context';
@@ -181,6 +182,13 @@ export async function setAccountGatewayEnabled(
     before: { provider: before?.provider ?? null, enabled: before?.enabled ?? false },
     after: { provider, enabled },
   });
+
+  /**
+   * Enabling or disabling the gateway moves the storefront's checkout predicate, which is the
+   * exact fact the privacy policy branches on: a shop that can take an order describes collecting
+   * a name and a phone number, and a shop that cannot must not.
+   */
+  await syncLegalPages(tenantId, { reason: 'gateway_changed', revalidate: false });
 
   await requestStorefrontRevalidation(tenantId);
 

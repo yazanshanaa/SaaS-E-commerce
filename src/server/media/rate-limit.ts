@@ -1,4 +1,5 @@
 import { getEnv } from '@/env';
+import { hashIp } from '@/server/crypto';
 import { getClientIp, type ClientIpInput } from '@/server/http/get-client-ip';
 import { cacheRedis } from '@/server/redis';
 
@@ -79,10 +80,17 @@ export interface RateLimitDecision {
   source: 'redis' | 'memory';
 }
 
-/** `getClientIp()` is the only IP source (invariant 9); an unknown peer gets its own bucket. */
+/**
+ * `getClientIp()` is the only IP source (invariant 9); an unknown peer gets its own bucket.
+ *
+ * The address is HASHED into the key (Phase 6). It was in clear, which put a plaintext IP for
+ * every uploading merchant into a datastore that is inside the backup set — a durable identifier
+ * kept for a throttle that only needs to tell two callers apart. Every newer limiter on the
+ * platform already did it this way; this one and the demo form predate the convention.
+ */
 export function uploadRateLimitKey(tenantId: string, request: ClientIpInput): string {
   const { ip } = getClientIp(request);
-  return `media:upload:${tenantId}:${ip ?? 'unknown'}`;
+  return `media:upload:v2:${tenantId}:${hashIp(ip ?? 'unknown')}`;
 }
 
 function consumeInMemory(key: string, limit: number): RateLimitDecision {

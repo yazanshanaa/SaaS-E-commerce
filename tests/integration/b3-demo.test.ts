@@ -226,7 +226,13 @@ describe('creating a demo from a frozen pack', () => {
     const [categories, products, sections, testimonials, media, images, links] = await Promise.all([
       db.category.findMany({ where: { tenantId: created.tenantId }, orderBy: { sort: 'asc' } }),
       db.product.findMany({ where: { tenantId: created.tenantId }, orderBy: { sort: 'asc' }, include: { category: true } }),
-      db.section.findMany({ where: { tenantId: created.tenantId }, orderBy: { sort: 'asc' } }),
+      // The demo's HOME arrangement. Phase 6 generates the legal pages as `Section` rows too, so
+      // an unscoped read here would interleave forty policy clauses with the pack's own sections
+      // and the contiguous-sort assertion below would be measuring two pages at once.
+      db.section.findMany({
+        where: { tenantId: created.tenantId, page: { slug: 'home' } },
+        orderBy: { sort: 'asc' },
+      }),
       db.testimonial.findMany({ where: { tenantId: created.tenantId } }),
       db.media.findMany({ where: { tenantId: created.tenantId } }),
       db.productImage.findMany({ where: { tenantId: created.tenantId } }),

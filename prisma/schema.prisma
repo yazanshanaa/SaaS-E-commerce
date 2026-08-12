@@ -238,10 +238,17 @@ enum DsrStatus {
 
 /// A data-subject request can come from someone with no account at all — a prospect who
 /// filled in the public demo form is the case Phase 6 calls out by name.
+///
+/// `customer` was added in Phase 6 by decision (c): once Phase 5 made orders persist, a storefront
+/// CUSTOMER became a subject class of its own, and it is not the same thing as `visitor`. A visitor
+/// is a rotating monthly hash and a push endpoint; a customer is a real name and a real phone
+/// number sitting on an `Order` row. Filing both under one value would have hidden the difference
+/// on the screen whose whole job is telling an operator what they are being asked to find.
 enum DsrSubjectKind {
   merchant
   staff
   visitor
+  customer
   demo_prospect
 
   @@map("dsr_subject_kind")
@@ -1177,8 +1184,14 @@ model Consent {
   granted  Boolean
 
   /// A rotating per-visitor hash, never a raw identifier.
+  ///
+  /// Phase 6 DROPPED the `ipHash` column that sat beside this one. Nothing had ever written it,
+  /// and the reason is recorded at `src/app/api/storefront/consent/route.ts`: an IP HMAC with no
+  /// tenant salt and no time salt is byte-identical across every tenant and joinable against
+  /// `demo_requests.ip_hash` — the exact cross-tenant link `visitorHash` exists to prevent. A
+  /// column that must never be filled is a trap for whoever later reads it as an oversight, so it
+  /// is gone rather than documented.
   visitorHash String  @map("visitor_hash")
-  ipHash      String? @map("ip_hash")
   userAgent   String? @map("user_agent")
 
   createdAt DateTime @default(now()) @map("created_at")
@@ -1500,6 +1513,10 @@ model DsrRequest {
 
   @@index([status, receivedAt])
   @@index([subjectEmail])
+  /// The one subject class with no account is looked up by phone hash — a demo prospect, which is
+  /// the case this model's own comment names. Without the index that lookup is a sequential scan
+  /// on the table an operator opens precisely when someone is waiting on the phone.
+  @@index([subjectPhoneHash])
   @@map("dsr_requests")
 }
 
@@ -1554,5 +1571,9 @@ model WebhookDelivery {
   @@index([status, nextAttemptAt])
   @@index([eventId])
   @@index([tenantRef])
+  /// Phase 6's retention sweep filters on exactly this pair. Without it, a nightly
+  /// `DELETE ... WHERE status IN (...) AND created_at < cutoff` is a sequential scan over a table
+  /// that gains a row per event per endpoint and, until this phase, never lost one.
+  @@index([status, createdAt])
   @@map("webhook_deliveries")
 }

@@ -56,6 +56,19 @@
 
 	encode zstd gzip
 
+	# Strict-Transport-Security lives HERE and nowhere else.
+	#
+	# It is a statement about TLS, and Caddy is the only process in this stack that terminates
+	# TLS — the app is reached over plain HTTP inside the docker network, so a header it set
+	# would be a promise made by something that has never seen a certificate. Caddy v2 does not
+	# emit HSTS on its own, which is why this is written out rather than assumed.
+	#
+	# The preload flag is deliberately ABSENT. Submitting to the preload list is irreversible on a
+	# browser timescale and it covers every subdomain — including a merchant custom domain that
+	# has not been added yet. A two-year max-age with includeSubDomains is the strong part; the
+	# preload flag is the part you cannot take back when a merchant leaves.
+	header Strict-Transport-Security "max-age=63072000; includeSubDomains"
+
 	# The internal endpoints are not published, and THIS is what makes that true.
 	#
 	# Caddy matches a host-specific site block ahead of the port-only `:443` block below, so a
@@ -89,6 +102,22 @@
 	}
 
 	encode zstd gzip
+
+	# Strict-Transport-Security lives HERE and nowhere else.
+	#
+	# It is a statement about TLS, and Caddy is the only process in this stack that terminates
+	# TLS — the app is reached over plain HTTP inside the docker network, so a header it set
+	# would be a promise made by something that has never seen a certificate. Caddy v2 does not
+	# emit HSTS on its own, which is why this is written out rather than assumed.
+	#
+	# The preload flag is deliberately ABSENT. Submitting to the preload list is irreversible on a
+	# browser timescale, and it is not ours to submit — this block serves MERCHANT-OWNED domains.
+	#
+	# `includeSubDomains` is absent here too, and only here. On the platform block above it covers
+	# hostnames we operate. On a merchant's own domain it would assert HSTS across subdomains we
+	# have never seen and do not control — an office tool or a legacy host of theirs on plain HTTP
+	# would become unreachable for two years because they pointed one CNAME at us.
+	header Strict-Transport-Security "max-age=63072000"
 
 	# Same block as the platform site above, and it has to be repeated rather than shared: Caddy
 	# matches one site block per request, so a directive in the other one does not reach here.

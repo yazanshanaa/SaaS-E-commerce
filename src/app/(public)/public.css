@@ -195,3 +195,25 @@
 .sbp-btn:hover:not([disabled]) {
   background: #8d3409;
 }
+
+/*
+ * A radio row on the data-subject form (Phase 6).
+ *
+ * The two choices it renders — who you are, and what you want done — are the only place on the
+ * public surface where the answer is one of a closed set and the options must all be visible at
+ * once. A `<select>` would hide four of five subject classes behind a tap, and somebody looking for
+ * "I ordered from a shop" needs to see that it is there before they trust the form with anything.
+ */
+.sbp-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-block: 0.35rem;
+  cursor: pointer;
+}
+
+.sbp-choice input {
+  inline-size: 1.1rem;
+  block-size: 1.1rem;
+  accent-color: var(--sbp-accent, #c2410c);
+}

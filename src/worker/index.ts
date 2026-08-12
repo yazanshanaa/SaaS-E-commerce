@@ -61,6 +61,21 @@ async function registerRepeatables(): Promise<void> {
   });
 
   /**
+   * Phase 6 — the retention sweep over the global records that outlive every tenant.
+   *
+   * Its own repeatable rather than a step inside the nightly lifecycle sweep, and an hour later,
+   * because the two must not compete: the lifecycle pass can schedule purges that WRITE
+   * tombstones, and a pruner running in the same minute would be reading a table the other pass is
+   * still filling. Nothing breaks if they overlap — the windows are two years and thirty days —
+   * but a sweep whose input is being written underneath it is a bad habit to establish in the one
+   * job whose whole purpose is deleting evidence on a schedule.
+   */
+  await queue('lifecycle').add('prune-records', systemJob('prune-records'), {
+    repeat: { pattern: '0 4 * * *', tz: 'Asia/Jerusalem' },
+    jobId: 'records-prune',
+  });
+
+  /**
    * A3 sync point 1 — the orphan sweep. The schedule itself is A3's
    * (`scheduleMediaCleanup`, pinned by `tests/unit/a3-cleanup-schedule.test.ts`); only the call
    * was outside its write scope. Until it ran, the source object of every failed or rolled-back

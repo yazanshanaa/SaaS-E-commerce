@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { hash as argon2Hash } from '@node-rs/argon2';
 import { authDb, superAdminDb, verifiedActor, disconnectAll } from '../src/server/db';
 import { randomToken, shortId } from '../src/server/crypto';
+import { syncLegalPages } from '../src/server/legal';
 import { TEMPLATES } from '../src/shared/site-contract';
 import foodPack from '../src/server/demo/packs/food.json' with { type: 'json' };
 
@@ -369,6 +370,18 @@ async function seedDemoTenant(demoPlanId: string, createdById: string): Promise<
     },
     select: { id: true, slug: true, demoLinks: { select: { token: true } } },
   });
+
+  /**
+   * The seeded demo gets its legal pages too, and this line is not decoration.
+   *
+   * `seedDemoTenant` writes a Tenant with a nested `site:` block rather than going through
+   * `billing.createDemo()`, so it bypasses the seam every other creation path uses. Without this
+   * call the seeded tenant — the fixture every integration and e2e run is built on — would render
+   * a footer with six legal links and zero `Page` rows behind them, which is exactly the
+   * "قيد التجهيز" state Phase 6 exists to eliminate. Worse, the tests asserting that state has
+   * gone would keep passing against it.
+   */
+  await syncLegalPages(tenant.id, { reason: 'demo_created', revalidate: false });
 
   console.log(`  demo tenant: ${tenant.slug}`);
   console.log(

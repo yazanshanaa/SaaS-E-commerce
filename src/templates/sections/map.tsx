@@ -21,9 +21,11 @@ import { SectionBlock } from './block';
 export interface MapSectionProps {
   context: StorefrontContext;
   config: SectionConfig<'map'>;
+  /** Unique-per-page override from `SectionList`; falls back to the type's stable anchor. */
+  anchor?: string;
 }
 
-export function MapSection({ context, config }: MapSectionProps) {
+export function MapSection({ context, config, anchor }: MapSectionProps) {
   const { site } = context;
 
   const target = resolveMapTarget({
@@ -35,7 +37,10 @@ export function MapSection({ context, config }: MapSectionProps) {
   });
 
   return (
-    <SectionBlock anchor={SECTION_ANCHORS.map} title={config.title?.trim() || st('sections.map')}>
+    <SectionBlock
+      anchor={anchor ?? SECTION_ANCHORS.map}
+      title={config.title?.trim() || st('sections.map')}
+    >
       {target ? (
         <div className="sf-contact">
           <dl className="sf-facts">

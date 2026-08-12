@@ -354,6 +354,10 @@ const UNPREFIXED_PATHS = [
   '/internal/',
   '/export/',
   '/demo-request',
+  // Phase 6's data-subject request box. A visitor, a push subscriber and a demo prospect have
+  // no account, and the generated privacy policy prints this absolute URL — so it must resolve
+  // on app.{DOMAIN} rather than be rewritten into a surface subtree.
+  '/privacy-request',
   '/dev-media/',
   // proxy.ts's own rewrite targets. NextResponse.rewrite does not re-enter the proxy, so these
   // are belt and braces rather than load-bearing.

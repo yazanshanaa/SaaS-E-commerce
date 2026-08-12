@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { invalidateEntitlements } from '@/server/entitlements';
+import { dispatchJob } from '@/server/billing';
+import { COMPLIANCE_JOBS, tenantJob } from '@/server/jobs/contract';
 import { CAPABILITY_KEYS, FEATURE_KEYS, type CapabilityKey, type FeatureKey } from '@/shared/features';
 import { auditPlatformAction } from './audit';
 import type { AdminContext } from './context';
@@ -280,4 +282,22 @@ async function invalidatePlanTenants(ctx: AdminContext, planId: string): Promise
   });
 
   await Promise.all(subscriptions.map((row) => invalidateEntitlements(row.tenantId)));
+
+  /**
+   * The same edit can change what every tenant on the plan is ALLOWED TO CLAIM.
+   *
+   * Turning `analytics` off at plan level stops measurement on every shop on that plan, and each
+   * of their privacy policies has to stop describing it. That is a per-tenant regeneration, and
+   * doing it inline would put an unbounded loop of transactions inside an admin form submit —
+   * so it goes to the queue, one job per tenant, best effort by the same rule every other
+   * post-commit effect on this platform follows.
+   */
+  await Promise.all(
+    subscriptions.map((row) =>
+      dispatchJob('lifecycle', tenantJob(row.tenantId, COMPLIANCE_JOBS.sync), {
+        // A stable id collapses a burst of plan edits into one job per tenant rather than five.
+        jobId: `sync-compliance:${row.tenantId}`,
+      }),
+    ),
+  );
 }

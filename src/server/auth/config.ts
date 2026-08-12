@@ -9,6 +9,8 @@ import { hash as argon2Hash, verify as argon2Verify } from '@node-rs/argon2';
 import { authDb } from '@/server/db';
 import { mailService, resetPasswordTemplate, verifyEmailTemplate } from '@/server/mail';
 import { logger } from '@/server/logger';
+import { cacheRedis } from '@/server/redis';
+import { consumeSlot } from '@/server/rate-limit';
 import { getEnv, platformHost, absoluteUrl } from '@/env';
 import { t } from '@/shared/i18n';
 
@@ -27,6 +29,65 @@ import { t } from '@/shared/i18n';
  */
 
 const TWO_FACTOR_ISSUER = 'Souq Bartaa';
+
+/**
+ * better-auth's rate-limit store, backed by the same Redis every other limit on this platform uses.
+ *
+ * Without it the library falls back to a per-process `Map`: the numbers declared below would be
+ * multiplied by the number of web containers and reset on every deploy.
+ *
+ * IT IMPLEMENTS `consume`, and that is the part that matters. better-auth checks for that method
+ * first and falls back to `legacyConsume` — a non-atomic read, decide, write — for any storage that
+ * omits it. Under concurrency the fallback lets simultaneous requests each read the same count and
+ * each decide they are under the limit, which on `/request-password-reset` is a burst of mail to
+ * one address. `consumeSlot` is the atomic Lua INCR+EXPIRE every other limit on this platform
+ * already uses, so this is one primitive rather than a second implementation of the same idea.
+ *
+ * `get`/`set` remain because better-auth's types ask for them; with `consume` present they are only
+ * reached by code paths this configuration does not use.
+ *
+ * IT DEGRADES OPEN, like everything else here. A cache outage must not become an authentication
+ * outage for every merchant on the platform, and for the endpoint that actually matters —
+ * `/sign-in/email` — the route handler adds a per-client throttle and a per-account lockout on top.
+ */
+function redisRateLimitStorage() {
+  const prefix = 'auth:rl:v1:';
+
+  return {
+    async consume(
+      key: string,
+      rule: { window: number; max: number },
+    ): Promise<{ allowed: boolean; retryAfter: number | null }> {
+      const decision = await consumeSlot({
+        key: prefix + key,
+        limit: rule.max,
+        windowSeconds: rule.window,
+      });
+
+      // `retryAfter` is the whole window: the counter is a fixed window, so the honest answer to
+      // "when may I try again" is its far edge rather than a figure that implies a sliding one.
+      return { allowed: decision.allowed, retryAfter: decision.allowed ? null : rule.window };
+    },
+
+    async get(key: string): Promise<{ key: string; count: number; lastRequest: number } | undefined> {
+      try {
+        const raw = await cacheRedis().get(prefix + key);
+        return raw ? (JSON.parse(raw) as { key: string; count: number; lastRequest: number }) : undefined;
+      } catch {
+        return undefined;
+      }
+    },
+    async set(key: string, value: { key: string; count: number; lastRequest: number }): Promise<void> {
+      try {
+        // A generous TTL rather than the rule's own window: better-auth compares `lastRequest`
+        // itself, so the expiry is only here to stop the keyspace growing without bound.
+        await cacheRedis().set(prefix + key, JSON.stringify(value), 'EX', 3_600);
+      } catch {
+        // See the note above: no store means no limit, not no sign-in.
+      }
+    },
+  };
+}
 
 /**
  * May a session be issued for this user?
@@ -168,16 +229,23 @@ export function createAuth() {
     /**
      * Rate limits, declared EXPLICITLY rather than inherited from a library default.
      *
-     * Phase 6 hardens every sensitive route; these three are the ones that exist in Phase 1
-     * and they are also the three an attacker reaches for first — sign-in for credential
-     * stuffing, and the two reset endpoints for account enumeration and mail-bombing.
-     * The numbers come from env so a load test or an e2e run can raise them without editing
-     * the auth configuration.
+     * Phase 6 hardens every sensitive route; these are the ones an attacker reaches for first —
+     * sign-in for credential stuffing, and the reset endpoints for account enumeration and
+     * mail-bombing. The numbers come from env so a load test or an e2e run can raise them without
+     * editing the auth configuration.
+     *
+     * PHASE 6 GAVE IT REAL STORAGE. Declared alone, better-auth resolves `storage` to `'memory'` —
+     * a module-level `Map`, per process. The stated "10 attempts per 15 minutes" was therefore
+     * N × 10 across N web containers and reset to zero on every deploy, so a rolling restart under
+     * attack handed the attacker a fresh budget. The platform already had the right primitive
+     * (`consumeSlot` over Redis) sitting unused beside it; `redisRateLimitStorage` below is that
+     * primitive in the shape better-auth expects.
      */
     rateLimit: {
       enabled: true,
       window: 60,
       max: 100,
+      customStorage: redisRateLimitStorage(),
       customRules: {
         '/sign-in/email': { window: 900, max: env.RATE_LIMIT_LOGIN_PER_15MIN },
         '/request-password-reset': { window: 900, max: env.RATE_LIMIT_LOGIN_PER_15MIN },
@@ -193,6 +261,26 @@ export function createAuth() {
       cookiePrefix: 'souq',
       useSecureCookies: env.PUBLIC_SCHEME === 'https',
       defaultCookieAttributes: { sameSite: 'lax', httpOnly: true },
+
+      /**
+       * WHERE THE CLIENT IP COMES FROM — a Phase 6 correction, and it was worse than a nit.
+       *
+       * better-auth defaults `ipAddressHeaders` to `['x-forwarded-for']` and, with no
+       * `trustedProxies`, refuses any multi-hop chain: `getIPFromHeader` returns null the moment
+       * the header has more than one value. Behind Cloudflare and Caddy it always does. The
+       * fallback is a single shared bucket keyed `'no-trusted-ip'`, so the declared ten attempts
+       * per fifteen minutes was TEN FOR THE WHOLE PLATFORM — one bored script could lock every
+       * merchant out of sign-in, and on a merchant custom domain (no Cloudflare in front) a client
+       * could force that state deliberately by sending any `X-Forwarded-For` of its own.
+       *
+       * `x-real-ip` is what the Caddyfile actually sets (`header_up X-Real-IP {remote_host}`) in
+       * both site blocks, it is single-valued by construction, and it is the same header
+       * `getClientIp()` falls back to — so the auth layer and invariant 9 now agree instead of
+       * reading different headers about the same request.
+       */
+      ipAddress: {
+        ipAddressHeaders: ['x-real-ip'],
+      },
     },
 
     // Both platform hosts, as real origins. See platformOrigins() for why absoluteUrl() is wrong

@@ -6,6 +6,7 @@ import {
   isCustomHtmlAllowed,
 } from '@/templates/lib/custom-html-gate';
 import {
+  HOME_PAGE_SLUG,
   SECTION_CONFIG_SCHEMAS,
   parseSectionConfig,
   safeParseSectionConfig,
@@ -53,8 +54,13 @@ export interface SectionsView {
 
 export async function loadSections(ctx: MerchantContext): Promise<SectionsView> {
   const [rows, editable, customHtmlFeature, tenant] = await Promise.all([
+    /**
+     * The HOME arrangement only. Phase 6's generated legal pages are `Section` rows too, and a
+     * merchant reordering their shop must not be shown — or able to disable — a clause of their
+     * own privacy policy.
+     */
     ctx.db.section.findMany({
-      where: { tenantId: ctx.tenantId },
+      where: { tenantId: ctx.tenantId, page: { slug: HOME_PAGE_SLUG } },
       orderBy: [{ sort: 'asc' }, { createdAt: 'asc' }],
       select: { id: true, type: true, enabled: true, sort: true, pageId: true, config: true },
     }),
@@ -122,11 +128,22 @@ export async function saveLayout(ctx: MerchantContext, raw: unknown): Promise<Ac
     ctx.tenantId,
     async (tx) => {
       for (const [index, section] of parsed.data.sections.entries()) {
-        // Matched on tenantId as well as id: RLS refuses a foreign row anyway, and updateMany
-        // turns that into a no-op rather than an error, so a stale tab cannot reorder another
-        // shop's page.
+        /**
+         * Matched on tenantId AND on the home page.
+         *
+         * The tenant match was always there — RLS refuses a foreign row anyway, and `updateMany`
+         * turns that into a no-op rather than an error, so a stale tab cannot reorder another
+         * shop's page. The PAGE match is Phase 6's: legal pages are `Section` rows now, and
+         * without it a merchant could post a clause id from their own privacy policy and disable
+         * it. `Page.isSystem` documents that these must not be deletable by the merchant; this is
+         * what makes the sentence true rather than decorative.
+         */
         await tx.section.updateMany({
-          where: { id: section.id, tenantId: ctx.tenantId },
+          where: {
+            id: section.id,
+            tenantId: ctx.tenantId,
+            page: { slug: HOME_PAGE_SLUG },
+          },
           data: { enabled: section.enabled, sort: index },
         });
       }
@@ -168,8 +185,10 @@ export async function saveSectionConfig(
   const parsed = sectionConfigSchema.safeParse(raw);
   if (!parsed.success) return invalid(parsed.error);
 
+  // Page-scoped like the write below: a clause id from a generated legal page must not resolve
+  // here at all, so the refusal happens before any type-specific branch runs.
   const section = await ctx.db.section.findFirst({
-    where: { id: parsed.data.sectionId, tenantId: ctx.tenantId },
+    where: { id: parsed.data.sectionId, tenantId: ctx.tenantId, page: { slug: HOME_PAGE_SLUG } },
     select: { id: true, type: true },
   });
   if (!section) return failure('dashboard:errors.notFound');
@@ -190,10 +209,16 @@ export async function saveSectionConfig(
   const config = SECTION_CONFIG_SCHEMAS[type].safeParse(parsed.data.config);
   if (!config.success) return invalid(config.error);
 
-  // The NORMALISED config is stored, not whatever arrived: defaults are filled in and unknown
-  // keys are stripped, so a section written here is byte-identical to one A1 or B3 would write.
-  await ctx.db.section.update({
-    where: { id: section.id },
+  /**
+   * The NORMALISED config is stored, not whatever arrived: defaults are filled in and unknown keys
+   * are stripped, so a section written here is byte-identical to one A1 or B3 would write.
+   *
+   * `updateMany` scoped to the home page rather than `update` by id — Phase 6. The lookup that
+   * found this section is page-scoped, but the write was not, and a posted id from a generated
+   * legal page would have let a merchant rewrite a clause of their own privacy policy.
+   */
+  await ctx.db.section.updateMany({
+    where: { id: section.id, tenantId: ctx.tenantId, page: { slug: HOME_PAGE_SLUG } },
     data: { config: config.data as object },
   });
 

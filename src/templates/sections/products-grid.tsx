@@ -26,9 +26,11 @@ import { SectionBlock } from './block';
 export interface ProductsGridSectionProps {
   context: StorefrontContext;
   config: SectionConfig<'products_grid'>;
+  /** Unique-per-page override from `SectionList`; falls back to the type's stable anchor. */
+  anchor?: string;
 }
 
-export function ProductsGridSection({ context, config }: ProductsGridSectionProps) {
+export function ProductsGridSection({ context, config, anchor }: ProductsGridSectionProps) {
   const { template } = context;
   const columns = config.columns ?? template.layout.gridColumns;
 
@@ -45,7 +47,7 @@ export function ProductsGridSection({ context, config }: ProductsGridSectionProp
     : '/products';
 
   return (
-    <SectionBlock anchor={SECTION_ANCHORS.products_grid} title={title}>
+    <SectionBlock anchor={anchor ?? SECTION_ANCHORS.products_grid} title={title}>
       {products.length === 0 ? (
         // A pinned grid with nothing in it says so about the CATEGORY. "لسا ما انضافت منتجات على
         // المتجر" under a category heading is a false statement about a shop that has hundreds.

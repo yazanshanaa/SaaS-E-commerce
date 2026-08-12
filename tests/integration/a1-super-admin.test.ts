@@ -27,6 +27,7 @@ import { CAPABILITY_KEYS } from '@/shared/features';
 import { superAdminDb, verifiedActor } from '@/server/db';
 import { jerusalemDateKey } from '@/server/time';
 import * as billing from '@/server/billing';
+import { syncLegalPages } from '@/server/legal';
 import { adminDb, resetTenants } from '../helpers/factories';
 
 /**
@@ -758,6 +759,84 @@ describe('site content edited from the panel, with no impersonation', () => {
     });
 
     expect(state?.fieldErrors?.some((error) => error.field === 'endsAt')).toBe(true);
+  });
+
+  /**
+   * THE PHASE 6 ACCEPTANCE CRITERION, on the path it is actually claimed for.
+   *
+   * "Every new site auto-generates its Arabic legal pages" is a statement about `createAccount`,
+   * and the e2e suite can only reach the SEEDED demo. Without this, the seam could be removed from
+   * the one path a paying merchant takes and every other test would stay green.
+   */
+  it('gives a brand-new account its Arabic legal pages, in the footer’s own order', async () => {
+    const tenantId = await createAccount();
+    const db = adminDb();
+
+    const pages = await db.page.findMany({
+      where: { tenantId, isSystem: true },
+      orderBy: { sort: 'asc' },
+      select: { slug: true, title: true, published: true, sections: { select: { type: true } } },
+    });
+
+    // Selling is off on a fresh account, so the two selling-only pages are correctly absent —
+    // which is also what the footer renders.
+    expect(pages.map((page) => page.slug)).toEqual([
+      'privacy',
+      'terms',
+      'business-identity',
+      'accessibility',
+    ]);
+
+    for (const page of pages) {
+      expect(page.published, page.slug).toBe(true);
+      expect(page.title, page.slug).toMatch(/[؀-ۿ]/);
+      // Clauses are `about` sections; the identity page appends one live contact block.
+      expect(page.sections.length, page.slug).toBeGreaterThan(2);
+    }
+
+    const privacy = await db.section.findMany({
+      where: { tenantId, page: { slug: 'privacy' } },
+      orderBy: { sort: 'asc' },
+      select: { config: true },
+    });
+
+    const bodies = privacy
+      .map((section) => (section.config as { body?: string }).body ?? '')
+      .join(' ');
+
+    // A shop with no gateway collects nothing, and the copy has to say so rather than describing
+    // a collection that cannot happen.
+    expect(bodies).toContain('لا يستقبل طلبات عبر الموقع');
+    // The retention sentence names the backup window instead of claiming instant erasure.
+    expect(bodies).toContain('النسخ الاحتياطية المشفّرة');
+  });
+
+  it('rewrites the legal pages when the merchant turns selling on', async () => {
+    const tenantId = await createAccount();
+    const db = adminDb();
+
+    await db.site.update({ where: { tenantId }, data: { sellingEnabled: true } });
+    await syncLegalPages(tenantId, { reason: 'selling_changed', revalidate: false });
+
+    const slugs = await db.page.findMany({
+      where: { tenantId, isSystem: true },
+      orderBy: { sort: 'asc' },
+      select: { slug: true },
+    });
+
+    // The footer starts rendering both links in the same breath; the pages have to exist by then.
+    expect(slugs.map((page) => page.slug)).toContain('returns');
+    expect(slugs.map((page) => page.slug)).toContain('cancel-transaction');
+
+    // And back off again — a shop with no checkout must not keep publishing a cancellation policy.
+    await db.site.update({ where: { tenantId }, data: { sellingEnabled: false } });
+    await syncLegalPages(tenantId, { reason: 'selling_changed', revalidate: false });
+
+    const after = await db.page.findMany({
+      where: { tenantId, isSystem: true },
+      select: { slug: true },
+    });
+    expect(after.map((page) => page.slug)).not.toContain('returns');
   });
 
   it('seeds the default page and sections for a brand-new account, once', async () => {

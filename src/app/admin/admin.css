@@ -882,3 +882,31 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/*
+ * A key/value block inside a work-queue item (Phase 6's data-subject queue).
+ *
+ * A definition list rather than a table: each request has three or four facts, several of which
+ * are absent on any given row (no tenant, no email, no closing note), and a table of mostly-empty
+ * cells is harder to read than a short list that simply omits what is missing.
+ */
+.sba-facts {
+  display: grid;
+  gap: var(--sb-space-2);
+  margin: 0 0 var(--sb-space-3);
+}
+
+.sba-facts > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sb-space-2);
+}
+
+.sba-facts dt {
+  color: var(--sba-ink-faint);
+  min-inline-size: 9rem;
+}
+
+.sba-facts dd {
+  margin: 0;
+}

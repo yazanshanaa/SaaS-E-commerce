@@ -287,7 +287,10 @@ Full record in `docs/decisions/a2.md`. What another track has to know:
 - **`src/templates/lib/legal.ts` owns the legal footer list**, and Phase 6's whole storefront job
   is to write the `Page` rows behind it — no template file changes, no new route. Until they
   exist a known legal slug renders a short Arabic "قيد التجهيز" page, noindex, because a link
-  compliance forces onto every page must not lead to a 404. `sitemap.xml` lists them regardless.
+  compliance forces onto every page must not lead to a 404. `sitemap.xml` does NOT list them until
+  the rows exist — the placeholder is `noindex`, and submitting a URL for indexing that the page
+  itself refuses is a contradiction a crawler resolves by trusting neither signal. *(Corrected in
+  Phase 6: this line previously said the opposite of what the route does.)*
 - **Baseline SEO ships on every plan.** Nothing in `_data/metadata.ts` asks what plan a tenant is
   on; `seo_tools` gates only the editable title/description UI B2 builds. A merchant downgraded
   from احترافي keeps the title they already wrote. Structured data is withheld from demo and
@@ -1378,3 +1381,370 @@ paths a reviewer worried about are unreachable while `manual` is the only `activ
 - **The Launch Gate stands.** Activating a first real Israeli gateway needs a registered entity, and
   it is the documented trigger to upgrade backups from `pg_dump` to WAL archiving (Q10) — six hours
   of RPO is defensible for product edits and is not for settled payments.
+
+---
+
+## Phase 6 — Compliance and security hardening
+
+The phase turned three promises into code: the Arabic legal pages A2 left placeholders for, a
+retention rule for the records that outlive a tenant, and a security posture that is written down
+rather than assumed. Most of what follows is a decision that could have gone the other way.
+
+### The legal generator writes rows, and the rows are `about` sections
+
+`src/server/legal` produces ordinary `Page` + `Section` rows, exactly as A2's
+`src/templates/lib/legal.ts` promised. No template file changed and no route was added: the footer
+already links `/p/{slug}`, `/p/[slug]` already renders a page's sections, and `sitemap.xml` already
+lists published pages.
+
+A clause is one `about` section — heading plus blank-line-separated paragraphs — because it is the
+only section type that carries prose, and because using it meant no new `SectionType`, no Prisma
+enum migration, and no new entry in the dashboard's section editor for a page a merchant must not
+be editing. The cost is real and stated: no lists, no links, no emphasis. The processors section is
+one paragraph per processor rather than a table, which on the phone a shop owner's customer is
+holding reads better anyway.
+
+**`t()` does not resolve this catalogue.** `messages/ar/legal.json` is a real file under
+`messages/ar/`, the language gate walks it with the other seven, and no sentence lives in a
+component — but it is reached through `src/server/legal/text.ts`, not through the `NAMESPACES` map.
+`t()` is imported by client components (the admin rail, the dashboard forms), so every registered
+namespace is bundled for the browser, and this one is thirty kilobytes of policy prose that only
+the server-side generator reads. Registering it would have shipped five privacy policies into the
+JavaScript of a merchant editing a product.
+
+### "Customizable templates" was reinterpreted, and here is the reinterpretation
+
+docs/PHASES.md asks for "content from customizable templates". What shipped is **parameterised, not
+per-tenant editable**: `buildLegalPages()` is a pure function of `LegalFacts` over one Arabic
+catalogue, and `syncInTx` replaces a page's sections wholesale on every run. There is no override
+column and no editor, so a hand edit would be destroyed by the next feature toggle or gateway
+change — seven seams call the generator.
+
+That is the honest trade for a first version: the alternative is an override layer plus a
+super-admin surface, and a half-built one would let a merchant edit their returns policy once and
+find it silently reverted. A merchant who needs different wording goes through the change-request
+flow, which is the same route every other admin-managed content field uses. **Carried forward.**
+
+### The branch that decides what the privacy policy may claim
+
+`Site.sellingEnabled` decides which PAGES exist, because that is what the footer asks
+(`legalPagesFor`). It does **not** decide whether the policy describes collecting a customer's name
+and phone number — that is the storefront's own four-conjunct predicate (`can(payment_gateway)` AND
+`sellingEnabled` AND an enabled `GatewayConfig` row). A shop with selling switched on and no gateway
+draws no form and collects nothing, and a policy claiming otherwise is as wrong as one that omits a
+collection that does happen. Both facts are on `LegalFacts` and both are asserted.
+
+### Sentry is deliberately NOT named as a processor
+
+`@sentry/nextjs` is a dependency and `SENTRY_DSN` is a validated variable, but nothing initialises
+the SDK — no `Sentry.init`, no `withSentryConfig`, no config file. Not one byte has ever been sent.
+Naming it on the strength of a configured DSN would be a false disclosure in the direction nobody
+audits for: claiming data leaves when it does not, in the one document this phase promises is true.
+
+Phase 7 wires it. `tests/unit/phase6-legal.test.ts` fails the moment the SDK is initialised
+anywhere, and the failing assertion says why — that is the only reliable way to keep a disclosure
+honest across a phase boundary.
+
+### The backup numbers moved to env, because the copy states them as fact
+
+Every generated policy interpolates a six-hourly dump and a fourteen-day ceiling. There is no backup
+code in this repository (Phase 7 owns it), so those describe an operational policy — which means an
+operator who dumps nightly instead would silently publish a false disclosure across every tenant
+with no code path that noticed. `BACKUP_INTERVAL_HOURS` and `BACKUP_RETENTION_DAYS` are env vars now,
+so the number the policy publishes and the number the deployment runs are the same value.
+
+### "Forever" stopped being the retention policy for four global tables
+
+`tenant_tombstones`, `platform_audit_logs`, `dsr_requests` and `webhook_deliveries` all outlive
+every tenant by design, and nothing pruned any of them. A privacy page that discloses a surviving
+record without a ceiling has disclosed a permanent one, so each now ends — 730 days for the deletion
+record, 30 for the delivery log, both in env, both stated in the Arabic copy, and enforced by
+`prune-records`, a daily SystemJob at 04:00.
+
+DELETE is granted to **`app_system` alone**. An HTTP request runs as `app_web` and therefore cannot
+erase its own audit trail.
+
+That grant broke an existing isolation test, which is the interesting part.
+`rls-coverage.test.ts` defined "tenant-owned" as "has a `tenant_id` column", and
+`tenant_tombstones` has one while being global by design — it points at a tenant that is already
+gone, which is why it has no foreign key to `tenants`. **The definition was sharpened rather than
+exempted**: tenant-owned now means a live foreign key to `tenants`. That is strictly stronger, and
+the day somebody drops an FK to slip past it, the cascade protecting that tenant's data goes with
+it and half the suite fails first.
+
+### The Content-Security-Policy has no nonce, and the reason is measured
+
+Next derives its script nonce by reading the `content-security-policy` header off the REQUEST. On
+this platform `proxy.ts` rewrites every hostname into its own subtree — that is how three surfaces
+live in one App Router — and **Next 16.3 does not carry the request-header override through
+`NextResponse.rewrite()` as far as that read.** Measured directly: `/demo-request` (unprefixed, no
+rewrite) renders `nonce="…"` matching the header; `/sign-in` (rewritten to `/dashboard/sign-in`)
+renders `"nonce":"$undefined"` on every script. The `x-souq-*` context headers survive the same
+rewrite, so this is specific to that one read.
+
+A nonce in the header with none in the HTML is the worst outcome available: a browser that sees a
+nonce ignores `'unsafe-inline'`, so the policy would block Next's own bootstrap scripts and ship a
+blank page on every surface a human uses. Emitting it only on the unprefixed paths would be worse —
+strict where nobody is, permissive on every page that matters, and reading as strict in review.
+
+So `script-src` carries `'unsafe-inline'`, uniformly and on purpose. What the policy still buys is
+not small: no external script origin but the analytics one, `object-src 'none'`, `base-uri 'self'`,
+`frame-ancestors 'none'`, and `form-action 'self'` — the last of which is what stops an injected
+form from posting a customer's name and phone number to another host. The platform's injection
+surface is narrow and independently defended: React escapes by default, and `custom_html` runs
+through an allow-list tokeniser that strips `<script>` whole. **Carried forward** with the
+reproduction above; `CSP_IS_NONCE_BASED` is the constant to flip.
+
+Two smaller concessions, both stated rather than hidden:
+
+- **`style-src` keeps `'unsafe-inline'`.** The storefront applies its entire token set through an
+  inline style ATTRIBUTE on the shell — per-tenant colours, so no hash is possible — and CSP3's
+  `style-src-attr` ignores nonces by design. Removing it would strip every colour from every
+  storefront and surface as a wall of contrast failures rather than as a CSP error.
+- **`frame-src` is `'self'`, not `'none'`.** `'none'` blocked a page from creating an iframe pointed
+  at our own origin, which is how A2's cross-site consent-forgery test constructs the attack it
+  measures. A real attacker's page carries no policy of ours, so `'none'` removed a test's ability
+  to prove a control without removing the attack. Being framed is refused separately and absolutely
+  by `frame-ancestors 'none'`.
+
+`Cross-Origin-Opener-Policy` is sent only over https: a browser ignores it on a non-secure origin
+and logs an error saying so, and the e2e suite asserts a storefront logs nothing to the console.
+HSTS lives in the Caddyfile — the only process in the stack that terminates TLS — in **both** site
+blocks, because Caddy matches one block per request. A unit test counts the directive twice.
+
+### Two Phase 6 changes that were about to break the product
+
+Both were caught by the gate rather than by review, and both are worth recording because the failure
+was silent in each case.
+
+**The section editors would have listed the privacy policy.** `getSiteContent`, the merchant's
+sections screen and the demo build counter all read `Section` by `tenantId` alone — correct while
+`Section` was one arrangement per tenant, and wrong the moment legal pages became section rows. An
+admin would have seen forty policy clauses in a screen whose toggles hide and reorder. Worse,
+`seedDefaultSections` guarded on `count > 0`, so with legal pages present it would have become a
+permanent no-op and **every new account would have shipped with no home arrangement at all**, with
+no error anywhere. All three are scoped to `HOME_PAGE_SLUG` now, which lives in `site-contract`
+because three copies of the string `'home'` is how one of them ends up meaning something else.
+
+**Eight `about` clauses on one page all emitted `id="about"`.** Section anchors were per-type and
+had never needed to be anything else. `anchorFor(type, occurrence)` keeps the stable name for the
+first of a type — so `#contact`, `#offers` and `#location` still mean what they meant — and suffixes
+repeats. The e2e suite asserts the ids on a generated policy are unique.
+
+### Brute force: the window limiter was measuring the wrong thing
+
+better-auth's `rateLimit` block was declared with four custom rules and **no storage**, so the
+library resolved it to a per-process `Map`: the stated ten attempts per fifteen minutes was N x 10
+across N web containers and reset to zero on every deploy. It also keyed off `x-forwarded-for` with
+no `trustedProxies`, and behind Cloudflare and Caddy that chain is multi-hop — so
+`getIPFromHeader` returned null and **every sign-in on the platform shared one `no-trusted-ip`
+bucket**. Ten attempts per fifteen minutes, globally, which is a one-request self-DoS on login for
+every merchant rather than brute-force protection. On a merchant custom domain a client could force
+that state deliberately.
+
+Fixed on both axes: `customStorage` backed by the same Redis every other limit uses, and
+`ipAddressHeaders: ['x-real-ip']` — which is what the Caddyfile actually sets, is single-valued by
+construction, and is the header `getClientIp()` already falls back to. The auth layer and invariant
+9 now read the same header about the same request.
+
+On top of that, an **account lockout** (`src/server/auth/lockout.ts`) bounds the TOTAL rather than
+the rate. Keyed on the identifier rather than the IP, because an attacker rotating addresses walks
+past an IP key — and expiring on its own, because keying on the email means somebody who knows a
+merchant's address can lock them out on purpose. It lives in the route handler rather than in
+`createAuth()`: both sign-in forms post to that endpoint directly, and better-auth's `verify`
+callback is handed a hash and a password with no identifier attached, so it cannot count failures
+per account because it does not know which account it is checking.
+
+The refusal is the generic Arabic rate-limit copy, deliberately not "this account is locked" — a
+distinct message turns the lockout into an account-existence oracle.
+
+### Rate limits that existed on paper
+
+`RATE_LIMIT_EXPORT_DOWNLOAD_PER_HOUR` had been declared since Phase 1 with **zero consumers**, which
+is the worst state for a limit: it reads like coverage on every inventory and is not there.
+`/export/{token}` is the most exposed route on the platform — allow-listed, unprefixed so it answers
+on every hostname including custom domains, and every hit resolves a token, writes an audit row,
+mints a signed storage URL and streams a whole business through the web container.
+
+Also newly bounded: the self-serve export (per tenant per day — the heaviest operation here and the
+only channel authorised to carry customer names and phone numbers out), the gateway settlement
+callback (inert today, limited now because the day a provider activates it decrypts stored
+credentials before verifying a signature), `/internal/domain-ask` (so the Caddyfile's 404 handler is
+no longer its only layer), and the impersonation handoff.
+
+The consent endpoint's hand-rolled `INCR` then `EXPIRE` became `consumeSlot`. It was the exact
+non-atomic bug `src/server/rate-limit.ts` was extracted to eliminate, and this was the worst of the
+three copies: the route fails CLOSED, so an `EXPIRE` lost to a failover would leave a key with no
+TTL and a tenant+IP that could never record consent again — and therefore could never be tracked,
+never get a cookie, and never stop being asked.
+
+Two older limiters put the RAW client IP in their Redis key. Both hash it now. The demo-request one
+was the worse of the two: it is the public prospect form, and the row it protects already holds a
+phone number and a physical address, so the key was a second copy of the linkage the retention rule
+exists to bound — in a datastore Q10 puts in the backup set.
+
+### Encryption of sensitive fields — declined for the order and DSR columns, and here is why
+
+The only field-level encryption on the platform is payment-gateway credentials (AES-256-GCM,
+unsealed in exactly one file, asserted by two guardrails). Three tables hold plaintext personal data
+and were considered:
+
+- **`Order.customerName` / `customerPhone` / `customerNote`** — NOT encrypted. The merchant searches
+  and sorts their own orders by these fields; encrypting them moves that work into the application
+  and breaks the one screen they exist for. The controls that do apply are stronger than a column
+  cipher would be against the actual threat: RLS with FORCE on a tenant-owned table, the four-conjunct
+  predicate that decides whether they are collected at all, and the export split that keeps them off
+  the bearer-token channel.
+- **`DsrRequest.details` / `resolution`** — NOT encrypted. They are free text a data subject wrote
+  about their own data and an operator has to read them to act. The phone number IS hashed
+  (`subjectPhoneHash`), which is where the identifier risk actually sits.
+- **`DemoRequest.address` / `whatsapp`** — NOT encrypted, and this is the closest call. The row is
+  INSERT-only for `app_web` with no SELECT at all, readable only by a super admin, and hard-deleted
+  after thirty days. Encryption would protect against a database file read that RLS cannot stop —
+  the same threat disk encryption addresses at the layer that can actually address it, and the same
+  threat that would also expose every `Order` row.
+
+Recorded rather than ticked: the control for personal data at rest on this platform is RLS plus
+disk encryption plus retention, and column encryption is reserved for credentials, which are the
+one class where a read is immediately actionable. **Carried forward** as the thing to revisit when a
+real payment gateway activates.
+
+### Carry-forwards closed
+
+- **`demo.closed` carried the demo's plaintext slug** into the global `webhook_deliveries` table,
+  which outlives the tenant `closeDemo` promised to erase — and the slug is derived from the
+  prospect's own requested prefix. It carries `slugHash` now, the same HMAC the tombstone uses.
+  `demo.created` deliberately keeps its slug: n8n composes the storefront link from it to WhatsApp
+  the prospect, so removing it breaks the delivery the event exists for. It is bounded instead by
+  the new thirty-day deliveries retention.
+- **`tenantName` is in ten event payloads** and stays there — it is what a WhatsApp template
+  renders. The decision is explicit rather than by omission: the bound is the deliveries retention
+  plus n8n's `EXECUTIONS_DATA_PRUNE`, and the PROCESSORS section discloses it.
+- **Two concurrent purges could orphan a shared user** permanently — name and email retained forever
+  for somebody whose every account was deleted. The check and the deletion are two transactions on
+  two connections, so no row lock closes it (and `SELECT … FOR UPDATE` is not even available:
+  Postgres requires UPDATE privilege to lock a row, and `app_system` holds SELECT on `users` by
+  design — the grant that would make it work is the one invariant 8 exists to withhold). `purgeTenant`
+  and `closeDemo` are serialised platform-wide by a Redis lock instead. The alternative — a global
+  member-less-user sweep — needs a migration, a DELETE grant on `users`, and careful instruction not
+  to delete super admins (who have no membership by design and would be its first victims).
+- **A deleted image stayed fetchable for up to eight days.** `stale-while-revalidate` is a day now
+  rather than a week, the ceiling is computed from the header the pipeline actually sends, and the
+  Arabic copy states it instead of claiming instant deletion. Purging the edge is the complete fix
+  and needs a Cloudflare token scoped for cache purge — **carried forward**.
+- **`Consent.ipHash` was dropped.** Never written since Phase 1 and deliberately so; kept as an
+  empty column it read as an oversight whose obvious fix was to start filling it. The e2e assertion
+  changed from "every row is null" to "the column does not exist", which is the difference between
+  a habit and a guarantee.
+- **Push subscriptions survived `push_notifications` being turned off.** `forgetPushAudience` deletes
+  them when the toggle resolves false. It writes no `Consent` row: this is the platform withdrawing
+  the channel, not a visitor withdrawing permission, and manufacturing an opt-out row per subscriber
+  would put words in the mouths of people who never spoke.
+
+### The mandatory manual isolation review
+
+Signed off. All four checks, with what was found:
+
+1. **Every query goes through the scoped client or `withTenantTxn`.** Three value imports of
+   `@prisma/client`, all inside `src/server/db`; two type-only enum imports, explicitly legal. Raw
+   SQL outside the boundary is six call sites, every one a parameterised tagged template on a `tx`
+   handed down by `withTenantTxn`; there is no `$queryRawUnsafe` anywhere. Two modules reach
+   `systemClient()` directly — the webhook dispatcher (justified: `app_system` is the only role
+   granted the signing-secret column) and a **dead duplicate of `purgeExpiredDemoRequests` in
+   `src/server/demo-requests`, which was deleted**. It had no callers, used `lt` where the live one
+   uses `lte`, and opened no transaction — an unreferenced function on a path that sets no GUCs is
+   an invitation.
+2. **Every job is a TenantJob or a scoped SystemJob.** Sixteen registered names; the two added this
+   phase are `sync-compliance` (tenant, produced by plan CRUD) and `prune-records` (system, produced
+   by a worker repeatable, writing only global tables). The "every job has a producer" guardrail had
+   a loophole — it counted the constant tables in `jobs/contract.ts` as producers, so a name
+   declared there passed by itself. Closed, and it immediately surfaced two more jobs with no
+   producer (`build-export`, `send-mail`), both now DECLARED exceptions rather than silent passes.
+3. **Every table is tenant-owned with RLS or registered in `GLOBAL_TABLES.md`.** Phase 6 added no
+   model. The check itself was the gap: nothing cross-referenced the schema against the whitelist, so
+   a new table with no `tenant_id`, no policy and no line would have passed every existing test —
+   precisely the failure this check exists to catch. `rls-coverage.test.ts` now enumerates the
+   catalog and asserts the non-tenant-owned set is exactly the set the file names. `tenants` gained
+   the line it never had.
+4. **No credential in a payload, a log line or Sentry.** The event payload table declares no
+   credential-shaped field; `exportUrl` is a revocable platform route, never a signed storage URL.
+   `logger.ts` redacts 23 paths including every Phase 5 customer field. Sentry is not initialised, so
+   the rule is vacuously true today — recorded as the risk that enters the moment Phase 7 wires it,
+   with the note that pino's redaction does not apply to Sentry's own pipeline.
+
+**The blind spot, stated rather than glossed:** `guardrails.test.ts` walks `src/**` only, and
+eslint turns the import restriction off for `scripts/`, `tests/` and `*.config.ts`. A script that
+built its own PrismaClient against `DATABASE_URL_MIGRATE` would be caught by neither. Nothing does
+today — `prisma/seed.ts` goes through `superAdminDb`, and the two scripts touch no database —
+verified by hand for this sign-off.
+
+### n8n execution pruning
+
+`N8N_EXECUTIONS_DATA_PRUNE`, `N8N_EXECUTIONS_DATA_MAX_AGE` (168 hours) and a count ceiling are
+declared in `.env.example`. There is no n8n service to attach them to: the only compose file is the
+dev stack, and its own header defers caddy/n8n/umami/uptime-kuma to Phase 7. **Phase 6 owns the
+value; Phase 7's compose must consume it** — its execution history holds delivered links and
+merchant phone numbers, and Q9 puts its database in the backup set.
+
+### The adversarial review, and the four things it changed
+
+Four reviewers over the phase diff — authentication, the unauthenticated surface, isolation, and
+headers/content — with every finding handed to a separate agent told to refute it. Twelve raised,
+twelve refuted. Several refutations conceded a real mechanism on the way, and four of those were
+fixed rather than argued down.
+
+**The account lockout could be walked past with one header.** `/sign-in/email` declares
+`allowedMediaTypes: ['application/x-www-form-urlencoded', 'application/json']`, and the wrapper read
+only JSON. A form-encoded post produced no identifier, so it was neither counted nor checked — the
+whole lockout, bypassed by changing a content type. Both sign-in forms on this platform send JSON,
+which is exactly why it would never have surfaced in use. It reads both encodings now.
+
+**better-auth's limiter keys on the wrong address, and cannot key on the right one.** Its best
+available header is `x-real-ip`, which Caddy sets to the PEER — behind Cloudflare, an edge address
+shared by every visitor routed through it. `getClientIp()` is the only thing here that unwraps
+`CF-Connecting-IP`, and only after verifying the peer is inside Cloudflare's ranges. So the bound
+that is actually per-client now lives in the route handler, on top of the library's. Both stay:
+better-auth's still covers the endpoints the wrapper passes through.
+
+**The rate-limit store had no `consume`.** better-auth falls back to a non-atomic read-decide-write
+for any storage that omits it, so concurrent requests could each read the same count and each decide
+they were under the limit — on `/request-password-reset`, that is a burst of mail to one address.
+It implements `consume` through `consumeSlot`, the same atomic Lua INCR+EXPIRE every other limit
+here uses.
+
+**`usersWithNoOtherMembership` failed OPEN.** `systemClient()` falls back to `DATABASE_URL` when
+`DATABASE_URL_SYSTEM` is unset — which is the current default, and an open Phase 7 item. Running as
+`app_web` with no tenant context, the generic policy on `members` compares against an unset GUC and
+returns ZERO rows, so every user looked like a sole member and the purge would delete the `User` row
+of somebody still owning a different shop. It asserts `current_user = 'app_system'` first now, and
+skips loudly rather than trusting an empty answer. The skip is itself a broken promise — the
+merchant's row survives a deletion the copy describes — so it logs at error level and names the
+missing variable.
+
+Two smaller ones the same pass produced: a data subject's plaintext phone number travelled in a
+query string on the privacy screen (a GET filter, on that screen of all screens) and is now a POST
+that redirects with row ids; and `includeSubDomains` was being asserted over merchant-owned domains
+we do not control, where a merchant's own unrelated host on plain HTTP would have become unreachable
+for two years because they pointed one CNAME at us. It stays on the platform block only.
+
+Three concessions were recorded rather than fixed, because each is the better side of a real trade:
+the lockout degrades open when Redis is down (an authentication outage for every merchant is worse
+than a missing bound during one), identifier-keyed lockout is inherently a targeted account-DoS
+primitive (self-healing in fifteen minutes, and the alternative is no lockout), and the purge lock
+is advisory rather than a guarantee (a deletion the platform promised must not be blocked by a
+cache).
+
+**Two stale comments were deleted.** Both described the nonce mechanism as if it were live after the
+measurement above removed it — one in `proxy.ts` claiming the policy is written onto the request
+headers, one in `security-headers.ts` claiming scripts are nonce-gated four lines after saying they
+are not. Security commentary that contradicts its own code is worse than none: it is what the next
+reader trusts instead of reading.
+
+### CI exists now
+
+`.github/workflows/ci.yml`: typecheck + lint + test, then build + e2e + axe, then a dependency scan
+that blocks on HIGH and reports everything else. Advisories are published against code that has not
+changed, so the audit also runs weekly. **Lighthouse is excluded from CI** — TODO.md records seven
+local runs scoring 86–95 with no regression, i.e. machine variance at the threshold, and a gate that
+fails a third of the time teaches people to re-run it. Phase 7 decides best-of-N or median-of-three.
+Deploy is not here: Phase 7 owns it, and a half-built deploy job is worse than none.

@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { authDb, withTenantTxn } from '@/server/db';
 import { logger } from '@/server/logger';
-import { absoluteUrl, platformHost } from '@/env';
+import { absoluteUrl, getEnv, platformHost } from '@/env';
+import { hmac } from '@/server/crypto';
+import { consumeSlot } from '@/server/rate-limit';
 import type { MerchantContext } from './context';
 import { merchantCan } from './context';
 import { auditInTx } from './audit';
@@ -164,6 +166,28 @@ export async function inviteStaff(ctx: MerchantContext, raw: unknown): Promise<I
  * made. So the account stands and the screen says the email did not go, with a resend button.
  */
 async function sendPasswordLink(email: string): Promise<boolean> {
+  /**
+   * Rate limited HERE, because better-auth's own limiter cannot see this call (Phase 6).
+   *
+   * `auth().api.requestPasswordReset(...)` invokes the endpoint FUNCTION directly. better-auth
+   * runs `onRequestRateLimit` from its HTTP router's `onRequest` hook and nowhere else, so a
+   * server-side call bypasses every rule declared in the auth config — including the one this
+   * function's own neighbours describe as protecting it. Without this, a merchant could mail-bomb
+   * a staff address and burn the platform's Resend quota with a button, unthrottled.
+   *
+   * Keyed on the RECIPIENT, hashed: the harm is measured in mail delivered to one inbox, and the
+   * key must not become a list of the platform's email addresses in a datastore that is backed up.
+   */
+  const allowed = await consumeSlot({
+    key: `auth:reset-mail:${hmac('reset-mail', email.trim().toLowerCase())}`,
+    limit: getEnv().RATE_LIMIT_LOGIN_PER_15MIN,
+    windowSeconds: 900,
+  });
+  if (!allowed.allowed) {
+    logger().warn({}, 'password link refused by the per-recipient rate limit');
+    return false;
+  }
+
   try {
     const { auth } = await import('@/server/auth');
     await auth().api.requestPasswordReset({

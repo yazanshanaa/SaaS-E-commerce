@@ -159,6 +159,43 @@ const schema = z.object({
   DEMO_REQUEST_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
   LIFECYCLE_SWEEP_CRON: z.string().default('0 3 * * *'),
 
+  // --- Backups (Q10) — POLICY, stated by the privacy copy, implemented in Phase 7 -----
+  /**
+   * These two are read by `src/server/legal`, which interpolates them into every generated Arabic
+   * privacy policy as fact. There is no backup code in this repository yet — Phase 7 owns it — so
+   * they describe the operator's stated schedule. They live in env precisely so the number the
+   * policy publishes and the number the deployment runs are the same value: hardcoded, an operator
+   * who dumps nightly instead of six-hourly makes every tenant's policy false with nothing to
+   * notice it.
+   */
+  BACKUP_INTERVAL_HOURS: z.coerce.number().int().positive().max(168).default(6),
+  BACKUP_RETENTION_DAYS: z.coerce.number().int().positive().max(365).default(14),
+
+  // --- Retention for the records that OUTLIVE a tenant (Phase 6) -------------
+  /**
+   * The deletion record's own lifetime, in days — `TenantTombstone` and `platform_audit_logs`.
+   *
+   * Both exist to prove a purge happened after the rows that would have proved it are gone
+   * (docs/PHASES.md, B1's ordering), so they cannot be short. But "forever" is not a retention
+   * policy, and Phase 6's privacy copy has to state a number: a page that discloses a surviving
+   * record with no ceiling has disclosed a permanent one.
+   *
+   * Two years is the trade. It comfortably outlasts the 14-day backup window the restore runbook
+   * replays purges against, and it outlasts the period in which a merchant is realistically going
+   * to ask what happened to their data — while still ending.
+   */
+  TOMBSTONE_RETENTION_DAYS: z.coerce.number().int().positive().default(730),
+  /**
+   * How long a delivered webhook keeps its payload in the global `webhook_deliveries` table.
+   *
+   * This table is global by necessity (one endpoint receives every tenant's events) and its rows
+   * carry a full copy of each payload — including a demo's slug, which `closeDemo` promised to
+   * erase. Nothing pruned it before Phase 6, so a closed demo's identifier lived on in a table the
+   * cascade cannot reach. Thirty days is long enough to debug a delivery and short enough that the
+   * promise becomes true again.
+   */
+  WEBHOOK_DELIVERY_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+
   // --- Rate limits ----------------------------------------------------------
   RATE_LIMIT_PUBLIC_FORM_PER_HOUR: z.coerce.number().int().positive().default(5),
   RATE_LIMIT_LOGIN_PER_15MIN: z.coerce.number().int().positive().default(10),
@@ -183,6 +220,45 @@ const schema = z.object({
    * a row a stranger creates on a merchant's account, and a cache blink must not lift that.
    */
   RATE_LIMIT_CHECKOUT_PER_HOUR: z.coerce.number().int().positive().default(10),
+
+  // --- Rate limits added by Phase 6's sweep over every sensitive route -------
+  /**
+   * The self-serve export, per TENANT per day.
+   *
+   * The heaviest operation on the platform and the only channel authorised to carry customer names
+   * and phone numbers out of it (Phase 5, decision (a)). Each call builds a full archive and leaves
+   * it on R2 for twenty-five hours, so an unbounded loop is unbounded CPU, an unbounded bill, and a
+   * growing pile of other people's personal data. A merchant exports their shop a handful of times
+   * a day at the very most.
+   */
+  RATE_LIMIT_SELF_SERVE_EXPORT_PER_DAY: z.coerce.number().int().positive().default(10),
+  /**
+   * The consent banner's answer endpoint, per tenant per IP per ten minutes.
+   *
+   * Was a pair of hardcoded numbers inside the route with a hand-rolled, non-atomic INCR+EXPIRE —
+   * the exact bug `src/server/rate-limit.ts` was extracted to eliminate. Env-driven now like every
+   * other limit, so a load test can raise it without editing a route.
+   */
+  RATE_LIMIT_CONSENT_PER_10MIN: z.coerce.number().int().positive().default(20),
+  /**
+   * The gateway settlement callback, per tenant per IP per hour.
+   *
+   * Inert today — every adapter is scaffolded and the route refuses before it does any work. It is
+   * limited NOW, while it is inert, because the moment a provider is activated at the Launch Gate
+   * this becomes an unauthenticated endpoint that decrypts stored credentials before it verifies a
+   * signature, on every hostname the platform answers.
+   */
+  RATE_LIMIT_GATEWAY_CALLBACK_PER_HOUR: z.coerce.number().int().positive().default(120),
+  /**
+   * Failed sign-ins per identifier before the account is locked, and for how long.
+   *
+   * This is the account-lockout half of brute-force protection: the window limiter bounds the RATE
+   * of guessing, and this bounds the TOTAL. Counted per email so an attacker rotating addresses
+   * cannot lock a shop out of its own dashboard, and the lock expires on its own so a merchant who
+   * genuinely forgot their password is not waiting on a support call.
+   */
+  AUTH_LOCKOUT_THRESHOLD: z.coerce.number().int().positive().default(10),
+  AUTH_LOCKOUT_MINUTES: z.coerce.number().int().positive().default(15),
 });
 
 export type Env = z.infer<typeof schema>;

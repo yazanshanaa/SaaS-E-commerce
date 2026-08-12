@@ -172,3 +172,17 @@ button:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+/*
+ * The support reference on an error boundary.
+ *
+ * A digest is a hash, so it is rendered in a monospace face and allowed to wrap anywhere: a
+ * merchant reading it down a phone line needs the characters distinguishable, and a string that
+ * overflows its card on a narrow phone is a string nobody can read out at all.
+ */
+.sb-digest {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--sb-text-sm);
+  overflow-wrap: anywhere;
+  margin-block-start: var(--sb-space-4);
+}

@@ -7,6 +7,7 @@ import { StorageError, type StorageAdapter } from '@/server/storage';
 import type { MediaFailureCode } from '../errors';
 import { mediaVariantKey, mimeForFormat } from '../keys';
 import { mediaStorage } from '../storage';
+import { CDN_CACHE_CONTROL } from '../cache';
 import { adjustTenantStorageBytes } from '../usage';
 import {
   MEDIA_VARIANT_FORMATS,
@@ -79,21 +80,6 @@ export const MAX_INPUT_PIXELS = 40_000_000;
  */
 sharp.cache({ memory: 64 });
 sharp.concurrency(1);
-
-/**
- * Long enough to be a CDN, short enough that a deletion means something.
- *
- * `max-age=31536000, immutable` is the right header for a content-addressed asset and the wrong
- * one here. A merchant who uploads a product photo that happens to show a customer's ID card,
- * notices, and deletes it, has the row and the R2 objects removed — while the URL the storefront
- * already published keeps serving the image from the edge for up to a YEAR, because `immutable`
- * tells the cache never to revalidate. The same gap outlives B1's purge: images certified as
- * erased stay fetchable. A day of freshness with a week of `stale-while-revalidate` keeps the
- * edge answering instantly (the perf budget cares about the served response, not the
- * revalidation behind it) and bounds the exposure to something that can be stated honestly in
- * the privacy copy. Purging the edge on delete is the complete fix; see docs/decisions/a3.md.
- */
-const CDN_CACHE_CONTROL = 'public, max-age=86400, stale-while-revalidate=604800';
 
 /** A failure we should NOT retry: the bytes will not decode on the fifth attempt either. */
 class PermanentProcessingError extends Error {

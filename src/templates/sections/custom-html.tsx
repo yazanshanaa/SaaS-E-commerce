@@ -21,16 +21,18 @@ import { SectionBlock } from './block';
 export interface CustomHtmlSectionProps {
   context: StorefrontContext;
   config: SectionConfig<'custom_html'>;
+  /** Unique-per-page override from `SectionList`; falls back to the type's stable anchor. */
+  anchor?: string;
 }
 
-export function CustomHtmlSection({ context, config }: CustomHtmlSectionProps) {
+export function CustomHtmlSection({ context, config, anchor }: CustomHtmlSectionProps) {
   if (!context.flags.customHtml) return null;
 
   const html = sanitizeHtml(config.html ?? '');
   if (!html.trim()) return null;
 
   return (
-    <SectionBlock anchor={SECTION_ANCHORS.custom_html}>
+    <SectionBlock anchor={anchor ?? SECTION_ANCHORS.custom_html}>
       <div className="sf-prose" dangerouslySetInnerHTML={{ __html: html }} />
     </SectionBlock>
   );

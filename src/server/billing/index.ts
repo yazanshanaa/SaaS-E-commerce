@@ -13,10 +13,12 @@ import { randomToken, hashSlug, shortId } from '@/server/crypto';
 import { addDays, addMonths } from '@/server/time';
 import { storage, tenantPrefix } from '@/server/storage';
 import { LIFECYCLE_JOBS, SUSPENSION_PHASES, systemJob } from '@/server/jobs/contract';
+import { syncLegalPages } from '@/server/legal';
 import { absoluteUrl, exportDownloadUrl, getEnv, storefrontHost } from '@/env';
 import { logger } from '@/server/logger';
 import { assertPeriodEndAllowed, assertTransition, NullPeriodEndError } from './state-machine';
 import { dispatchJob, drainTenantJobs } from './dispatch';
+import { withPurgeLock } from './purge-lock';
 import { demoPack, type DemoPackKey } from './demo-packs';
 
 /**
@@ -144,6 +146,16 @@ export async function createAccount(input: CreateAccountInput): Promise<CreateAc
         billingPeriod: input.billingPeriod,
       },
     });
+
+    /**
+     * Phase 6: every new site auto-generates its Arabic legal pages, in the same transaction that
+     * announces the account.
+     *
+     * The footer links to all of them from the first render (`src/templates/lib/legal.ts`), so a
+     * site that exists before its legal pages do is a site whose privacy link is a dead end — on a
+     * platform whose compliance defaults put that link on every page of every plan.
+     */
+    await syncLegalPages(tenant.id, { reason: 'account_created', tx });
   });
 
   await invalidateEntitlements(tenant.id);
@@ -810,7 +822,18 @@ interface PurgeSnapshot {
  * purge resumes instead of being refused by its own guard; step 1 is idempotent by nature; the
  * tombstone insert tolerates the row already existing.
  */
+/**
+ * Purge a tenant. Serialised platform-wide — see `./purge-lock.ts` for the race it closes.
+ *
+ * The lock has to wrap the WHOLE function, not the transaction inside it: the cross-tenant
+ * membership check and the deletion are two transactions on two connections, and a lock held by
+ * either one alone releases before the other runs.
+ */
 export async function purgeTenant(input: PurgeInput): Promise<PurgeResult> {
+  return withPurgeLock(`purge:${input.tenantId}`, () => purgeTenantUnlocked(input));
+}
+
+async function purgeTenantUnlocked(input: PurgeInput): Promise<PurgeResult> {
   const { tenantId } = input;
 
   /**
@@ -1085,6 +1108,27 @@ async function writeTombstone(
  * Runs as `app_system` because the question is cross-tenant by definition and no tenant context
  * may answer it. app_system has SELECT on `members` and no write grant at all, which is exactly
  * the shape of a read like this one.
+ *
+ * IT TAKES A LOCK, and that closes a race carried forward from the Group B merge.
+ *
+ * Two purges running at the same moment, on two tenants that share a user, both read "this user
+ * has another membership" — because at the moment each of them looks, the other's member row is
+ * still there. Both then decline to delete, both tenants cascade their own membership away, and
+ * the user is left with no memberships, no tenant, and no route by which anything can ever find
+ * them again: the RLS policy that admits a `users` row requires a member row in the current
+ * tenant, and there is no longer any tenant. A name and an email address, retained forever, for
+ * somebody whose every account was deleted — which is exactly what the privacy copy written in
+ * this phase says does not happen.
+ *
+ * The race is closed one level up, by `withPurgeLock` around the whole purge. It cannot be closed
+ * here: this check and the deletion it feeds are two transactions on two connections, so a lock
+ * taken in this one is released before the delete runs.
+ *
+ * A `SELECT ... FOR UPDATE` over the shared users was the first attempt and is not available —
+ * Postgres requires UPDATE or DELETE privilege on a table to lock its rows, and `app_system` holds
+ * SELECT on `users` and nothing else, by design. The grant that would have made the row lock work
+ * is precisely the grant invariant 8 exists to withhold, which is a good sign the lock belongs at
+ * the other level.
  */
 async function usersWithNoOtherMembership(
   tenantId: string,
@@ -1093,6 +1137,41 @@ async function usersWithNoOtherMembership(
   if (userIds.length === 0) return [];
 
   return withSystemTxn(async (tx) => {
+    /**
+     * PROVE WE ARE app_system BEFORE TRUSTING AN EMPTY RESULT — the one place this matters.
+     *
+     * `systemClient()` falls back to `DATABASE_URL` when `DATABASE_URL_SYSTEM` is unset, and that
+     * fallback is currently the deployment's default (`DATABASE_URL_SYSTEM` in production is an
+     * open Phase 7 item). Running as `app_web` with NO tenant context, the generic RLS policy on
+     * `members` compares `tenant_id` against an unset GUC and returns ZERO ROWS — so `elsewhere`
+     * comes back empty, every user looks like a sole member, and the purge deletes the `User` row
+     * of somebody who is still an owner of a completely different shop. An empty result is the
+     * dangerous answer here, and it is also the answer a misconfiguration produces.
+     *
+     * `cleanup-orphans` guards its own destructive rowless sweep the same way, for the same reason:
+     * a query whose emptiness authorises a deletion has to know which role asked it.
+     */
+    const roleRows = await tx.$queryRaw<Array<{ role: string }>>`SELECT current_user::text AS role`;
+    const role = roleRows[0]?.role;
+
+    if (role !== 'app_system') {
+      /**
+       * ERROR, not warn, because the SAFE outcome is still a broken promise.
+       *
+       * Skipping means the purged merchant's global `users` row — their name and email — survives
+       * a deletion the privacy copy says removes it. That is recoverable and quiet, where the
+       * alternative (trusting an empty cross-tenant read) would delete somebody else's account and
+       * be neither. So it fails this way deliberately, and says so loudly enough to be found:
+       * `DATABASE_URL_SYSTEM` in production is an open Phase 7 item, and this is what it costs.
+       */
+      logger().error(
+        { tenantId, role },
+        'identity cleanup SKIPPED — DATABASE_URL_SYSTEM is not set, so a cross-tenant membership ' +
+          'read cannot be trusted and the purged owner’s user row will survive the purge',
+      );
+      return [];
+    }
+
     const elsewhere = await tx.member.findMany({
       where: { userId: { in: userIds }, tenantId: { not: tenantId } },
       select: { userId: true },
@@ -1271,6 +1350,15 @@ export async function createDemo(input: CreateDemoInput): Promise<CreateDemoResu
           },
         });
 
+        /**
+         * A demo gets legal pages too, and they carry a "this is a demonstration" clause first.
+         *
+         * The alternative was leaving six footer links pointing at "قيد التجهيز" during the sales
+         * call the demo exists for — the moment a prospect is most likely to click one, precisely
+         * because they are checking whether the platform is serious.
+         */
+        await syncLegalPages(tenant.id, { reason: 'demo_created', tx });
+
         return {
           demoToken: token,
           afterCommit: built.afterCommit,
@@ -1373,6 +1461,12 @@ export interface CloseDemoResult {
 }
 
 export async function closeDemo(tenantId: string, actor: Actor): Promise<CloseDemoResult> {
+  // Same lock as the purge, and for the same reason: closing a demo deletes identities through
+  // the same cross-tenant check, so two of them at once can orphan a shared user just as easily.
+  return withPurgeLock(`close-demo:${tenantId}`, () => closeDemoUnlocked(tenantId, actor));
+}
+
+async function closeDemoUnlocked(tenantId: string, actor: Actor): Promise<CloseDemoResult> {
   // Same precondition as the purge, for the same reason: a demo stranded in `purging` is a
   // shareable link that resolves to nothing, with no screen that can finish the job.
   const objects = storage();
@@ -1440,8 +1534,11 @@ export async function closeDemo(tenantId: string, actor: Actor): Promise<CloseDe
        */
       await emitEvent(tx, {
         tenantId,
+        // The HASH, never the slug. See the payload's own note in src/server/events/types.ts:
+        // `webhook_deliveries` is global and survives the close that told the prospect their data
+        // was deleted, and the slug carries the prefix they themselves chose.
         type: 'demo.closed',
-        payload: { slug: snapshot.slug, reason: 'closed_by_admin' },
+        payload: { slugHash: hashSlug(snapshot.slug), reason: 'closed_by_admin' },
       });
 
       // `createMany`, not `create`: `platform_audit_read` admits a super admin only, and
@@ -1615,6 +1712,15 @@ export async function convertDemo(input: ConvertDemoInput): Promise<ConvertDemoR
       type: 'demo.converted',
       payload: { tenantName: tenant.name, planKey: plan.key },
     });
+
+    /**
+     * The demo notice has to come OFF every legal page here, and this is the seam most easily
+     * missed: conversion changes no page structure at all, so without this line a paying merchant
+     * would ship on day one with a privacy policy whose first clause tells their customers the
+     * shop is not real. It also picks up the plan change — a demo on pro-level limits converting
+     * to أساسي loses push and analytics, and the policy stops describing them.
+     */
+    await syncLegalPages(input.tenantId, { reason: 'demo_converted', tx });
 
     return revoked.count;
   });

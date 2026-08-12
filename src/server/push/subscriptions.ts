@@ -205,3 +205,34 @@ export async function removeSubscription(input: RemoveSubscriptionInput): Promis
 
   logger().info({ tenantId: input.tenantId, removed: removed.count }, 'push subscription removed');
 }
+
+/**
+ * Delete every push subscription a tenant holds. Phase 6, closing a Phase 4 carry-forward.
+ *
+ * The state it removes is the quiet one: an admin turns `push_notifications` off, the compose
+ * screen disappears, the subscribe control disappears, no delivery job can run — and the rows stay.
+ * Nothing about the product was visibly wrong, which is why it survived a whole phase. But each row
+ * is a persistent per-device identifier for a visitor who agreed to hear from a shop that can no
+ * longer contact them, and it would still be sitting in the tenant's export and in every backup.
+ * "We kept the identifiers because the feature was only disabled" is not a sentence the privacy
+ * page written in this same phase could carry.
+ *
+ * NO `Consent` ROW IS WRITTEN HERE, and that is the honest choice. The consent records already on
+ * file describe decisions the VISITORS made; this is the platform withdrawing the channel, not a
+ * visitor withdrawing permission, and manufacturing one opt-out row per subscriber would put words
+ * in the mouths of people who never spoke. The reason lives in the audit row on the toggle that
+ * caused it, where an operator can actually find it.
+ *
+ * Returns how many rows went, so the caller can log a number rather than a claim.
+ */
+export async function forgetPushAudience(tenantId: string, reason: string): Promise<number> {
+  const db = tenantDb(tenantId, PUBLIC_ACTOR);
+
+  const removed = await db.pushSubscription.deleteMany({ where: { tenantId } });
+
+  if (removed.count > 0) {
+    logger().info({ tenantId, removed: removed.count, reason }, 'push audience forgotten');
+  }
+
+  return removed.count;
+}

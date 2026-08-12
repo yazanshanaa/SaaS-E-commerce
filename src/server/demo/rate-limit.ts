@@ -1,4 +1,5 @@
 import { getEnv } from '@/env';
+import { hashIp } from '@/server/crypto';
 import { getClientIp, type ClientIpInput } from '@/server/http/get-client-ip';
 import { cacheRedis } from '@/server/redis';
 
@@ -63,9 +64,18 @@ export interface RateLimitDecision {
   source: 'redis' | 'memory';
 }
 
+/**
+ * The key holds an HMAC of the address, never the address (Phase 6).
+ *
+ * This is the PUBLIC prospect form, and the row it protects already stores a phone number and a
+ * physical address under a 30-day retention rule. A Redis key naming the submitter's IP in clear
+ * was a second copy of that same linkage — in a datastore Q10 puts in the backup set, with no
+ * retention rule of its own beyond the window's TTL. `hashIp` is the platform's domain-separated
+ * HMAC, so the bucket still distinguishes callers and nothing reads back to an address.
+ */
 export function demoRequestRateLimitKey(request: ClientIpInput): string {
   const { ip } = getClientIp(request);
-  return `demo:request:${ip ?? 'unknown'}`;
+  return `demo:request:v2:${hashIp(ip ?? 'unknown')}`;
 }
 
 function consumeInMemory(key: string, limit: number): RateLimitDecision {

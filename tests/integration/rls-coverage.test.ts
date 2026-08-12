@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { Client } from 'pg';
 
@@ -87,7 +90,21 @@ describe('row-level security coverage', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('gives app_system no write grant on any tenant-owned table', async () => {
+  /**
+   * "Tenant-owned" is defined by a LIVE RELATION TO A TENANT, not by a column name.
+   *
+   * The test used to say "has a `tenant_id` column", which was exactly right until Phase 6 needed
+   * to enforce a lifetime on `tenant_tombstones`. That table carries a `tenant_id` and is global —
+   * deliberately so: it is the record that a tenant was deleted, and it has NO foreign key to
+   * `tenants` precisely because the row it points at is gone by the time it is written.
+   *
+   * Adding an exemption list would have been the easy fix and the wrong one: a list is a place for
+   * the next table to be quietly added to. Testing for the foreign key instead makes the rule
+   * mechanical and strictly STRONGER — a new table that genuinely belongs to a tenant declares that
+   * relation, and the day someone drops the FK to slip past this check, the cascade that protects
+   * the tenant's data goes with it and half the suite fails first.
+   */
+  it('gives app_system no write grant on any table that belongs to a live tenant', async () => {
     const writable = await withDb(async (c) => {
       const { rows } = await c.query<{ table_name: string; privilege_type: string }>(`
         SELECT g.table_name, g.privilege_type
@@ -95,10 +112,19 @@ describe('row-level security coverage', () => {
         WHERE g.grantee = 'app_system'
           AND g.privilege_type IN ('INSERT','UPDATE','DELETE')
           AND EXISTS (
-            SELECT 1 FROM information_schema.columns col
-            WHERE col.table_schema = 'public'
-              AND col.table_name = g.table_name
-              AND col.column_name = 'tenant_id'
+            SELECT 1
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON kcu.constraint_name = tc.constraint_name
+             AND kcu.constraint_schema = tc.constraint_schema
+            JOIN information_schema.constraint_column_usage ccu
+              ON ccu.constraint_name = tc.constraint_name
+             AND ccu.constraint_schema = tc.constraint_schema
+            WHERE tc.constraint_type = 'FOREIGN KEY'
+              AND tc.table_schema = 'public'
+              AND tc.table_name = g.table_name
+              AND kcu.column_name = 'tenant_id'
+              AND ccu.table_name = 'tenants'
           )
       `);
       return rows.map((r) => `${r.table_name}:${r.privilege_type}`);
@@ -107,6 +133,99 @@ describe('row-level security coverage', () => {
     // A SystemJob that tries to write a tenant-owned table is refused by Postgres, not by a
     // code review.
     expect(writable).toEqual([]);
+  });
+
+  /**
+   * The other half of the same rule, added with the sharpened definition above: the three global
+   * tables Phase 6 gave a lifetime to are exactly the ones app_system may delete from, and app_web
+   * may delete from none of them. An HTTP request must never be able to erase its own audit trail.
+   */
+  it('lets only app_system delete the records that outlive a tenant', async () => {
+    const grants = await withDb(async (c) => {
+      const { rows } = await c.query<{ grantee: string; table_name: string }>(`
+        SELECT grantee, table_name
+        FROM information_schema.role_table_grants
+        WHERE privilege_type = 'DELETE'
+          AND grantee IN ('app_web','app_system')
+          AND table_name IN ('tenant_tombstones','platform_audit_logs','dsr_requests','webhook_deliveries')
+        ORDER BY grantee, table_name
+      `);
+      return rows.map((r) => `${r.grantee}:${r.table_name}`);
+    });
+
+    expect(grants.filter((g) => g.startsWith('app_web:'))).toEqual([]);
+    expect(grants.filter((g) => g.startsWith('app_system:')).sort()).toEqual([
+      'app_system:dsr_requests',
+      'app_system:platform_audit_logs',
+      'app_system:tenant_tombstones',
+      'app_system:webhook_deliveries',
+    ]);
+  });
+
+  /**
+   * THE ONE MECHANIZABLE HALF of Phase 6's manual isolation review (check 3).
+   *
+   * Every other assertion in this file asks about a table that HAS a `tenant_id` column, or checks
+   * a hardcoded list. Neither can see the failure the review exists to catch: a table added in a
+   * late phase with no `tenant_id`, no policy, and no line in `prisma/GLOBAL_TABLES.md`. It would
+   * pass every existing test and be visible to every connection on the platform.
+   *
+   * So this one enumerates the catalog, subtracts the tenant-owned tables, and asserts the
+   * remainder is EXACTLY the set the whitelist names. A new global table fails here until somebody
+   * writes down why it is global — which is the whole point of the file.
+   */
+  it('has a GLOBAL_TABLES.md line for every table that is not tenant-owned', async () => {
+    const { global: globalTables, all } = await withDb(async (c) => {
+      const { rows } = await c.query<{ table_name: string; owned: boolean }>(`
+        SELECT t.table_name,
+               EXISTS (
+                 SELECT 1
+                 FROM information_schema.table_constraints tc
+                 JOIN information_schema.key_column_usage kcu
+                   ON kcu.constraint_name = tc.constraint_name
+                  AND kcu.constraint_schema = tc.constraint_schema
+                 JOIN information_schema.constraint_column_usage ccu
+                   ON ccu.constraint_name = tc.constraint_name
+                  AND ccu.constraint_schema = tc.constraint_schema
+                 WHERE tc.constraint_type = 'FOREIGN KEY'
+                   AND tc.table_schema = 'public'
+                   AND tc.table_name = t.table_name
+                   AND kcu.column_name = 'tenant_id'
+                   AND ccu.table_name = 'tenants'
+               ) AS owned
+        FROM information_schema.tables t
+        WHERE t.table_schema = 'public'
+          AND t.table_type = 'BASE TABLE'
+          AND t.table_name <> '_prisma_migrations'
+        ORDER BY t.table_name
+      `);
+      return {
+        // Same definition the grant test uses: owned means a live foreign key to `tenants`.
+        global: rows.filter((r) => !r.owned).map((r) => r.table_name),
+        all: rows.map((r) => r.table_name),
+      };
+    });
+
+    const doc = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), '../../prisma/GLOBAL_TABLES.md'),
+      'utf8',
+    );
+
+    // Every row of every table in the file begins `| \`table_name\` |`. Deduped, because the
+    // retention table added in Phase 6 names four of them a second time.
+    const declared = [
+      ...new Set([...doc.matchAll(/^\|\s*`([a-z_]+)`\s*\|/gm)].map((match) => match[1]!)),
+    ];
+
+    const undeclared = globalTables.filter((table) => !declared.includes(table));
+    // A name in the file that is not a table at all — a rename that only landed in one place.
+    const stale = declared.filter((table) => !all.includes(table));
+
+    expect(
+      undeclared,
+      'a table with no tenant_id and no line in prisma/GLOBAL_TABLES.md — either give it tenantId or justify it',
+    ).toEqual([]);
+    expect(stale, 'GLOBAL_TABLES.md names a table that no longer exists').toEqual([]);
   });
 
   it('does not grant the webhook signing secret to app_web', async () => {

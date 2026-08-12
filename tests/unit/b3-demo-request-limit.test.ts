@@ -67,10 +67,23 @@ afterEach(() => {
 });
 
 describe('the demo-request rate limit', () => {
-  it('keys on the resolved client IP and nothing else', () => {
+  /**
+   * Phase 6 hashed the address into the key. The property under test is unchanged — one bucket per
+   * resolved client, nothing else in it — but the assertion can no longer be a literal, and it
+   * should not be: the point of the change is that the address does not appear.
+   */
+  it('keys on the resolved client IP and nothing else, without storing it', () => {
     // No tenant, no session, no user — a prospect has none of them by definition.
-    expect(demoRequestRateLimitKey(from('203.0.113.9'))).toBe('demo:request:203.0.113.9');
-    expect(demoRequestRateLimitKey({ headers: new Headers() })).toBe('demo:request:unknown');
+    const first = demoRequestRateLimitKey(from('203.0.113.9'));
+    const second = demoRequestRateLimitKey(from('203.0.113.10'));
+    const unknown = demoRequestRateLimitKey({ headers: new Headers() });
+
+    expect(first).toMatch(/^demo:request:v2:/);
+    expect(first).not.toContain('203.0.113.9');
+    expect(first).not.toBe(second);
+    expect(unknown).not.toBe(first);
+    // Stable for the same caller, or the budget would reset on every request.
+    expect(demoRequestRateLimitKey(from('203.0.113.9'))).toBe(first);
   });
 
   it('gives every IP its own hourly budget', async () => {
@@ -89,7 +102,7 @@ describe('the demo-request rate limit', () => {
   it('sets the counter and its TTL as one operation', async () => {
     await consumeDemoRequestSlot(from('203.0.113.3'));
 
-    const entry = redis.keys.get('demo:request:203.0.113.3');
+    const entry = redis.keys.get(demoRequestRateLimitKey(from('203.0.113.3')));
     expect(entry?.ttl).toBe(3_600);
     // One script, not an INCR followed by an EXPIRE that a failover can lose.
     expect(redis.scripts[0]).toContain('INCR');

@@ -59,6 +59,22 @@ const ALLOWED_LATIN = new Set([
   'TXT',
   'DNS',
   'Cloudflare',
+  /**
+   * Phase 6's processors list. These are COMPANY NAMES in a legal disclosure, and a legal
+   * disclosure that translates the name of the company holding your data has told you nothing —
+   * a data subject who wants to look one up needs the string the company answers to. Standard
+   * practice in Arabic privacy policies, and the same allowance CLAUDE.md already makes for
+   * technical vocabulary Arabic speakers use as-is.
+   *
+   * `n8n` and `R2` are absent because they contain digits and never match a run of three letters.
+   * Payment-gateway names are absent for a better reason: the generator passes the provider as an
+   * i18n PARAMETER, so a future locale gets the sentence and the platform supplies the name.
+   */
+  'Resend',
+  'Umami',
+  'Sentry',
+  /** The transport, named in the security clause because a reader looking for it expects it. */
+  'HTTPS',
 ]);
 
 function collectStrings(node: unknown, trail: string[] = []): Array<[string, string]> {
@@ -85,7 +101,9 @@ describe('the message catalogue', () => {
   it('has a namespace file per surface', () => {
     const files = messageFiles().map((f) => path.basename(f, '.json')).sort();
     expect(files).toEqual(
-      ['admin', 'billing', 'common', 'dashboard', 'demo', 'media', 'storefront'].sort(),
+      // `legal` joined in Phase 6 — the generated policy copy, kept apart from the storefront's
+      // labels because it is paragraphs rather than UI strings. See src/shared/i18n/index.ts.
+      ['admin', 'billing', 'common', 'dashboard', 'demo', 'legal', 'media', 'storefront'].sort(),
     );
   });
 

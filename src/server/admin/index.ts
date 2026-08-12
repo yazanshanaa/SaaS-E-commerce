@@ -171,3 +171,22 @@ export {
   type ActionState,
   type FieldError,
 } from './validation';
+
+/**
+ * Phase 6 — the compliance surfaces.
+ *
+ * `consentSummary` is an aggregate by design (see its module comment): a consent row holds a
+ * monthly-rotating hash and nothing else, so a list of them would identify nobody while implying
+ * it could. `listDsrRequests` and `decideDsrRequest` are re-exported from `src/server/dsr` so the
+ * admin screens import from one barrel like every other panel, while that table’s access rules —
+ * INSERT-only for the public path, SELECT and UPDATE for a super admin — stay in one file.
+ */
+export { consentSummary, type ConsentSummaryRow, type ConsentSummaryFilters } from './consents';
+export {
+  countOpenDsrRequests,
+  decideDsrRequest,
+  findDsrIdsByPhone,
+  listDsrRequests,
+  type DsrFilters,
+  type DsrRow,
+} from '@/server/dsr';

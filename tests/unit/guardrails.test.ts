@@ -210,7 +210,29 @@ describe('Phase 5 — customer PII stays out of the places that outlive the tena
      * deliberate": a stub that throws is a decision, a processor that quietly does real work and
      * is never called is a promise nobody keeps.
      */
-    const DELIBERATELY_NEVER_ENQUEUED = new Set(['build-demo']);
+    const DELIBERATELY_NEVER_ENQUEUED = new Set([
+      'build-demo',
+      /**
+       * Phase 6 found two more, and found them by making the corpus below stop counting the
+       * VOCABULARY as a producer. `LIFECYCLE_JOBS` / `EXPORT_JOBS` / `COMPLIANCE_JOBS` are constant
+       * tables in `src/server/jobs/contract.ts`; a name declared there satisfied the old search by
+       * itself, so a registry entry plus a constant plus nothing at all read as "has a producer" —
+       * which is the same hole this test exists to close, one level up.
+       *
+       * `build-export`: the suspension export runs INLINE in `jobs/suspend-tenant.ts` and the
+       * self-serve one inline in the dashboard. The registry entry is Phase 1 declaring a seam B1
+       * chose not to use, and it cannot be removed — `src/server/queues.ts` is a frozen file.
+       *
+       * `send-mail`: nothing enqueues the `notifications` queue at all; mail goes out inline
+       * through `MailService`. It passed the old check only by accident, because the camelCase
+       * fallback `.sendMail` matched nodemailer's own `transporter.sendMail(` in the SMTP driver.
+       *
+       * Declared here rather than quietly passing, which is the whole difference between a
+       * decision and an oversight.
+       */
+      'build-export',
+      'send-mail',
+    ]);
 
     const registry = readFileSync(path.join(srcRoot, 'server/queues.ts'), 'utf8');
     const jobNames = [...registry.matchAll(/'([a-z-]+)':\s*\(\)\s*=>\s*import\(/g)]
@@ -219,16 +241,40 @@ describe('Phase 5 — customer PII stays out of the places that outlive the tena
 
     expect(jobNames.length).toBeGreaterThan(5);
 
+    /**
+     * The registry DECLARES the names and `jobs/contract.ts` declares the vocabulary. A job whose
+     * only two mentions are "here is its name" and "here is a constant holding its name" has no
+     * producer, however many files mention it.
+     */
     const producers = sources
-      .filter(({ rel }) => rel !== 'src/server/queues.ts')
+      .filter(({ rel }) => rel !== 'src/server/queues.ts' && rel !== 'src/server/jobs/contract.ts')
       .map(({ source }) => source)
       .join('\n');
 
+    /**
+     * The constant vocabulary, resolved to the qualified expression a producer actually writes.
+     *
+     * `LIFECYCLE_JOBS = { suspend: 'suspend-tenant' }` means the producer says
+     * `LIFECYCLE_JOBS.suspend` — so a camelCase guess at the key (`.suspendTenant`) was never going
+     * to find it, and the old check passed only because `contract.ts` itself was in the corpus.
+     * Reading the tables gives the exact string to look for, which is what lets the corpus exclude
+     * the declaration files without producing false alarms.
+     */
+    const contract = readFileSync(path.join(srcRoot, 'server/jobs/contract.ts'), 'utf8');
+    const qualified = new Map<string, string[]>();
+
+    for (const table of contract.matchAll(/const (\w*JOBS) = \{([\s\S]*?)\} as const;/g)) {
+      const tableName = table[1]!;
+      for (const entry of table[2]!.matchAll(/(\w+):\s*'([a-z-]+)'/g)) {
+        const list = qualified.get(entry[2]!) ?? [];
+        list.push(`${tableName}.${entry[1]!}`);
+        qualified.set(entry[2]!, list);
+      }
+    }
+
     const orphans = jobNames.filter((name) => {
-      // Either enqueued by its literal name, or through the `LIFECYCLE_JOBS` / `EXPORT_JOBS`
-      // constant vocabulary that exists so a typo is a compile error.
-      const constantName = name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
-      return !producers.includes(`'${name}'`) && !producers.includes(`.${constantName}`);
+      if (producers.includes(`'${name}'`)) return false;
+      return !(qualified.get(name) ?? []).some((expression) => producers.includes(expression));
     });
 
     expect(orphans).toEqual([]);
@@ -265,10 +311,23 @@ describe('invariant 4 — the S3 client is reachable from one folder only', () =
   });
 });
 
+/**
+ * Comments are DOCUMENTATION, not code.
+ *
+ * Several rules below forbid a literal appearing in source. Every one of them is about what the
+ * code does, and a comment that names the forbidden thing in order to explain why it is forbidden
+ * is the opposite of a violation — banning it would push the reasoning out of the file that needs
+ * it most.
+ */
+const stripComments = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
 describe('invariant 9 — one getClientIp()', () => {
   it('reads CF-Connecting-IP in exactly one file', () => {
+    // Comments stripped, same as the X-Forwarded-For rule below: a module that explains WHY it
+    // defers to `getClientIp()` for the Cloudflare unwrap has to be able to name the header.
     const readers = sources
-      .filter(({ source }) => /cf-connecting-ip/i.test(source))
+      .filter(({ source }) => /cf-connecting-ip/i.test(stripComments(source)))
       .map(({ rel }) => rel);
 
     expect(readers).toEqual(['src/server/http/get-client-ip.ts']);
@@ -277,9 +336,14 @@ describe('invariant 9 — one getClientIp()', () => {
   it('never reads X-Forwarded-For anywhere', () => {
     // It is trivially spoofable, and behind Cloudflare it is client-controlled: Cloudflare
     // APPENDS to whatever the client sent.
+    //
+    // COMMENTS ARE STRIPPED, same as the domain rule below. Phase 6 configured better-auth's
+    // `ipAddressHeaders` to `x-real-ip` precisely BECAUSE it was defaulting to this header, and
+    // the fix is worthless without the paragraph explaining it — a guardrail that forbids naming
+    // the mistake teaches people to fix it silently.
     const readers = sources
       .filter(({ rel }) => rel !== 'src/server/http/get-client-ip.ts')
-      .filter(({ source }) => /x-forwarded-for/i.test(source))
+      .filter(({ source }) => /x-forwarded-for/i.test(stripComments(source)))
       .map(({ rel }) => rel);
 
     expect(readers).toEqual([]);
@@ -290,9 +354,6 @@ describe('the domain is a placeholder everywhere', () => {
   it('is never hardcoded in source', () => {
     // Comments may NAME the placeholder domain — that is documentation, not a hardcoded
     // hostname. Only code counts.
-    const stripComments = (source: string) =>
-      source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-
     const offenders = sources
       .filter(({ source }) => /souqbartaa\.com/.test(stripComments(source)))
       .map(({ rel }) => rel);

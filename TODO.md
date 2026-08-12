@@ -228,7 +228,7 @@ Recorded in full in `docs/PHASES.md` → **Resolved decisions**. Nothing here bl
 - [x] Review + merge `phase-a2`, gates green (incl. axe + Lighthouse)
 - [x] Review + merge `phase-a3`, gates green (incl. the 8MB upload check)
 - [x] Track decision files folded into `docs/DECISIONS.md`
-- [x] Worktrees and branches removed
+- [ ] Worktrees and branches removed
 
 **A1 was built twice** — on `phase-a1` and in the main session. The main-session build was kept
 (it solves the cross-host impersonation handoff the branch left open); the branch's two findings
@@ -246,10 +246,9 @@ create, since `isCapabilityVisible()` is fail-closed (raised by A2 at review).
       **done at the Group B merge**: `E2E_ALLOW_LOCAL_STORAGE=1` lets the suite write real media to
       `.tmp/e2e-storage`, which unskipped B3's three demo cases and turned B1's purge case from an
       environmental failure into a product assertion
-- [ ] Edge cache purge on media delete (currently up to 24h stale) — **Phase 6**, privacy copy must match
-- [ ] `Consent.ipHash` is written by nothing; dropping it is a schema change — **Phase 6**
-- [ ] Two purges running at the same moment can orphan a User shared by both tenants; the fix is a
-      global member-less-user sweep, which RLS puts out of reach today — **Phase 6** (raised at the B1 merge)
+- [x] Edge cache on media delete — it was **8 days**, not 24h. `stale-while-revalidate` cut to a day, the ceiling computed from the header the pipeline sends, and the Arabic copy states it. Purge-by-URL still needs a Cloudflare token scoped for it — carried to Phase 7
+- [x] `Consent.ipHash` dropped. Kept as an always-null column it read as an oversight whose obvious fix was to start filling it; the e2e assertion is now "the column does not exist"
+- [x] Two concurrent purges orphaning a shared User — closed by serialising `purgeTenant` and `closeDemo` platform-wide (`src/server/billing/purge-lock.ts`). A row lock cannot work here: the check and the delete are two transactions, and `SELECT … FOR UPDATE` needs an UPDATE grant `app_system` deliberately lacks
 - [ ] `demo.closed` puts the demo's plaintext slug in the global `webhook_deliveries` table, which
       outlives the tenant `closeDemo` promised to erase; `demo.created` has the same property —
       needs a payload change plus a deliveries-retention rule — **Phase 6** (raised at the B1 merge).
@@ -400,7 +399,7 @@ create, since `isCapabilityVisible()` is fail-closed (raised by A2 at review).
 - [x] Sync points 1–4 and 6 serviced — placeholders replaced, `/demos` in the rail, impersonation unblocked, the e2e storage seam opened
 - [x] Three cross-track findings fixed — the demo bearer token in a global webhook table, the i18n keys that could not resolve, the `columns` default that erased three template designs
 - [x] Decision files folded into `docs/DECISIONS.md`
-- [ ] Worktrees and branches removed
+- [x] Worktrees and branches removed
 
 ---
 
@@ -457,7 +456,7 @@ The review (three reviewers, each finding then handed to a separate agent told t
 - **The TXT verification value was a phantom before a domain row existed** — regenerated on every render, stored nowhere, beside copy telling the merchant to publish it. The block is not rendered until a row exists
 
 **Still open, carried forward** — full detail in `docs/DECISIONS.md`:
-- [ ] A tenant's push subscriptions survive an admin turning `push_notifications` off — nothing can send to them and nothing new can subscribe, but the rows remain. The sweep belongs with **Phase 6**'s consent/DSR work
+- [x] Push subscriptions are deleted when `push_notifications` resolves false — `forgetPushAudience`, called from both entitlement writers. No `Consent` row is manufactured: the platform withdrew the channel, the visitor did not withdraw permission
 - [ ] A continuation batch that fails after sending double-counts on retry; the enqueue is inside the transaction because a processor has no post-commit hook (`createWorker` owns the only one). An imperfect count beats an undelivered notification
 - [ ] PWA icons render per request behind a 256-entry in-process cache. If install-prompt traffic shows up in a profile, the answer is a queued generation job — not built now, because it would add bytes the storage counter does not know about
 - [ ] `/internal/domain-ask` carries no shared secret; Caddy's `ask` takes a URL and nothing else. The network boundary is the control, and the endpoint is written to be safe if reached anyway
@@ -507,46 +506,46 @@ The review (three reviewers, each finding then handed to a separate agent told t
 - [ ] **Launch Gate**: a real Israeli gateway needs a registered entity, and it is the documented trigger to upgrade backups from `pg_dump` to WAL archiving (Q10) — six hours of RPO is defensible for product edits and is not for settled payments
 
 ### Handed to Phase 6 by decision (c)
-- [ ] The privacy generator must branch on `Site.sellingEnabled` — a non-selling site still records no orders and no customer names (still true, still a selling point); a selling one records name, phone, note, the order lines and the payment
-- [ ] The PROCESSORS section names the tenant's **active** gateway provider and only that one — the scaffolded three process nothing, and listing them would be a false disclosure
-- [ ] The DSR box gains **storefront customers** as a fourth subject class, beside merchants, demo-request prospects and push subscribers
+- [x] The privacy generator branches on the storefront's four-conjunct checkout predicate rather than on `Site.sellingEnabled` alone — the flag decides which PAGES exist; the predicate decides what the copy may claim is collected. Original text: The privacy generator must branch on `Site.sellingEnabled` — a non-selling site still records no orders and no customer names (still true, still a selling point); a selling one records name, phone, note, the order lines and the payment
+- [x] The PROCESSORS section names the tenant's **active** gateway provider and only that one — and because the only active adapter is `manual`, the line it actually prints says no third party is involved at all — the scaffolded three process nothing, and listing them would be a false disclosure
+- [x] The DSR box gains **storefront customers** as a subject class — a Postgres enum value, because a customer is a real name and phone on an `Order` row while a `visitor` is a rotating hash, and merging them would hide the difference on the screen whose job is telling an operator what to look for, beside merchants, demo-request prospects and push subscribers
 
 ---
 
 ## Phase 6 — Compliance and security hardening (sequential, main session)
 
-- [ ] Arabic legal page generator in `src/server/legal`: privacy, terms, business identity, accessibility statement
-- [ ] Returns/cancellation policy + permanent "إلغاء معاملة" footer link when selling is enabled
-- [ ] A2's footer placeholders filled without editing template files
-- [ ] Privacy copy is accurate about what actually exists: no orders and no customer names/phones on the storefront; visitor data is the consent record **and, on احترافي sites with push enabled, the push subscription**; real personal data lives in demo requests and merchant accounts
-- [ ] Privacy copy states the merchant retention rule **truthfully**: site closes at subscription end, data kept 30 days with a copy sent at that moment, destroyed from **live systems** at the end of the window, then **ages out of encrypted backups within the Q10 window** — do NOT write "nothing is retained afterwards", because 6-hourly dumps hold every tenant alive when they ran
-- [ ] Privacy copy discloses the minimal deletion record (tombstone, no catalogue data) kept to prove the deletion happened
-- [ ] Privacy copy has a **PROCESSORS section**: Cloudflare/R2, Resend, Umami, Sentry, n8n/WhatsApp, any Phase 5 gateway — with storage regions
-- [ ] DSR box also covers **demo-request prospects** (no account, no other route to reach us) — and the public form's Arabic notice carries the contact path
-- [ ] Retention limits stated for both global tables holding personal data: `DemoRequest.purgeAfter` and a `TenantTombstone` lifetime ("forever" is not a retention policy)
-- [ ] **n8n `EXECUTIONS_DATA_PRUNE`** with a short MAX_AGE — its history holds delivered links and phone numbers, and its database is in the backup set
-- [ ] Consents log review screen
-- [ ] Data-subject request box covering merchants, the platform, **and storefront visitors' push subscriptions**
-- [ ] `docs/breach-runbook.md` (notification deadlines + contact list)
-- [ ] argon2
-- [ ] Rate limiting on every sensitive route via `getClientIp()`, including the public demo-request form
-- [ ] CSP + security headers
-- [ ] Encryption of sensitive fields
-- [ ] Encrypted backups
-- [ ] Dependency scanning in CI
-- [ ] Brute-force protection
-- [ ] No leaky error messages
-- [ ] `/security-review` run against a diff or in chunks (it reviews pending branch changes, not a whole tree); everything High or above fixed
+- [x] Arabic legal page generator in `src/server/legal`: privacy, terms, business identity, accessibility statement — clauses are `about` sections, so no new `SectionType` and no template file touched
+- [x] Returns/cancellation policy + permanent "إلغاء معاملة" footer link when selling is enabled — the page SET follows `Site.sellingEnabled`, because that is what the footer asks
+- [x] A2's footer placeholders filled without editing template files — seven seams call `syncLegalPages`, including `prisma/seed.ts`; `tests/unit/phase6-legal.test.ts` pins the list
+- [x] Privacy copy is accurate about what actually exists — and branches on the storefront's OWN four-conjunct checkout predicate, not on `sellingEnabled`: a shop with selling on and no enabled gateway collects nothing, and the copy says so
+- [x] Privacy copy states the merchant retention rule **truthfully**: site closes at subscription end, data kept 30 days with a copy sent at that moment, destroyed from **live systems** at the end of the window, then **ages out of encrypted backups within the Q10 window** — do NOT write "nothing is retained afterwards", because 6-hourly dumps hold every tenant alive when they ran
+- [x] Privacy copy discloses the minimal deletion record — **with a stated lifetime**, because "forever" is not a retention policy
+- [x] Privacy copy has a **PROCESSORS section** — naming only what THIS deployment is configured to use. Sentry is deliberately absent (the SDK is not initialised, so naming it would be a false disclosure); the active gateway is `manual`, so the payments line states that no third party is involved
+- [x] DSR box at `app.{DOMAIN}/privacy-request`, covering five subject classes — `customer` added by Phase 5's decision (c). Public, allow-listed in BOTH lists, rate-limited, and `createMany` because the table is INSERT-only for `app_web`
+- [x] Retention limits for FOUR global tables — tombstones, platform audit logs, DSR requests (730d) and webhook deliveries (30d), enforced by the `prune-records` SystemJob and stated in the Arabic copy
+- [x] **n8n `EXECUTIONS_DATA_PRUNE`** declared in `.env.example` with a 168-hour MAX_AGE — Phase 6 owns the value, Phase 7's compose must consume it (there is no n8n service yet)
+- [x] Consents log review screen — an AGGREGATE, not a row list: a consent record is a monthly-rotating hash and nothing else, so a page of them would identify nobody while implying it could
+- [x] Data-subject request box + admin queue at `admin.{DOMAIN}/privacy`, audited to `platform_audit_logs` (a subject may have no tenant, and a tenant-owned log dies in the very purge the request asked for)
+- [x] `docs/breach-runbook.md` — containment, assessment, the Israeli notification regime with an explicit "verify the current deadline" warning, and a contact table left deliberately unfilled rather than invented
+- [x] argon2id — already wired in Phase 1 at the OWASP baseline; verified rather than redone
+- [x] Rate limiting on every sensitive route — `/export/{token}` (its env var had existed since Phase 1 with ZERO consumers), the self-serve export, the gateway callback, `/internal/domain-ask`, the impersonation handoff, and the consent endpoint moved off a hand-rolled non-atomic INCR+EXPIRE. Two older limiters stopped putting the raw IP in a Redis key
+- [x] CSP + security headers — per-surface CSP from `proxy.ts` at every one of its exits, constants in `next.config.ts` (they reach the static assets the matcher skips), HSTS in BOTH Caddy blocks. **No nonce**: Next 16.3 does not carry the request-header override through the surface rewrite, measured and recorded in DECISIONS
+- [x] Encryption of sensitive fields — **decided and recorded, not ticked past**: column encryption stays reserved for credentials; order, DSR and demo-request columns are protected by RLS + disk encryption + retention, with the reasoning per column in DECISIONS
+- [!] Encrypted backups — Phase 7 owns the mechanism. Phase 6 owns the POLICY the privacy copy states, now in env (`BACKUP_INTERVAL_HOURS`, `BACKUP_RETENTION_DAYS`) so the published number and the running schedule cannot drift
+- [x] Dependency scanning in CI — `.github/workflows/ci.yml`, blocking on HIGH, plus a weekly run because advisories land against code that has not changed
+- [x] Brute-force protection — better-auth's limiter had NO storage (a per-process Map) and keyed off `x-forwarded-for`, which behind Cloudflare collapsed every sign-in on the platform into ONE shared bucket. Redis storage + `x-real-ip` + a per-identifier account lockout
+- [x] No leaky error messages — Arabic `error.tsx` and `global-error.tsx` (there were none, so every uncaught error rendered Next's English page on an Arabic-only product), showing the digest for support and nothing else
+- [x] Security review run in four chunks over the phase diff — authn, the public surface, isolation, headers/content — each finding handed to a separate agent told to refute it. **Twelve raised, twelve refuted, and four conceded mechanisms fixed anyway**: a form-encoded sign-in walked past the account lockout, the auth limiter keyed on the Cloudflare edge IP, the rate-limit store had no atomic `consume`, and the purge's identity cleanup failed OPEN when `DATABASE_URL_SYSTEM` is unset. Nothing High or above remains
 
 ### Mandatory manual isolation review (a scanner cannot see this)
-- [ ] Every database query goes through the scoped client or `withTenantTxn` — no raw prisma import outside `src/server/db`
-- [ ] Every BullMQ job carries `tenantId` (TenantJob) or is an explicitly scoped SystemJob writing no tenant-owned table
-- [ ] Every table added after Phase 1 either carries `tenantId` with an RLS policy or is registered in `prisma/GLOBAL_TABLES.md` — with particular attention to the global tables holding personal data (`DemoRequest`, `TenantTombstone`, `DsrRequest`)
-- [ ] No event payload, log line or Sentry event carries a credential granting standing access to tenant data, and n8n's execution history is pruned
-- [ ] Review signed off in `docs/DECISIONS.md`
+- [x] Every database query goes through the scoped client or `withTenantTxn` — and a DEAD duplicate of `purgeExpiredDemoRequests` that reached the raw client was deleted
+- [x] Every BullMQ job carries `tenantId` or is a scoped SystemJob — and the "every job has a producer" guardrail's loophole was closed, which immediately surfaced two more jobs that had none
+- [x] Every table is tenant-owned with RLS or registered in `prisma/GLOBAL_TABLES.md` — now checked MECHANICALLY against the catalog, which nothing did before; `tenants` gained the line it never had
+- [x] No event payload, log line or Sentry event carries a credential — `demo.closed` now carries `slugHash` rather than the prospect's own slug, which outlived the deletion it promised
+- [x] Review signed off in `docs/DECISIONS.md`, including the blind spot: `guardrails.test.ts` walks `src/**` only, so `scripts/` and `prisma/` were verified by hand
 
 ### Gate
-- [ ] Clean `/security-review` (no High/Critical) + manual review signed off + clean axe-core + every new site auto-generates its Arabic legal pages
+- [x] Gate: typecheck + lint + **983 unit and integration tests (58 files)** + `next build` + the full **121-spec e2e** (incl. axe), all green in the main checkout. Lighthouse scores 94–95 run on its own and 89 when it runs straight after the whole suite — the threshold flake TODO already records (7 runs: 86–95), which is why CI runs `--grep-invert @lighthouse` and Phase 7 still owns the best-of-N decision
 
 ---
 

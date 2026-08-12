@@ -49,6 +49,23 @@ export const EXPORT_JOBS = {
 } as const;
 
 /**
+ * Phase 6. The two jobs compliance needs, and they are deliberately different kinds.
+ *
+ * `sync` is a TENANT job: it rewrites one tenant's legal pages after something changed what they
+ * are allowed to claim. A plan edit can change that for every tenant on the plan at once, and
+ * running an unbounded loop of transactions inside an admin form submit is not an option.
+ *
+ * `prune` is a SYSTEM job: it deletes expired rows from the three GLOBAL tables that outlive every
+ * tenant — the deletion records themselves. It writes no tenant-owned table, which is what lets it
+ * run as `app_system` at all (invariant 8), and it is the only role the Phase 6 migration granted
+ * DELETE on them to.
+ */
+export const COMPLIANCE_JOBS = {
+  sync: 'sync-compliance',
+  prune: 'prune-records',
+} as const;
+
+/**
  * The two phases of `suspend-tenant`, carried in the job payload.
  *
  * A second registered job name would have been clearer and is not available, so the phase rides

@@ -80,3 +80,62 @@ export function rawRequest(options: {
     request.end();
   });
 }
+
+/**
+ * A POST straight down the socket, with headers a browser would send and Playwright will not let
+ * a page forge.
+ *
+ * It exists because Phase 6's Content-Security-Policy made one of A2's tests impossible to write
+ * from inside a page: `form-action 'self'` refuses a cross-origin form submit, so a storefront can
+ * no longer CONSTRUCT the forged consent post that the endpoint's `Sec-Fetch-Site` check exists to
+ * refuse. That is the policy working — and a real attacker's page carries no policy of ours, so
+ * blocking our own test removed the ability to prove the control without removing the attack.
+ *
+ * The control being tested is server-side, so the request is sent server-side, byte for byte as a
+ * cross-site form post arrives: `text/plain`, no preflight, `Sec-Fetch-Site: cross-site`.
+ */
+export function rawPost(options: {
+  path: string;
+  host: string;
+  body: string;
+  headers?: Record<string, string>;
+}): Promise<FetchResult> {
+  return new Promise((resolve, reject) => {
+    const payload = Buffer.from(options.body, 'utf8');
+
+    const request = http.request(
+      {
+        host: '127.0.0.1',
+        port: E2E.webPort,
+        path: options.path,
+        method: 'POST',
+        headers: {
+          host: options.host,
+          'content-type': 'text/plain;charset=UTF-8',
+          'content-length': String(payload.byteLength),
+          'sec-fetch-site': 'cross-site',
+          'sec-fetch-mode': 'navigate',
+          ...options.headers,
+        },
+      },
+      (response) => {
+        let body = '';
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => {
+          body += chunk;
+        });
+        response.on('end', () =>
+          resolve({
+            status: response.statusCode ?? 0,
+            body,
+            headers: response.headers as Record<string, string>,
+          }),
+        );
+      },
+    );
+
+    request.on('error', reject);
+    request.write(payload);
+    request.end();
+  });
+}

@@ -1,4 +1,8 @@
 import { headers } from 'next/headers';
+import { getEnv } from '@/env';
+import { hashIp } from '@/server/crypto';
+import { getClientIp } from '@/server/http/get-client-ip';
+import { consumeSlot } from '@/server/rate-limit';
 import { PUBLIC_ACTOR, tenantDb } from '@/server/db';
 import { logger } from '@/server/logger';
 import { settleOrder } from '@/server/orders';
@@ -53,6 +57,31 @@ export async function POST(
 
   const adapter = adapterForValue(provider);
   if (adapter.status !== 'active') return Response.json({ ok: false }, { status: 404 });
+
+  /**
+   * Rate limited BEFORE the database is touched and long before anything is decrypted (Phase 6).
+   *
+   * Inert today — every adapter is scaffolded, so the check above already refused. It is written
+   * now, while nothing can reach past it, because of what this route becomes the day a provider is
+   * activated at the Launch Gate: an unauthenticated endpoint, reachable on every hostname the
+   * platform answers including merchant custom domains, that reads a gateway row and DECRYPTS the
+   * tenant's stored credentials before it verifies a single signature. Adding the limiter then
+   * would mean adding it to a route already carrying money.
+   *
+   * The ceiling is deliberately high. A real provider retries a settlement it did not get a 2xx
+   * for, and throttling a legitimate retry is how an order stays unpaid in the merchant's ledger
+   * while the customer's money has moved.
+   */
+  const { ip } = getClientIp({
+    headers: requestHeaders,
+    socketIp: requestHeaders.get('x-real-ip'),
+  });
+  const limit = await consumeSlot({
+    key: `gateway:callback:${tenant.tenantId}:${hashIp(ip ?? 'unknown')}`,
+    limit: getEnv().RATE_LIMIT_GATEWAY_CALLBACK_PER_HOUR,
+    windowSeconds: 3_600,
+  });
+  if (!limit.allowed) return Response.json({ ok: false }, { status: 429 });
 
   const db = tenantDb(tenant.tenantId, PUBLIC_ACTOR);
 

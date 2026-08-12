@@ -15,6 +15,10 @@ import {
   type FeatureKey,
 } from '@/shared/features';
 import { COLOR_MODES, TEMPLATE_KEYS } from '@/shared/site-contract';
+import { can } from '@/server/entitlements';
+import { syncLegalPages } from '@/server/legal';
+import { forgetPushAudience } from '@/server/push';
+import { logger } from '@/server/logger';
 import { auditTenantAction } from './audit';
 import type { AdminContext } from './context';
 import { failure, type ActionState } from './validation';
@@ -36,6 +40,60 @@ import { failure, type ActionState } from './validation';
  * change the colours at all" is edit permission. Writing it as a CapabilityOverride would put
  * one product decision in two places that could disagree.
  */
+
+/**
+ * Feature keys whose value is ASSERTED by the generated legal copy.
+ *
+ * Flipping one of these changes what the privacy policy is allowed to say — an account that loses
+ * `analytics` stops being measured, and its policy must stop describing measurement. Flipping any
+ * other key (a storage limit, a template list) changes nothing a policy claims, so the sync is
+ * skipped rather than run for the sake of it.
+ */
+const LEGALLY_VISIBLE_FEATURES: readonly FeatureKey[] = [
+  'analytics',
+  'push_notifications',
+  'payment_gateway',
+];
+
+/**
+ * The compliance consequences of an access change, applied after the cache is invalidated.
+ *
+ * Two things follow a toggle, and neither is optional:
+ *
+ *   1. the legal pages are rewritten if the key is one the copy asserts;
+ *   2. turning `push_notifications` OFF deletes the tenant's stored push subscriptions.
+ *
+ * The second is a Phase 4 carry-forward. Without it the rows simply stayed: nothing could send to
+ * them and nothing new could subscribe, so the effect was invisible — which is exactly the problem.
+ * A push endpoint is a persistent per-device identifier belonging to a visitor who consented to
+ * hearing from a shop that can no longer contact them, and "we kept the identifiers because the
+ * feature was merely disabled" is not a sentence this platform's privacy page could carry.
+ *
+ * Best effort, and after the audit row: the toggle itself has committed, and a failure here must
+ * not read to an operator as "the toggle did not work".
+ */
+async function applyAccessConsequences(
+  tenantId: string,
+  featureKey: FeatureKey | null,
+): Promise<void> {
+  try {
+    if (featureKey === 'push_notifications' && (await can(tenantId, 'push_notifications')) !== true) {
+      const removed = await forgetPushAudience(tenantId, 'feature_disabled');
+      if (removed > 0) {
+        logger().info({ tenantId, removed }, 'push audience dropped with the feature');
+      }
+    }
+
+    if (featureKey === null || LEGALLY_VISIBLE_FEATURES.includes(featureKey)) {
+      await syncLegalPages(tenantId, { reason: 'features_changed' });
+    }
+  } catch (error) {
+    logger().error(
+      { tenantId, featureKey, error: error instanceof Error ? error.message : String(error) },
+      'access change applied, but its compliance follow-up did not',
+    );
+  }
+}
 
 export type FeatureKind = 'boolean' | 'integer' | 'nullableInteger' | 'templates' | 'colorMode';
 
@@ -268,6 +326,8 @@ export async function setFeatureOverride(
     after: { featureKey, value },
   });
 
+  await applyAccessConsequences(tenantId, featureKey);
+
   return null;
 }
 
@@ -296,6 +356,10 @@ export async function clearFeatureOverride(
     before: { featureKey, value: before.value },
     after: { featureKey, value: null, inheritsPlan: true },
   });
+
+  // Clearing an override hands the key back to the plan, which can turn a feature off just as
+  // effectively as setting it to false.
+  await applyAccessConsequences(tenantId, featureKey);
 
   return null;
 }

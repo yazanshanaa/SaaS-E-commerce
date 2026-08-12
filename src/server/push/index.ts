@@ -26,6 +26,7 @@ export {
 
 export {
   browserSubscriptionSchema,
+  forgetPushAudience,
   recordSubscription,
   removeSubscription,
   subscribeSchema,

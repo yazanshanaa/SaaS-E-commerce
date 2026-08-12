@@ -32,6 +32,12 @@ const ITEMS = [
   { href: '/demos', key: 'demos' },
   { href: '/change-requests', key: 'changeRequests' },
   { href: '/plans', key: 'plans' },
+  /**
+   * Phase 6. Next to `/audit` because both answer the same kind of question — "show me what
+   * happened and prove it" — and because an operator opening one has usually been asked something
+   * that will send them to the other.
+   */
+  { href: '/privacy', key: 'privacy' },
   { href: '/audit', key: 'audit' },
 ] as const;
 

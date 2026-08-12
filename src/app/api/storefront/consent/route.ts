@@ -1,10 +1,11 @@
 import { cookies, headers } from 'next/headers';
 import { z } from 'zod';
+import { getEnv } from '@/env';
 import { hashIp } from '@/server/crypto';
 import { PUBLIC_ACTOR, tenantDb } from '@/server/db';
 import { can } from '@/server/entitlements';
 import { getClientIp } from '@/server/http/get-client-ip';
-import { cacheRedis } from '@/server/redis';
+import { consumeSlot } from '@/server/rate-limit';
 import { normaliseHostname, readRequestTenant } from '@/server/tenancy';
 import {
   CONSENT_COOKIE,
@@ -43,10 +44,10 @@ const bodySchema = z.object({ granted: z.boolean() });
 
 /**
  * Generous for a person, useless for a loop: a real visitor answers once per six months, and a
- * whole village behind one NAT address will not reach twenty answers for the same shop in ten
+ * whole village behind one NAT address will not reach the ceiling for the same shop in ten
  * minutes. Over the limit the route fails CLOSED — no row, no cookie, so tracking does not start.
  */
-const RATE_LIMIT = { max: 20, windowSeconds: 600 } as const;
+const CONSENT_WINDOW_SECONDS = 600;
 
 /** Six recorded changes of mind per visitor per month is already more than anyone has. */
 const MAX_RECORDS_PER_VISITOR = 6;
@@ -195,24 +196,29 @@ function isCrossSite(
 }
 
 /**
- * A fixed window per tenant per IP.
+ * A fixed window per tenant per IP, through the SHARED primitive.
+ *
+ * It used to hand-roll `INCR` then `EXPIRE` as two commands — the exact non-atomic bug
+ * `src/server/rate-limit.ts` was extracted to eliminate, and the consequence here was the worst
+ * of the three copies: this route fails CLOSED, so an `EXPIRE` lost to a failover would leave a
+ * key with no TTL, a counter that only ever climbs, and a tenant+IP that could never record
+ * consent again — and therefore could never be tracked, never get a cookie, and never stop being
+ * asked. `consumeSlot` does both in one Lua call.
  *
  * The Redis key holds an HMAC of the address rather than the address itself, and it expires with
  * the window — that is a transient throttle counter, not the durable cross-tenant identifier the
- * `ipHash` COLUMN would have been. Redis being down degrades to "not limited": the replay guard
- * and the per-visitor ceiling above still bound what a single visitor hash can write, and a
- * consent banner that stops working because a cache blinked is a worse outcome.
+ * `ipHash` COLUMN would have been. `consumeSlot` degrades to an in-process window when Redis is
+ * away rather than refusing, which is right here: the replay guard and the per-visitor ceiling
+ * above still bound what one visitor hash can write.
  */
 async function rateLimited(tenantId: string, ip: string | null): Promise<boolean> {
   if (!ip) return false;
 
-  try {
-    const redis = cacheRedis();
-    const key = `consent:rl:v1:${tenantId}:${hashIp(ip)}`;
-    const hits = await redis.incr(key);
-    if (hits === 1) await redis.expire(key, RATE_LIMIT.windowSeconds);
-    return hits > RATE_LIMIT.max;
-  } catch {
-    return false;
-  }
+  const decision = await consumeSlot({
+    key: `consent:rl:v1:${tenantId}:${hashIp(ip)}`,
+    limit: getEnv().RATE_LIMIT_CONSENT_PER_10MIN,
+    windowSeconds: CONSENT_WINDOW_SECONDS,
+  });
+
+  return !decision.allowed;
 }

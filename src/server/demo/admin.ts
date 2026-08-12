@@ -1,6 +1,6 @@
 import { demoStorefrontUrl } from '@/server/billing';
 import { superAdminDb, type Actor } from '@/server/db';
-import { TEMPLATES, isTemplateKey } from '@/shared/site-contract';
+import { HOME_PAGE_SLUG, TEMPLATES, isTemplateKey } from '@/shared/site-contract';
 import type { PackKey } from './types';
 
 /**
@@ -140,7 +140,9 @@ export async function getDemo(
   const [categoryCount, sectionCount, testimonialCount, mediaPending, mediaReady] =
     await Promise.all([
       db.category.count({ where: { tenantId } }),
-      db.section.count({ where: { tenantId } }),
+      // The home arrangement, not the legal pages Phase 6 generates beside it — the number on
+      // this screen answers "is the demo built", and forty policy clauses would drown it.
+      db.section.count({ where: { tenantId, page: { slug: HOME_PAGE_SLUG } } }),
       db.testimonial.count({ where: { tenantId } }),
       db.media.count({ where: { tenantId, status: { in: ['pending', 'processing'] } } }),
       db.media.count({ where: { tenantId, status: 'ready' } }),

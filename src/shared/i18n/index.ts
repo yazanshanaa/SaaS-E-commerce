@@ -24,6 +24,16 @@ export const LOCALE = 'ar' as const;
 export const DIRECTION = 'rtl' as const;
 export type Locale = typeof LOCALE;
 
+/**
+ * `messages/ar/legal.json` is DELIBERATELY NOT HERE — see `src/server/legal/text.ts`.
+ *
+ * It is a real catalogue under `messages/ar/`, the language gate walks it like every other file,
+ * and its copy is no more hardcoded than any other string. What it is not is client-reachable:
+ * `t()` is imported by client components (the admin rail, the dashboard forms), so every namespace
+ * in this map is bundled for the browser — and the legal catalogue is thirty kilobytes of policy
+ * prose that only the server-side generator ever reads. Adding it here would have shipped five
+ * privacy policies into the JavaScript of a merchant editing a product.
+ */
 const NAMESPACES = {
   common,
   admin,
@@ -59,7 +69,19 @@ export type MessageParams = Record<string, string | number>;
  * answer; it can only turn `undefined` into the message that was there all along.
  */
 function resolve(namespace: Namespace, key: string): unknown {
-  let node: unknown = NAMESPACES[namespace];
+  return resolveIn(NAMESPACES[namespace], key);
+}
+
+/**
+ * The same walk, over any catalogue object.
+ *
+ * Exported so a catalogue that is deliberately outside `NAMESPACES` — `messages/ar/legal.json`,
+ * which is server-only — gets identical lookup semantics instead of a second, subtly different
+ * implementation. The flat-dotted-key fallback below is exactly the kind of behaviour that would
+ * drift if it were written twice.
+ */
+export function resolveIn(catalog: unknown, key: string): unknown {
+  let node: unknown = catalog;
   const segments = key.split('.');
 
   for (let index = 0; index < segments.length; index += 1) {
@@ -80,7 +102,7 @@ function resolve(namespace: Namespace, key: string): unknown {
 }
 
 /** `{name}` interpolation. Deliberately not full ICU — plurals in Arabic get their own helper. */
-function interpolate(template: string, params?: MessageParams): string {
+export function interpolate(template: string, params?: MessageParams): string {
   if (!params) return template;
   return template.replace(/\{(\w+)\}/g, (match, name: string) =>
     Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match,

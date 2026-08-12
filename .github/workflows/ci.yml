@@ -1,0 +1,116 @@
+name: CI
+
+# The gate CLAUDE.md has described since Phase 1, finally enforced by something other than a
+# person remembering. Phase 6 adds it because "dependency scanning in CI" needs a CI to be in.
+#
+# Deploy is NOT here: docs/PHASES.md gives Phase 7 the SSH deploy to staging and the manual
+# approval to production, and a half-built deploy job is worse than none.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Advisories are published against code that has not changed, so the audit runs on a clock too.
+  schedule:
+    - cron: '0 5 * * 1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The suites bring their own Postgres (embedded-postgres for integration, the e2e harness for
+  # Playwright), so no service container is declared. What they do need is a valid env surface —
+  # src/env.ts throws on a missing required key, which would fail every job with a confusing
+  # message about MAIL_FROM rather than about the test.
+  DOMAIN: souqbartaa.test
+  PUBLIC_SCHEME: http
+  MAIL_FROM: no-reply@souqbartaa.test
+  DATABASE_URL: postgresql://app_web:app_web@127.0.0.1:5432/souq_ci
+  REDIS_URL: redis://127.0.0.1:6379
+  # Deterministic throwaway keys. Real secrets never touch CI: nothing here deploys or signs.
+  ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  BETTER_AUTH_SECRET: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=
+  WEBHOOK_HMAC_SECRET: CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC=
+
+jobs:
+  check:
+    name: typecheck · lint · test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+
+      - run: pnpm typecheck
+      - run: pnpm lint
+      # Unit + integration. The integration project boots its own Postgres cluster.
+      - run: pnpm test
+
+  e2e:
+    name: build · e2e · axe
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: npx playwright install --with-deps chromium
+
+      # `playwright.config.ts` runs `pnpm build` itself as part of webServer, against the real
+      # production build — testing anything else would not be testing the artefact that ships.
+      #
+      # The Lighthouse spec is EXCLUDED here and that is a carried-forward decision rather than an
+      # oversight: TODO.md records seven local runs scoring 86–95 with no regression, i.e. machine
+      # variance at the threshold. A gate that fails a third of the time teaches people to re-run
+      # it, which is worse than not having it. Phase 7 decides best-of-N or median-of-three.
+      - run: pnpm e2e --grep-invert @lighthouse
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  audit:
+    name: dependency scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # HIGH and above fails the build. Moderate and low are reported and do not block: this
+      # platform's dependency tree includes a browser automation stack and an image pipeline whose
+      # advisories are routinely dev-only, and a gate that blocks on those gets switched off within
+      # a month. The weekly schedule above is what catches a HIGH published against code nobody
+      # touched.
+      - name: pnpm audit (high and above blocks)
+        run: pnpm audit --audit-level high --prod
+
+      - name: pnpm audit (full report, never blocks)
+        if: always()
+        run: pnpm audit || true

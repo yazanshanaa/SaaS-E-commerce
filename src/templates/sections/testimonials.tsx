@@ -17,15 +17,17 @@ import { SectionBlock } from './block';
 export interface TestimonialsSectionProps {
   context: StorefrontContext;
   config: SectionConfig<'testimonials'>;
+  /** Unique-per-page override from `SectionList`; falls back to the type's stable anchor. */
+  anchor?: string;
 }
 
-export function TestimonialsSection({ context, config }: TestimonialsSectionProps) {
+export function TestimonialsSection({ context, config, anchor }: TestimonialsSectionProps) {
   const quotes = context.testimonials.slice(0, config.limit ?? 3);
   if (quotes.length === 0) return null;
 
   return (
     <SectionBlock
-      anchor={SECTION_ANCHORS.testimonials}
+      anchor={anchor ?? SECTION_ANCHORS.testimonials}
       title={config.title?.trim() || st('sections.testimonials')}
     >
       <ul className="sf-quotes">
@@ -34,7 +36,9 @@ export function TestimonialsSection({ context, config }: TestimonialsSectionProp
             <figure className="sf-quote">
               {quote.rating ? (
                 <p className="sf-stars">
-                  <span className="sf-vh">{st('testimonials.rating', { rating: quote.rating })}</span>
+                  <span className="sf-vh">
+                    {st('testimonials.rating', { rating: quote.rating })}
+                  </span>
                   {Array.from({ length: Math.min(5, Math.max(1, quote.rating)) }, (_, index) => (
                     <StarIcon key={index} />
                   ))}

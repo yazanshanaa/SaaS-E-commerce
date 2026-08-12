@@ -19,9 +19,11 @@ import { SectionBlock } from './block';
 export interface GallerySectionProps {
   context: StorefrontContext;
   config: SectionConfig<'gallery'>;
+  /** Unique-per-page override from `SectionList`; falls back to the type's stable anchor. */
+  anchor?: string;
 }
 
-export function GallerySection({ context, config }: GallerySectionProps) {
+export function GallerySection({ context, config, anchor }: GallerySectionProps) {
   const images = (config.mediaIds ?? [])
     .map((id) => context.mediaById[id])
     .filter((image): image is NonNullable<typeof image> => Boolean(image));
@@ -30,7 +32,7 @@ export function GallerySection({ context, config }: GallerySectionProps) {
 
   return (
     <SectionBlock
-      anchor={SECTION_ANCHORS.gallery}
+      anchor={anchor ?? SECTION_ANCHORS.gallery}
       title={config.title?.trim() || st('sections.gallery')}
     >
       <ul className="sf-gallery" style={{ '--sf-cols': config.columns ?? 3 } as CSSProperties}>

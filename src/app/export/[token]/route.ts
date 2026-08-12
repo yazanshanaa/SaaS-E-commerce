@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { getEnv } from '@/env';
 import { recordExportDownload, resolveExportDownload } from '@/server/export';
+import { hashIp } from '@/server/crypto';
+import { getClientIp } from '@/server/http/get-client-ip';
+import { consumeSlot } from '@/server/rate-limit';
 import { logger } from '@/server/logger';
 import { t } from '@/shared/i18n';
 
@@ -22,6 +26,46 @@ export async function GET(
   context: { params: Promise<{ token: string }> },
 ): Promise<Response> {
   const { token } = await context.params;
+
+  /**
+   * Rate limited FIRST, before the token is even looked up (Phase 6).
+   *
+   * `RATE_LIMIT_EXPORT_DOWNLOAD_PER_HOUR` has existed since Phase 1 and had no consumer, which is
+   * the worst state for a limit to be in: it reads like coverage on every inventory and is not
+   * there. This is the most exposed route on the platform — on the unauthenticated allow-list,
+   * unprefixed so it answers on every hostname including merchant custom domains, and every hit
+   * resolves a token against the database, writes an audit row, mints a signed storage URL and
+   * streams a whole business through the web container. One leaked WhatsApp link, looped, is a
+   * merchant's entire catalogue and their bandwidth bill.
+   *
+   * Keyed on the CLIENT and not on the token, so the bound also covers someone spinning token
+   * guesses; the key holds an HMAC of the address rather than the address itself, because Redis is
+   * in the backup set (Q10) and a rate-limit key is a poor place to keep a second copy of an IP.
+   */
+  const { ip } = getClientIp({
+    headers: request.headers,
+    socketIp: request.headers.get('x-real-ip'),
+  });
+  const limit = await consumeSlot({
+    key: `export:download:${hashIp(ip ?? 'unknown')}`,
+    limit: getEnv().RATE_LIMIT_EXPORT_DOWNLOAD_PER_HOUR,
+    windowSeconds: 3_600,
+  });
+
+  if (!limit.allowed) {
+    return new NextResponse(
+      page(t('common', 'errors.rateLimited.title'), t('common', 'errors.rateLimited.body')),
+      {
+        status: 429,
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          'cache-control': 'no-store',
+          'x-robots-tag': 'noindex, nofollow',
+          'retry-after': '3600',
+        },
+      },
+    );
+  }
 
   const resolved = await resolveExportDownload(token);
 

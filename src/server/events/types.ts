@@ -92,7 +92,21 @@ export interface EventPayloads {
    * reach. A consumer that wants the link composes it from the slug.
    */
   'demo.created': { tenantName: string; slug: string };
-  'demo.closed': { slug: string; reason: string };
+  /**
+   * `slugHash`, NOT the slug — the Phase 6 correction, and the two demo events are deliberately
+   * asymmetric.
+   *
+   * `demo.created` needs the slug: n8n composes the storefront link from it to WhatsApp the
+   * prospect, so removing it breaks the delivery the event exists for. It is bounded instead by
+   * the thirty-day `webhook_deliveries` retention this phase introduced.
+   *
+   * `demo.closed` needs no such thing. No consumer acts on a shop that no longer exists, and the
+   * slug is derived from the prospect's own requested prefix — so a plaintext copy of it, sitting
+   * in a GLOBAL table the cascade cannot reach and in n8n's execution history, outlived the very
+   * deletion `closeDemo` promised them. `hashSlug` is the same HMAC the tombstone uses, and it
+   * still answers the only question a consumer has: "is this the demo I was told about".
+   */
+  'demo.closed': { slugHash: string; reason: string };
   'demo.converted': { tenantName: string; planKey: string };
   'demo_request.received': { requestedPrefix: string; packKey: string | null };
   'change_request.created': { capabilityKey: string; remaining: number | null };

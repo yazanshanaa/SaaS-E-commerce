@@ -10,7 +10,9 @@ import {
   resolveTenantByHostname,
   surfacePath,
   type PrefixedSurface,
+  type Surface,
 } from '@/server/tenancy';
+import { CSP_REQUEST_HEADERS, buildCsp } from '@/server/http/security-headers';
 
 /**
  * proxy.ts — Next 16's rename of middleware.ts.
@@ -57,6 +59,13 @@ export const config = {
  */
 const APP_PUBLIC_PREFIXES = [
   '/demo-request',
+  /**
+   * Phase 6's data-subject request box. Three of the five subject classes it serves have no
+   * account by definition — a storefront visitor, a push subscriber and a demo prospect — and the
+   * last of those has no other route to reach the platform at all. A session check here would
+   * make the right the policy grants unexercisable by the people who most need it.
+   */
+  '/privacy-request',
   '/export/',
   '/sign-in',
   '/forgot-password',
@@ -84,6 +93,20 @@ function sanitisedHeaders(request: NextRequest): Headers {
   for (const name of TENANT_HEADER_NAMES) {
     headers.delete(name);
   }
+
+  /**
+   * The CSP request headers are stripped for the same reason, and the reason is sharper.
+   *
+   * Next derives the script nonce by reading `content-security-policy` off the REQUEST — so a
+   * visitor who sent `content-security-policy: script-src 'nonce-chosen-by-me'` would have Next
+   * stamp that value onto its own inline bootstrap scripts, and the attacker would then know a
+   * nonce the browser trusts. That turns the one mechanism holding the whole policy up into a
+   * value the client supplies. Harmless before this phase, because no CSP existed to read.
+   */
+  for (const name of CSP_REQUEST_HEADERS) {
+    headers.delete(name);
+  }
+
   return headers;
 }
 
@@ -139,6 +162,26 @@ function withRobotsTag(
   return response;
 }
 
+/**
+ * The Content-Security-Policy, applied at EVERY exit from this function.
+ *
+ * `withRobotsTag` above is the cautionary tale: it is the only other response-header helper here
+ * and it is called at two of seven return sites, which is why the demo-gate page — the one served
+ * to someone who reached a private showcase without a token — ships without the noindex header its
+ * two siblings carry. A policy applied at six exits out of seven is a policy with a surface-shaped
+ * hole in it, so this is wired through a wrapper that every `return` goes through, and
+ * `tests/unit/phase6-security-headers.test.ts` counts the calls against the returns.
+ *
+ * RESPONSE ONLY. An earlier revision also wrote the policy onto the REQUEST headers, which is the
+ * documented way to hand Next a nonce — and which this platform cannot use, because the surface
+ * rewrite does not carry the override that far (see `src/server/http/security-headers.ts`). The
+ * write is gone rather than left as a no-op that reads like a working mechanism.
+ */
+function secure(response: NextResponse, csp: string): NextResponse {
+  response.headers.set('content-security-policy', csp);
+  return response;
+}
+
 export default async function proxy(request: NextRequest): Promise<NextResponse> {
   const headers = sanitisedHeaders(request);
   // NOT `request.headers.get('host')`. Next follows a server action's redirect() with an internal
@@ -152,17 +195,29 @@ export default async function proxy(request: NextRequest): Promise<NextResponse>
 
   headers.set(TENANT_HEADERS.hostname, parsed.hostname);
 
+  /**
+   * The policy is built BEFORE any branch, so no exit can ship without one.
+   *
+   * The surface is the only thing it varies on — a storefront may load the analytics script and
+   * nothing else may — so it is resolved from the hostname rather than from the branch that
+   * follows. See `src/server/http/security-headers.ts` for why there is no nonce here: Next cannot
+   * receive one through the surface rewrite, and a nonce the HTML never gets would block Next's own
+   * bootstrap scripts on every page.
+   */
+  const surfaceForCsp: Surface = parsed.surface;
+  const csp = buildCsp({ surface: surfaceForCsp });
+
   // Internal endpoints are hostname-agnostic by design: Caddy's on-demand-TLS ask (Phase 4)
   // arrives for a hostname we may not know yet, and a health check must not depend on DNS
   // being right. Both are reachable only inside the docker network.
   if (pathname.startsWith('/internal/')) {
-    return NextResponse.next({ request: { headers } });
+    return secure(NextResponse.next({ request: { headers } }), csp);
   }
 
   // --- admin.{DOMAIN} -------------------------------------------------------
   if (parsed.surface === 'admin') {
     headers.set(TENANT_HEADERS.surface, 'admin');
-    return intoSurface(request, headers, 'admin');
+    return secure(intoSurface(request, headers, 'admin'), csp);
   }
 
   // --- app.{DOMAIN} ---------------------------------------------------------
@@ -174,19 +229,19 @@ export default async function proxy(request: NextRequest): Promise<NextResponse>
     if (isAppPublicPath(pathname)) {
       headers.set('x-souq-public-path', '1');
     }
-    return intoSurface(request, headers, 'app');
+    return secure(intoSurface(request, headers, 'app'), csp);
   }
 
   // --- storefronts: platform subdomains and custom domains ------------------
   if (parsed.surface !== 'storefront') {
-    return unknownHost(request, headers);
+    return secure(unknownHost(request, headers), csp);
   }
 
   const tenant = await resolveTenantByHostname(parsed.hostname);
   if (!tenant || tenant.isPurging) {
     // A purging tenant is already gone as far as the world is concerned; serving it would mean
     // serving rows that are about to vanish.
-    return unknownHost(request, headers);
+    return secure(unknownHost(request, headers), csp);
   }
 
   headers.set(TENANT_HEADERS.surface, 'storefront');
@@ -216,15 +271,29 @@ export default async function proxy(request: NextRequest): Promise<NextResponse>
       const url = request.nextUrl.clone();
       url.pathname = '/demo-gate';
       url.search = '';
-      return NextResponse.rewrite(url, { request: { headers } });
+      /**
+       * The gate page carries the noindex too, and it did not before Phase 6.
+       *
+       * It is the page served to anyone who reaches a private showcase without a token — which is
+       * precisely the URL a crawler is most likely to have found on its own, and the one page whose
+       * whole premise is that the demo stays unlisted. `withRobotsTag` was called at the two exits
+       * where the tenant renders and not at the one where it refuses to.
+       */
+      return secure(
+        withRobotsTag(NextResponse.rewrite(url, { request: { headers } }), tenant),
+        csp,
+      );
     }
 
-    const response = withRobotsTag(intoSurface(request, headers, 'storefront'), tenant);
+    const secured = secure(
+      withRobotsTag(intoSurface(request, headers, 'storefront'), tenant),
+      csp,
+    );
 
     // Remember the token so the prospect can browse the demo without carrying ?token= on
     // every link. Scoped to this hostname, http-only, and it dies with the demo.
     if (queryToken) {
-      response.cookies.set(DEMO_TOKEN_COOKIE, queryToken, {
+      secured.cookies.set(DEMO_TOKEN_COOKIE, queryToken, {
         httpOnly: true,
         sameSite: 'lax',
         path: '/',
@@ -232,8 +301,8 @@ export default async function proxy(request: NextRequest): Promise<NextResponse>
       });
     }
 
-    return response;
+    return secured;
   }
 
-  return withRobotsTag(intoSurface(request, headers, 'storefront'), tenant);
+  return secure(withRobotsTag(intoSurface(request, headers, 'storefront'), tenant), csp);
 }

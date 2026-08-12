@@ -23,9 +23,11 @@ import { SectionBlock } from './block';
 export interface ContactSectionProps {
   context: StorefrontContext;
   config: SectionConfig<'contact_whatsapp'>;
+  /** Unique-per-page override from `SectionList`; falls back to the type's stable anchor. */
+  anchor?: string;
 }
 
-export function ContactWhatsappSection({ context, config }: ContactSectionProps) {
+export function ContactWhatsappSection({ context, config, anchor }: ContactSectionProps) {
   const { site } = context;
   const number = normaliseWhatsappNumber(site.whatsapp);
 
@@ -44,7 +46,7 @@ export function ContactWhatsappSection({ context, config }: ContactSectionProps)
 
   return (
     <SectionBlock
-      anchor={SECTION_ANCHORS.contact_whatsapp}
+      anchor={anchor ?? SECTION_ANCHORS.contact_whatsapp}
       title={config.title?.trim() || st('sections.contact')}
       lead={config.body?.trim() || st('contact.body')}
     >
