@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 import type { ActionState } from '@/server/admin/validation';
 import { t } from '@/shared/i18n';
+import { preserveFormValuesOnSubmit } from '@/shared/form-values';
 import { resolveMessage } from './messages';
 
 /**
@@ -40,7 +41,12 @@ export function ActionForm({
   const [state, formAction, pending] = useActionState(action, INITIAL);
 
   return (
-    <form action={formAction} className={className ?? 'sba-form'} noValidate>
+    <form
+      action={formAction}
+      onSubmit={(event) => preserveFormValuesOnSubmit(event.currentTarget)}
+      className={className ?? 'sba-form'}
+      noValidate
+    >
       {state.status === 'error' ? (
         <div className="sba-notice sba-notice--error" role="alert">
           <strong>{resolveMessage(state.messageKey)}</strong>

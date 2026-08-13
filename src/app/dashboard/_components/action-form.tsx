@@ -2,6 +2,7 @@
 
 import { useActionState } from 'react';
 import { t } from '@/shared/i18n';
+import { preserveFormValuesOnSubmit } from '@/shared/form-values';
 import type { ActionState } from '../_lib/validation';
 import { resolveFieldError, resolveMessage } from './messages';
 
@@ -49,7 +50,12 @@ export function ActionForm({
         : 'sbd-btn sbd-btn--primary';
 
   return (
-    <form action={formAction} className={className ?? 'sbd-form'} noValidate>
+    <form
+      action={formAction}
+      onSubmit={(event) => preserveFormValuesOnSubmit(event.currentTarget)}
+      className={className ?? 'sbd-form'}
+      noValidate
+    >
       {state.status === 'error' ? (
         <div className="sbd-notice sbd-notice--error" role="alert">
           <strong>{resolveMessage(state.messageKey)}</strong>

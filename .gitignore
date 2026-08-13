@@ -33,6 +33,7 @@ blob-report/
 .tmp/
 .pgdata/
 .pgdata-e2e/
+.pgdata-dev/
 seed-assets/**/*.jpg
 seed-assets/**/*.png
 seed-assets/**/*.webp
