@@ -78,6 +78,17 @@ export interface LegalFacts {
    */
   collectsOrders: boolean;
 
+  /**
+   * Phase 8's OWN conjunct, folded into `collectsOrders` above but exposed separately because
+   * the WORDING differs: cart checkout never claims "payment is enabled on this shop" — a
+   * متجر-tier tenant can have cart on with cash-on-delivery / pickup only and no gateway at all,
+   * and `collectsOrders`'s original clause (`privacy.collectOrders`) says exactly that sentence.
+   * `content.ts` reads this to pick `privacy.collectCartOrders` instead, which is accurate for
+   * cod, pickup AND gateway-within-cart alike. `can(tenantId, 'cart')`, nothing else — the same
+   * "capability, not this week's pause switch" coarseness `sellingEnabled` already uses.
+   */
+  collectsViaCart: boolean;
+
   /** `can(tenantId, 'analytics')`. False means the Umami tag is never in the HTML at all. */
   analyticsEnabled: boolean;
   /** `can(tenantId, 'push_notifications')` AND a configured VAPID key pair. */

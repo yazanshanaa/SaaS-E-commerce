@@ -295,6 +295,14 @@ export const TENANT_HEADERS = {
   isDemo: 'x-souq-is-demo',
   isSuspended: 'x-souq-is-suspended',
   hostname: 'x-souq-hostname',
+  /**
+   * Phase 11 (Track 11.D): '1' exactly when the request is the live-preview segment — the same
+   * predicate that relaxed `frame-ancestors` (Q37). The dashboard layout reads it to render the
+   * preview WITHOUT the rail and chrome. Being in this map is what gets it stripped from every
+   * incoming request; a client who forged it could only hide their own dashboard's chrome, but a
+   * spoofable context header is a habit, not a judgement call.
+   */
+  preview: 'x-souq-preview',
 } as const;
 
 export const TENANT_HEADER_NAMES = Object.values(TENANT_HEADERS);

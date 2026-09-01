@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  CART_ORDER_STATUSES,
   ORDER_STATUSES,
   canTransitionOrder,
   isOrderStatus,
@@ -73,10 +74,17 @@ describe('the order state machine', () => {
   });
 
   /**
-   * The DRIFT GUARD. `OrderStatus` is a Postgres enum, and the TypeScript list above is what every
-   * screen, filter and transition table is built from. If someone adds a value to the schema and
-   * not here, the new state becomes unreachable in the UI and un-transitionable in the service —
-   * silently, because nothing else compares the two.
+   * The DRIFT GUARD. `OrderStatus` is a Postgres enum, and the TypeScript lists above are what
+   * every screen, filter and transition table are built from. If someone adds a value to the
+   * schema and not here, the new state becomes unreachable in the UI and un-transitionable in
+   * the service — silently, because nothing else compares the two.
+   *
+   * Phase 8 split this enum into TWO vocabularies sharing one Postgres type
+   * (`Order.channel` tells them apart — see schema.prisma's own comment on `OrderStatus`):
+   * `ORDER_STATUSES` (buy_now, unchanged since Phase 5) and `CART_ORDER_STATUSES` (cart, new).
+   * The guard now checks the UNION against the enum rather than `ORDER_STATUSES` alone — and
+   * separately asserts the two lists share only `cancelled`, so a value accidentally added to
+   * both transition tables would still be caught.
    */
   it('matches the Prisma enum exactly', () => {
     const schema = readFileSync(path.join(repoRoot, 'prisma/schema.prisma'), 'utf8');
@@ -88,7 +96,12 @@ describe('the order state machine', () => {
       .map((line) => line.trim())
       .filter((line) => line !== '' && !line.startsWith('@@') && !line.startsWith('//'));
 
-    expect(members).toEqual([...ORDER_STATUSES]);
+    const declared = new Set([...ORDER_STATUSES, ...CART_ORDER_STATUSES]);
+    expect(new Set(members)).toEqual(declared);
+    expect(members.length).toBe(declared.size);
+
+    const shared = ORDER_STATUSES.filter((status) => (CART_ORDER_STATUSES as readonly string[]).includes(status));
+    expect(shared).toEqual(['cancelled']);
   });
 });
 

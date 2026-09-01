@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { SYSTEM_ACTOR, withTenantTxn, type Actor } from '@/server/db';
 import { randomToken } from '@/server/crypto';
 import { logger } from '@/server/logger';
-import { enqueue, tenantJob } from '@/server/queues';
+import { tenantJob } from '@/server/queues';
+import { dispatchJob } from '@/server/billing/dispatch';
 import { mediaStorage } from './storage';
 import { MediaError } from './errors';
 import { mediaSourceKey } from './keys';
@@ -152,13 +153,19 @@ async function ingest({
     throw error;
   }
 
-  try {
-    await enqueue(MEDIA_QUEUE, tenantJob(tenantId, PROCESS_UPLOAD_JOB, { mediaId }));
-  } catch (error) {
-    // Undo everything, in the reverse order it was done. A half-created upload is worse than a
-    // refused one: it holds quota and shows a tile that never finishes.
+  // BOUNDED (5s), like every other enqueue a request thread awaits. `queueRedis()` retries
+  // forever by design, so a raw `enqueue` against a dead broker never settles — this was the one
+  // path left holding an unbounded await, with the whole body already buffered (pre-launch fix,
+  // 2026-08-20). `dispatchJob` never throws; `false` gets the same full rollback a throw did,
+  // because a half-created upload is worse than a refused one: it holds quota and shows a tile
+  // that never finishes.
+  const accepted = await dispatchJob(
+    MEDIA_QUEUE,
+    tenantJob(tenantId, PROCESS_UPLOAD_JOB, { mediaId }),
+  );
+  if (!accepted) {
     await rollbackIngest(tenantId, mediaId, key, sizeBytes);
-    logger().error({ tenantId, error: (error as Error).message }, 'media enqueue failed');
+    logger().error({ tenantId, mediaId }, 'media enqueue failed — upload rolled back');
     throw new MediaError('queueUnavailable');
   }
 

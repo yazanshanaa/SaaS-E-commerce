@@ -4,7 +4,7 @@ import { formatNumber, t } from '@/shared/i18n';
 import { param, requireAdminPage } from '../_components/guard';
 import { Empty, Field, Notice, PageHead, Panel, Select, TextInput } from '../_components/ui';
 import { createDemoAction } from './actions';
-import { DemoAge, DemoLinkCell, DemoTabs, packOptions } from './_components/shell';
+import { DemoAge, DemoLinkCell, DemoTabs, packLabel, packOptions } from './_components/shell';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,6 +71,7 @@ export default async function DemosPage({
               <thead>
                 <tr>
                   <th scope="col">{t('demo', 'admin.list.columns.shop')}</th>
+                  <th scope="col">{t('demo', 'admin.list.columns.pack')}</th>
                   <th scope="col">{t('demo', 'admin.list.columns.template')}</th>
                   <th scope="col">{t('demo', 'admin.list.columns.age')}</th>
                   <th scope="col">{t('demo', 'admin.list.columns.products')}</th>
@@ -91,6 +92,9 @@ export default async function DemosPage({
                       <Link href={`/demos/${row.tenantId}`}>{row.name}</Link>
                       <span className="sba-hint sba-mono">{row.slug}</span>
                     </th>
+                    {/* The PACK, not a guess from the template — durable on the tenant since the
+                        2026-08-20 migration; older demos show the request's pack while it lives. */}
+                    <td>{packLabel(row.packKey)}</td>
                     <td>{row.templateName}</td>
                     <td>
                       <DemoAge days={row.ageDays} />

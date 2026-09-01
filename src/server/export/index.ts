@@ -79,25 +79,48 @@ const CATEGORY_HEADERS = ['المفتاح', 'الاسم', 'الترتيب', 'م�
 const IMAGE_HEADERS = ['الملف', 'المنتج', 'رمز المنتج', 'النص البديل', 'الصورة الرئيسية'];
 
 /**
- * Phase 5. One row PER LINE, not per order, so the file is a ledger a merchant can pivot rather
- * than a summary they have to trust. `رقم الطلب` repeats across an order's lines and is the join
- * key to `orders-customers.csv`.
+ * Phase 5, extended for Phase 8's cart channel (pre-launch fix, 2026-08-20). One row PER LINE,
+ * not per order, so the file is a ledger a merchant can pivot rather than a summary they have to
+ * trust. `رقم الطلب` repeats across an order's lines and is the join key to
+ * `orders-customers.csv`. Order-level columns (channel, totals, delivery fee, tracking code)
+ * repeat across an order's lines exactly the way `مجموع الطلب` always has.
+ *
+ * DECISION (a) STILL DRAWS THE LINE: everything here is the merchant's own commercial record —
+ * a channel, a fee, a zone label, a tracking code. The customer's delivery ADDRESS and their
+ * cancellation text are identifier-grade and live in `orders-customers.csv` with the name and
+ * phone, self-serve only.
  */
 const ORDER_HEADERS = [
   'رقم الطلب',
+  'القناة',
   'الحالة',
   'تاريخ الطلب',
   'تاريخ الدفع',
+  'تاريخ الإلغاء',
   'المنتج',
+  'المتغير',
   'سعر الوحدة بالشيكل',
   'الكمية',
   'المجموع الفرعي بالشيكل',
+  'مجموع الطلب قبل الخصم بالشيكل',
+  'الخصم بالشيكل',
+  'رسوم التوصيل بالشيكل',
   'مجموع الطلب بالشيكل',
   'العملة',
+  'طريقة الدفع',
+  'منطقة التوصيل',
+  'كود التتبع',
 ];
 
 /** The identifiers. Self-serve mode ONLY — see decision (a) in `types.ts`. */
-const ORDER_CUSTOMER_HEADERS = ['رقم الطلب', 'اسم الزبون', 'رقم الجوال', 'ملاحظة الزبون'];
+const ORDER_CUSTOMER_HEADERS = [
+  'رقم الطلب',
+  'اسم الزبون',
+  'رقم الجوال',
+  'ملاحظة الزبون',
+  'عنوان التوصيل',
+  'سبب الإلغاء',
+];
 
 const PRODUCTS_FILE = 'products.csv';
 const CATEGORIES_FILE = 'categories.csv';
@@ -107,12 +130,31 @@ const ORDER_CUSTOMERS_FILE = 'orders-customers.csv';
 const IMAGES_FOLDER = 'images/';
 const README_FILE = 'README.txt';
 
+/** Both channels' vocabularies (src/server/orders/status.ts) — a cart order's `new` must not
+ *  leak into an Arabic file as a raw English key. `delivered` and `fulfilled` share a label on
+ *  purpose; the channel column disambiguates. */
 const ORDER_STATUS_LABELS: Record<string, string> = {
   pending: 'بانتظار الدفع',
   paid: 'مدفوع',
   fulfilled: 'تم التسليم',
   cancelled: 'ملغي',
   refunded: 'مسترجع',
+  new: 'جديد',
+  confirmed: 'مؤكد',
+  preparing: 'قيد التجهيز',
+  delivered: 'تم التسليم',
+};
+
+const ORDER_CHANNEL_LABELS: Record<string, string> = {
+  buy_now: 'شراء مباشر',
+  cart: 'سلة الشراء',
+};
+
+/** Matches `dashboard.json` / `storefront.json` word for word, so the file and the screens agree. */
+const ORDER_PAYMENT_METHOD_LABELS: Record<string, string> = {
+  cod: 'الدفع عند الاستلام',
+  pickup: 'استلام من المحل',
+  gateway: 'دفع إلكتروني',
 };
 
 export interface ExportBundle {
@@ -217,18 +259,29 @@ export async function buildExportBundle(
       // the order visible and the totals reconcilable.
       (order.items.length > 0
         ? order.items
-        : [{ nameSnapshot: '', priceAgorot: 0, quantity: 0, subtotalAgorot: 0 }]
+        : [{ nameSnapshot: '', variantLabel: null, priceAgorot: 0, quantity: 0, subtotalAgorot: 0 }]
       ).map((item) => [
         order.number,
+        ORDER_CHANNEL_LABELS[order.channel] ?? order.channel,
         ORDER_STATUS_LABELS[order.status] ?? order.status,
         order.placedAt.toISOString(),
         order.paidAt?.toISOString() ?? '',
+        order.cancelledAt?.toISOString() ?? '',
         item.nameSnapshot,
+        item.variantLabel ?? '',
         agorotToDecimal(item.priceAgorot),
         item.quantity,
         agorotToDecimal(item.subtotalAgorot),
+        // Cart-only money columns are blank (not zero) on buy_now rows: a zero would read as
+        // "there was a discount of 0", while blank reads as "this channel has no such column".
+        order.subtotalAgorot === null ? '' : agorotToDecimal(order.subtotalAgorot),
+        order.channel === 'cart' ? agorotToDecimal(order.discountAgorot) : '',
+        order.channel === 'cart' ? agorotToDecimal(order.deliveryFeeAgorot) : '',
         agorotToDecimal(order.totalAgorot),
         order.currency,
+        order.paymentMethod ? (ORDER_PAYMENT_METHOD_LABELS[order.paymentMethod] ?? order.paymentMethod) : '',
+        order.deliveryArea ?? '',
+        order.trackingCode ?? '',
       ]),
     );
 
@@ -247,6 +300,8 @@ export async function buildExportBundle(
             // re-imports must not think the number is corrupt.
             order.customerPhone ?? '',
             order.customerNote ?? '',
+            order.deliveryAddress ?? '',
+            order.cancelReason ?? '',
           ]),
         ),
       });

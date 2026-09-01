@@ -71,8 +71,18 @@ function privacyPage(facts: LegalFacts): LegalPageSpec {
 
   if (facts.analyticsEnabled) clauses.push(clause('privacy.collectAnalytics'));
   if (facts.pushEnabled) clauses.push(clause('privacy.collectPush'));
+  /**
+   * THREE states, not two. `collectsViaCart` takes priority over the plain gateway clause: cart
+   * checkout never claims "payment is enabled on this shop" (accurate on متجر-tier cash-on-delivery
+   * / pickup with no gateway at all), and it stays accurate even when a gateway is ALSO offered as
+   * one of the cart's payment methods — see the doc comment on `LegalFacts.collectsViaCart`.
+   */
   clauses.push(
-    facts.collectsOrders ? clause('privacy.collectOrders') : clause('privacy.collectNoOrders'),
+    facts.collectsViaCart
+      ? clause('privacy.collectCartOrders')
+      : facts.collectsOrders
+        ? clause('privacy.collectOrders')
+        : clause('privacy.collectNoOrders'),
   );
 
   clauses.push(

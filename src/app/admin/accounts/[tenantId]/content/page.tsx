@@ -1,7 +1,13 @@
 import { notFound } from 'next/navigation';
 import { getSiteContent } from '@/server/admin';
-import { socialPlatformSchema } from '@/shared/site-contract';
+import {
+  COLOR_PRESETS,
+  TEMPLATES,
+  TEMPLATE_KEYS,
+  socialPlatformSchema,
+} from '@/shared/site-contract';
 import { formatDate, t } from '@/shared/i18n';
+import { TemplatePreview } from '@/app/_components/kit/template-preview';
 import { param, requireAdminPage } from '../../../_components/guard';
 import { ActionForm } from '../../../_components/action-form';
 import { Empty, Field, Notice, Panel, SwitchButton, TextInput } from '../../../_components/ui';
@@ -10,6 +16,7 @@ import {
   moveSectionAction,
   saveAnnouncementAction,
   saveAnnouncementBarAction,
+  saveAppearanceAction,
   saveMapLocationAction,
   saveSocialLinksAction,
   seedSectionsAction,
@@ -54,6 +61,111 @@ export default async function AccountContentPage({
 
       <Panel title={t('admin', 'content.title')} note={t('admin', 'content.subtitle')}>
         <p className="sba-hint">{t('admin', 'permissions.adminNote')}</p>
+      </Panel>
+
+      <Panel
+        title={t('admin', 'content.appearance.title')}
+        note={t('admin', 'content.appearance.hint')}
+      >
+        <ActionForm
+          action={saveAppearanceAction}
+          submitLabel={t('admin', 'content.appearance.apply')}
+        >
+          <input type="hidden" name="tenantId" value={tenantId} />
+
+          <fieldset className="sba-look-group">
+            <legend className="sba-label">{t('admin', 'content.appearance.template')}</legend>
+            {/*
+              The KIT's card grid (Phase 11, 11.G), not the admin-local `sba-look-*` this screen
+              shipped with: one class set for all three template pickers — the merchant's studio,
+              this screen and `/accounts/new` — so the thing an operator and a merchant are looking
+              at while they talk on the phone is the same thing. The card IS the radio; the input
+              stays in the tree, clipped rather than `display:none`, so it keeps its tab stop.
+            */}
+            <div className="sbk-look-grid">
+              {TEMPLATE_KEYS.map((key) => {
+                const template = TEMPLATES[key];
+                return (
+                  <label className="sbk-look-pick" key={key}>
+                    <input
+                      type="radio"
+                      name="templateKey"
+                      value={key}
+                      defaultChecked={site.templateKey === key}
+                      required
+                    />
+                    <span className="sbk-look-pick__shot">
+                      <TemplatePreview templateKey={key} />
+                    </span>
+                    <span className="sbk-look-pick__name">{template.name}</span>
+                    <span className="sbk-look-pick__dots" aria-hidden="true">
+                      <span
+                        className="sbk-look-pick__dot"
+                        style={{ background: template.defaults.primary }}
+                      />
+                      <span
+                        className="sbk-look-pick__dot"
+                        style={{ background: template.defaults.secondary }}
+                      />
+                      <span
+                        className="sbk-look-pick__dot"
+                        style={{ background: template.defaults.background }}
+                      />
+                    </span>
+                    <span className="sbk-look-pick__desc">{template.description}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+
+          <fieldset className="sba-look-group">
+            <legend className="sba-label">{t('admin', 'content.appearance.preset')}</legend>
+            <div className="sbk-look-grid">
+              <label className="sbk-look-pick">
+                <input
+                  type="radio"
+                  name="presetKey"
+                  value="template_default"
+                  defaultChecked={content.theme === null}
+                  required
+                />
+                <span className="sbk-look-pick__name">
+                  {t('admin', 'content.appearance.templateDefault')}
+                </span>
+                <span className="sbk-look-pick__desc">
+                  {t('admin', 'content.appearance.templateDefaultHint')}
+                </span>
+              </label>
+              {COLOR_PRESETS.map((preset) => (
+                <label className="sbk-look-pick" key={preset.key}>
+                  <input
+                    type="radio"
+                    name="presetKey"
+                    value={preset.key}
+                    defaultChecked={
+                      content.theme?.colorMode === 'preset' &&
+                      content.theme.presetKey === preset.key
+                    }
+                    required
+                  />
+                  <span className="sbk-look-pick__name">{preset.name}</span>
+                  <span className="sbk-look-pick__dots" aria-hidden="true">
+                    <span className="sbk-look-pick__dot" style={{ background: preset.primary }} />
+                    <span className="sbk-look-pick__dot" style={{ background: preset.secondary }} />
+                    <span className="sbk-look-pick__dot" style={{ background: preset.background }} />
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p className="sba-hint">{t('admin', 'content.appearance.presetHint')}</p>
+            {content.theme?.colorMode === 'custom' ? (
+              <p className="sba-hint sba-look-warning">
+                {t('admin', 'content.appearance.customActive')}
+              </p>
+            ) : null}
+          </fieldset>
+        </ActionForm>
       </Panel>
 
       <Panel title={t('admin', 'content.socialLinks')} note={t('admin', 'content.socialLinksHint')}>

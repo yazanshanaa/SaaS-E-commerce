@@ -166,6 +166,73 @@ export default async function AccountOverviewPage({
         ) : null}
       </Panel>
 
+      {/*
+        Read-only by design. The WRITE paths for addresses already exist and stay single:
+        the merchant's own domain page (Phase 4) does verification and Caddy activation, and the
+        owner's lever is the `custom_domain` switch in the matrix below — plus impersonation when
+        the owner wants to attach a domain on the merchant's behalf. A parallel admin add-domain
+        form would mean a second copy of the ownership/verification rules drifting from the first.
+      */}
+      <Panel title={t('admin', 'account.addressesCard')} note={t('admin', 'account.addressesHint')}>
+        <dl className="sba-kv">
+          <div>
+            <dt>{t('admin', 'account.defaultAddress')}</dt>
+            <dd>
+              <a href={account.storefrontUrl} target="_blank" rel="noreferrer noopener">
+                {account.storefrontUrl}
+              </a>
+            </dd>
+          </div>
+        </dl>
+
+        <h3 className="sba-subhead">{t('admin', 'account.customDomains')}</h3>
+        {account.domains.length === 0 ? (
+          <p className="sba-hint">{t('admin', 'account.noCustomDomains')}</p>
+        ) : (
+          <div className="sba-matrix">
+            {account.domains.map((domain) => (
+              <div className="sba-matrix-row" key={domain.id}>
+                <div>
+                  <span className="sba-matrix-name sba-num" dir="ltr">
+                    {domain.hostname}
+                  </span>
+                  {domain.status === 'failed' && domain.failureReason ? (
+                    <span className="sba-matrix-default">{domain.failureReason}</span>
+                  ) : domain.verifiedAt ? (
+                    <span className="sba-matrix-default">
+                      {t('admin', 'account.domainVerifiedOn', {
+                        date: formatDate(domain.verifiedAt),
+                      })}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="sba-matrix-control">
+                  <StatusTag
+                    status={
+                      domain.status === 'active' || domain.status === 'verified'
+                        ? 'active'
+                        : domain.status === 'failed'
+                          ? 'suspended'
+                          : 'demo'
+                    }
+                    label={t('admin', `account.domainStatus.${domain.status}`)}
+                  />
+                </div>
+                <div className="sba-matrix-control" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        <p className="sba-hint" style={{ marginBlockStart: 'var(--sb-space-4)' }}>
+          {t(
+            'admin',
+            account.customDomainOn ? 'account.customDomainOnNote' : 'account.customDomainOffNote',
+          )}{' '}
+          {t('admin', 'account.domainAddAsMerchant')}
+        </p>
+      </Panel>
+
       <GatewayPanel
         tenantId={account.tenantId}
         gateway={gateway}

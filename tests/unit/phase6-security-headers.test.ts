@@ -136,6 +136,48 @@ describe('the policy itself', () => {
       expect(csp).toContain(directive);
     }
   });
+
+  /**
+   * Q37 (Phase 11, owner decision 2026-08-28): framing is governed by `frame-ancestors` ALONE.
+   *
+   * Three properties, each of which failing is a different regression:
+   *   1. the default stays `'none'` on every surface — the exception must be asked for;
+   *   2. `framable` relaxes to `'self'` and never to a host list — same-origin only;
+   *   3. the proxy asks for it on EXACTLY ONE path shape, the preview segment. Source-asserted,
+   *      because the failure this guards against is a second caller quietly widening the hole.
+   */
+  it('relaxes frame-ancestors to self ONLY when asked, and only the preview asks', () => {
+    expect(buildCsp({ surface: 'app' })).toContain("frame-ancestors 'none'");
+    expect(buildCsp({ surface: 'app', framable: false })).toContain("frame-ancestors 'none'");
+    expect(buildCsp({ surface: 'app', framable: true })).toContain("frame-ancestors 'self'");
+    expect(buildCsp({ surface: 'app', framable: true })).not.toContain("frame-ancestors 'none'");
+    // The other two surfaces can express it too — the PLUMBING below is what keeps them from
+    // ever asking. A capability that exists only for one caller is asserted at the caller.
+    const proxy = source('src/proxy.ts').replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+
+    // Exactly one buildCsp call site, and it passes the framable flag.
+    const calls = proxy.match(/buildCsp\(\{[^}]*\}\)/g) ?? [];
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain('framable');
+
+    // The flag is computed from the preview segment on the app surface (plus its single-tenant
+    // spelling), and from nothing else. One helper, two guarded uses, no third.
+    expect(proxy).toContain("pathname === '/preview' || pathname.startsWith('/preview/')");
+    const uses = proxy.match(/isPreviewSegment\(/g) ?? [];
+    expect(uses.length, 'isPreviewSegment: one definition, two guarded calls').toBe(3);
+    expect(proxy).toContain("parsed.surface === 'app' && isPreviewSegment(pathname)");
+  });
+
+  /**
+   * The header this decision REMOVED, pinned absent in both homes. If it comes back in one and
+   * not the other, the sync test above goes green while the posture silently forks — which is
+   * exactly how the Phase 4 `/internal/*` hole happened one layer down.
+   */
+  it('ships no X-Frame-Options anywhere — frame-ancestors carries framing alone (Q37)', () => {
+    expect(CONSTANT_SECURITY_HEADERS.map((h) => h.key)).not.toContain('X-Frame-Options');
+    const config = source('next.config.ts').replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+    expect(config).not.toContain('X-Frame-Options');
+  });
 });
 
 describe('the plumbing in proxy.ts', () => {

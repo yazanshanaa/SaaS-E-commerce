@@ -1,12 +1,28 @@
 import * as billing from '@/server/billing';
+import { saveSizeGuide } from '@/server/catalogue';
+import {
+  deleteBanner,
+  deleteStoreStat,
+  deleteTrustBadge,
+  isTrustIconKey,
+  saveBanner,
+  saveBranding,
+  saveOpeningHours,
+  saveStoreStat,
+  saveTrustBadge,
+} from '@/server/content';
 import { withTenantTxn } from '@/server/db';
+import { applyZoneTable, saveDeliveryPolicy } from '@/server/delivery';
 import { emitEvent } from '@/server/events';
 import { remainingChangeRequests, type ChangeRequestQuota } from '@/server/entitlements';
+import { saveOrderSettings, type OrderSettingsInput } from '@/server/orders';
+import { requestStorefrontRevalidation } from '@/server/revalidation';
+import { saveTaxSettings } from '@/server/tax';
 import { resolveColors, type ColorSelection } from '@/shared/site-contract';
 import type { CapabilityKey } from '@/shared/features';
 import { auditTenantAction } from './audit';
 import type { AdminContext } from './context';
-import { safeParseCapabilityPayload } from './capability-payloads';
+import { safeParseCapabilityPayload, type CapabilityPayload } from './capability-payloads';
 import { failure, type ActionState } from './validation';
 
 /**
@@ -141,6 +157,18 @@ const APPLIERS: Record<CapabilityKey, Applier> = {
   announcements_board: applyAnnouncementsBoard,
   colors: applyColors,
   sections_layout: applySectionsLayout,
+  order_settings: applyOrderSettings,
+  // Phase 9. Each one calls its owning track's own save function — the same one the merchant's
+  // direct path calls — so an admin approving a request can never write a row the merchant's own
+  // form would have refused.
+  banners: applyBanners,
+  trust_badges: applyTrustBadges,
+  opening_hours: applyOpeningHours,
+  store_stats: applyStoreStats,
+  logo: applyBranding,
+  size_guide: applySizeGuide,
+  delivery_zones: applyDeliveryZones,
+  tax_settings: applyTaxSettings,
 };
 
 export async function applyChangeRequest(
@@ -161,6 +189,21 @@ export async function applyChangeRequest(
 
   const applied = await APPLIERS[capabilityKey](ctx, request.tenantId, parsed.data);
   if (applied) return applied;
+
+  /**
+   * Drop the storefront's cached content unit, once, for every capability.
+   *
+   * Every managed capability is by definition content the storefront renders, and the merchant's own
+   * save path has always ended in `refreshStorefront`. This path never did — so an operator applying
+   * a request watched nothing change for up to `STOREFRONT_REVALIDATE_SECONDS`, and Next serves a
+   * stale entry while it revalidates, which on a quiet shop is longer. Phase 9 makes that visible
+   * enough to fix: a banner board applied by an admin is the largest element on the homepage.
+   *
+   * Central rather than fifteen copies, and best-effort by contract like every other caller — the
+   * write has committed, and failing an applied request because a cache purge did not land would be
+   * the wrong trade.
+   */
+  await requestStorefrontRevalidation(request.tenantId);
 
   await withTenantTxn(
     request.tenantId,
@@ -480,6 +523,237 @@ async function applySectionsLayout(
     },
     { actor: ctx.actor },
   );
+
+  return null;
+}
+
+/**
+ * Phase 8. Reuses `saveOrderSettings` verbatim — the SAME clamp-to-platform-cap and
+ * drop-gateway-if-the-feature-is-off rules a merchant's own save already goes through apply
+ * here too, so an admin approving a request cannot write a row the merchant's own form would
+ * have refused.
+ */
+async function applyOrderSettings(
+  ctx: AdminContext,
+  tenantId: string,
+  payload: unknown,
+): Promise<ActionState | null> {
+  await saveOrderSettings(ctx.db, tenantId, payload as OrderSettingsInput);
+  return null;
+}
+
+// -----------------------------------------------------------------------------
+// Phase 9's eight
+// -----------------------------------------------------------------------------
+
+/**
+ * REPLACE-ALL, not merge, for the three collection capabilities below.
+ *
+ * The payload carries the whole board because a request naming one row by id cannot be applied a
+ * week later — the row may be gone, and «عدّل البانر الثاني» is not something a queue can resolve.
+ * The consequence has to be honoured on this side too: a row the merchant left OUT of the set they
+ * submitted is a row they deleted, so applying only the rows present would resurrect it. The set
+ * the operator approves is the set the shop ends up with, which is also the only reading that makes
+ * the queue's preview honest.
+ *
+ * ISO strings become `Date`s here. The payload is JSON by construction (a server action serialising
+ * a validated object), and each track's `*InputSchema` takes real dates — the same conversion
+ * `optionalIsoDate` already does for the announcement bar.
+ */
+async function applyBanners(
+  ctx: AdminContext,
+  tenantId: string,
+  payload: unknown,
+): Promise<ActionState | null> {
+  const { banners } = payload as CapabilityPayload<'banners'>;
+
+  await withTenantTxn(
+    tenantId,
+    async (tx) => {
+      /**
+       * The id sweep reads through the transaction's own delegate rather than through
+       * `listBanners`, which takes a `ScopedDb`. Not a rule being duplicated — it is "which rows
+       * exist", one column, no policy — and the alternative was widening three readers in a file
+       * this track does not own to satisfy one call site. Same in the two appliers below.
+       */
+      const keep = new Set(banners.map((banner) => banner.id).filter(Boolean) as string[]);
+      const existing = await tx.banner.findMany({ where: { tenantId }, select: { id: true } });
+      for (const row of existing) {
+        if (!keep.has(row.id)) await deleteBanner(tx, tenantId, row.id);
+      }
+
+      for (const banner of banners) {
+        await saveBanner(tx, tenantId, {
+          ...banner,
+          startsAt: banner.startsAt ? new Date(banner.startsAt) : null,
+          endsAt: banner.endsAt ? new Date(banner.endsAt) : null,
+        });
+      }
+    },
+    { actor: ctx.actor },
+  );
+
+  return null;
+}
+
+async function applyTrustBadges(
+  ctx: AdminContext,
+  tenantId: string,
+  payload: unknown,
+): Promise<ActionState | null> {
+  const { badges } = payload as CapabilityPayload<'trust_badges'>;
+
+  await withTenantTxn(
+    tenantId,
+    async (tx) => {
+      const keep = new Set(badges.map((badge) => badge.id).filter(Boolean) as string[]);
+      const existing = await tx.trustBadge.findMany({ where: { tenantId }, select: { id: true } });
+      for (const row of existing) {
+        if (!keep.has(row.id)) await deleteTrustBadge(tx, tenantId, row.id);
+      }
+
+      for (const badge of badges) {
+        await saveTrustBadge(tx, tenantId, {
+          ...badge,
+          /**
+           * The payload types `icon` as a bounded string while `saveTrustBadge` wants a key of the
+           * icon set, and the gap is real rather than cosmetic: a request filed before a glyph was
+           * renamed would otherwise write a key no template can draw, and the badge would render as
+           * an empty box beside its text.
+           *
+           * `isTrustIconKey` is the SAME predicate `trustBadgeInputSchema` falls back through, so
+           * the merchant's own save and this one cannot disagree about which keys exist.
+           */
+          icon: isTrustIconKey(badge.icon) ? badge.icon : 'check',
+        });
+      }
+    },
+    { actor: ctx.actor },
+  );
+
+  return null;
+}
+
+async function applyStoreStats(
+  ctx: AdminContext,
+  tenantId: string,
+  payload: unknown,
+): Promise<ActionState | null> {
+  const { stats } = payload as CapabilityPayload<'store_stats'>;
+
+  await withTenantTxn(
+    tenantId,
+    async (tx) => {
+      const keep = new Set(stats.map((stat) => stat.id).filter(Boolean) as string[]);
+      const existing = await tx.storeStat.findMany({ where: { tenantId }, select: { id: true } });
+      for (const row of existing) {
+        if (!keep.has(row.id)) await deleteStoreStat(tx, tenantId, row.id);
+      }
+
+      for (const stat of stats) await saveStoreStat(tx, tenantId, stat);
+    },
+    { actor: ctx.actor },
+  );
+
+  return null;
+}
+
+/** Seven upserts against `@@unique([tenantId, weekday])`. Idempotent, and there is nothing to delete. */
+async function applyOpeningHours(
+  ctx: AdminContext,
+  tenantId: string,
+  payload: unknown,
+): Promise<ActionState | null> {
+  const input = payload as CapabilityPayload<'opening_hours'>;
+
+  await withTenantTxn(tenantId, (tx) => saveOpeningHours(tx, tenantId, input), {
+    actor: ctx.actor,
+  });
+
+  return null;
+}
+
+/**
+ * The shop's three marks.
+ *
+ * `saveBranding` re-checks that each media id is a `ready` row belonging to this tenant and reports
+ * the ones it refused. The refusal is not surfaced to the operator as a failure: a merchant whose
+ * favicon failed processing between filing and approval gets the two marks that worked, and the
+ * third stays null — which is what `SaveBrandingResult.rejected` is for and what the merchant's own
+ * screen already says in a sentence.
+ */
+async function applyBranding(
+  ctx: AdminContext,
+  tenantId: string,
+  payload: unknown,
+): Promise<ActionState | null> {
+  const input = payload as CapabilityPayload<'logo'>;
+
+  await withTenantTxn(tenantId, (tx) => saveBranding(tx, tenantId, input), { actor: ctx.actor });
+
+  return null;
+}
+
+/**
+ * The size chart. Idempotent, and replace-all WITHIN the payload's `categoryId` scope only — a
+ * request about the shoes chart must not clear the shirts one.
+ */
+async function applySizeGuide(
+  ctx: AdminContext,
+  tenantId: string,
+  payload: unknown,
+): Promise<ActionState | null> {
+  const input = payload as CapabilityPayload<'size_guide'>;
+
+  await withTenantTxn(tenantId, (tx) => saveSizeGuide(tx, tenantId, input), { actor: ctx.actor });
+
+  return null;
+}
+
+/**
+ * ZONES FIRST, then the switches.
+ *
+ * Turning `zonePricingEnabled` on before the table exists would price one checkout off an empty
+ * table — for the length of one statement, on a live shop. Both happen in one transaction so there
+ * is no such window at all.
+ */
+async function applyDeliveryZones(
+  ctx: AdminContext,
+  tenantId: string,
+  payload: unknown,
+): Promise<ActionState | null> {
+  const input = payload as CapabilityPayload<'delivery_zones'>;
+
+  const result = await withTenantTxn(
+    tenantId,
+    async (tx) => {
+      const applied = await applyZoneTable(tx, tenantId, { zones: input.zones });
+      if (!applied.ok) return applied;
+      if (input.policy) await saveDeliveryPolicy(tx, tenantId, input.policy);
+      return applied;
+    },
+    { actor: ctx.actor },
+  );
+
+  /**
+   * `town_claimed` here means the merchant proposed one town under two zones — a payload that was
+   * valid when it was filed and is not applicable now. The generic sentence is what this surface
+   * has; naming the town would need a message parameter the queue's copy does not carry, and
+   * inventing one in an English string is not an option on this platform.
+   */
+  if (!result.ok) return failure('admin:changeRequests.unsupportedPayload');
+
+  return null;
+}
+
+async function applyTaxSettings(
+  ctx: AdminContext,
+  tenantId: string,
+  payload: unknown,
+): Promise<ActionState | null> {
+  const input = payload as CapabilityPayload<'tax_settings'>;
+
+  await withTenantTxn(tenantId, (tx) => saveTaxSettings(tx, tenantId, input), { actor: ctx.actor });
 
   return null;
 }

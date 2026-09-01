@@ -1,9 +1,13 @@
 import { z } from 'zod';
 import { withTenantTxn } from '@/server/db';
+import { requestStorefrontRevalidation } from '@/server/revalidation';
 import {
   HOME_PAGE_SLUG,
+  PRESET_KEYS,
   SECTION_TYPES,
+  isTemplateKey,
   parseSectionConfig,
+  resolveColors,
   socialPlatformSchema,
   type SectionType,
 } from '@/shared/site-contract';
@@ -54,6 +58,8 @@ export interface SiteContent {
     announcementBarStartsAt: Date | null;
     announcementBarEndsAt: Date | null;
   };
+  /** For the appearance panel's checked state. Null when the row has never been written. */
+  theme: { colorMode: string; presetKey: string | null } | null;
   socialLinks: Array<{ platform: string; url: string; enabled: boolean }>;
   announcements: Array<{
     id: string;
@@ -99,7 +105,11 @@ export async function getSiteContent(
   });
   if (!site) return null;
 
-  const [socialLinks, announcements, sections] = await Promise.all([
+  const [theme, socialLinks, announcements, sections] = await Promise.all([
+    ctx.db.themeSettings.findUnique({
+      where: { tenantId },
+      select: { colorMode: true, presetKey: true },
+    }),
     ctx.db.socialLink.findMany({
       where: { tenantId },
       orderBy: { sort: 'asc' },
@@ -134,7 +144,137 @@ export async function getSiteContent(
     }),
   ]);
 
-  return { site, socialLinks, announcements, sections };
+  return { site, theme, socialLinks, announcements, sections };
+}
+
+// -----------------------------------------------------------------------------
+// Appearance — the owner restyles a live site (2026-08-21, owner-directed)
+// -----------------------------------------------------------------------------
+
+/**
+ * `template_default` is the sixth colour option: no ThemeSettings row at all. Absence is a fully
+ * supported state — every freshly created site renders its template's own design colours until
+ * someone writes the row — and it is the ONLY way back to that pristine look, because the five
+ * presets deliberately do not mirror the five templates' defaults (see TEMPLATES in
+ * `src/shared/site-contract/templates.ts`). Without it, one owner save would make the original
+ * design unrecoverable from this panel. Proven live on 2026-08-21: bayt #E08A5F → raff/zaytoun
+ * #3F6212 → bayt #E08A5F again via this value.
+ */
+export const TEMPLATE_DEFAULT_COLORS = 'template_default';
+
+export const appearanceSchema = z.object({
+  templateKey: z.string().trim().min(1, 'admin:errors.required'),
+  presetKey: z
+    .string()
+    .refine(
+      (key) => key === TEMPLATE_DEFAULT_COLORS || PRESET_KEYS.includes(key),
+      'admin:errors.invalidValue',
+    ),
+});
+
+/**
+ * Change a tenant's TEMPLATE and colour PRESET from the account's content tab.
+ *
+ * Until this existed, the look was decided once at account creation and never again from the
+ * owner's side — a live site could only be restyled by the merchant (within `templates_allowed`)
+ * or by impersonation. The owner asked for the direct control, and it belongs here with the rest
+ * of the on-behalf editing, audited the same way.
+ *
+ * TWO DELIBERATE CHOICES:
+ *
+ *   - THE OWNER IS NOT BOUND BY `templates_allowed`. That entitlement is the MERCHANT'S picker
+ *     boundary — what the plan sells them. The platform owner restyling a site is the seller, not
+ *     the buyer; binding them to the plan here would mean a basic-plan shop could never be
+ *     restyled without first editing entitlements. The merchant's own picker stays plan-bound, and
+ *     B2's loader already keeps the CURRENT template selectable even when the entitlement no
+ *     longer names it — exactly the state this write can create, already handled.
+ *
+ *   - PRESETS ONLY, not the free picker. The five vetted sets clear AA by construction, and the
+ *     owner is restyling on a sales call, not art-directing: a preset cannot produce an
+ *     inaccessible site, which matters more here than range. The merchant's custom mode (where the
+ *     plan includes it) remains the path for free colours.
+ *
+ * The storefront is revalidated immediately — a restyle the owner cannot SEE land within the
+ * five-minute TTL reads as a restyle that failed.
+ */
+export async function setSiteAppearance(
+  ctx: AdminContext,
+  tenantId: string,
+  raw: unknown,
+): Promise<ActionState | null> {
+  const parsed = appearanceSchema.safeParse(raw);
+  if (!parsed.success) return invalid(parsed.error);
+
+  if (!isTemplateKey(parsed.data.templateKey)) {
+    return failure('admin:errors.unknownTemplate');
+  }
+
+  const [before, beforeTheme] = await Promise.all([
+    ctx.db.site.findUnique({ where: { tenantId }, select: { templateKey: true } }),
+    ctx.db.themeSettings.findUnique({
+      where: { tenantId },
+      select: { colorMode: true, presetKey: true },
+    }),
+  ]);
+  if (!before) return failure('admin:errors.notFound');
+
+  const wantsTemplateDefault = parsed.data.presetKey === TEMPLATE_DEFAULT_COLORS;
+
+  // The same guard both merchant modes go through (`resolveColors` on the vetted set), so what
+  // renders is exactly what every other writer of this row would have written.
+  const resolution = wantsTemplateDefault
+    ? null
+    : resolveColors({ mode: 'preset', presetKey: parsed.data.presetKey });
+
+  await withTenantTxn(
+    tenantId,
+    async (tx) => {
+      await tx.site.update({
+        where: { tenantId },
+        data: { templateKey: parsed.data.templateKey },
+      });
+      if (wantsTemplateDefault) {
+        // deleteMany, not delete: the row's absence is the goal, so its absence is not an error.
+        await tx.themeSettings.deleteMany({ where: { tenantId } });
+      } else {
+        await tx.themeSettings.upsert({
+          where: { tenantId },
+          create: {
+            tenantId,
+            colorMode: 'preset',
+            presetKey: parsed.data.presetKey,
+            ...resolution!.colors,
+          },
+          update: {
+            colorMode: 'preset',
+            presetKey: parsed.data.presetKey,
+            ...resolution!.colors,
+          },
+        });
+      }
+    },
+    { actor: ctx.actor },
+  );
+
+  await auditTenantAction(ctx, tenantId, {
+    action: 'site.appearance_changed',
+    entityType: 'site',
+    before: {
+      templateKey: before.templateKey,
+      colorMode: beforeTheme?.colorMode ?? null,
+      presetKey: beforeTheme?.presetKey ?? null,
+    },
+    after: wantsTemplateDefault
+      ? { templateKey: parsed.data.templateKey, colorMode: null, presetKey: null }
+      : {
+          templateKey: parsed.data.templateKey,
+          colorMode: 'preset',
+          presetKey: parsed.data.presetKey,
+        },
+  });
+
+  await requestStorefrontRevalidation(tenantId);
+  return null;
 }
 
 // -----------------------------------------------------------------------------

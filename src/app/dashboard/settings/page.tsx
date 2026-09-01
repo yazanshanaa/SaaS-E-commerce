@@ -188,12 +188,16 @@ export default async function SettingsPage({
           </Field>
 
           {/*
-            The logo is carried through as a hidden field rather than being editable here: it is
-            a media id, and a text box asking a merchant for one is worse than no control. A
-            picker belongs with the media library work; until then this preserves the value A1
-            or B3 set instead of blanking it on every save.
+            The logo used to be carried through here as a hidden field, because it is a media id
+            and there was no picker anywhere in the product to choose one with. There is now: the
+            logo, the tab icon and the share image live on `/content/branding`, behind the
+            `logo_upload` feature and the `logo` capability. Nothing on this form touches them, so
+            there is nothing to carry through.
+
+            The hidden input and `logoMediaId` in `detailsSchema` were removed together, and had to
+            be: that field is `.nullable().default(null)`, so an absent input would have parsed as
+            an explicit null and blanked the shop's logo on the first save of its own name.
           */}
-          <input type="hidden" name="logoMediaId" value={site.logoMediaId ?? ''} />
         </ActionForm>
       </Panel>
 

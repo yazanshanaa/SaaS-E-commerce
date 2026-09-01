@@ -43,6 +43,9 @@ export const EVENT_TYPES = [
   'order.placed',
   'order.paid',
   'order.status_changed',
+  // Cart orders (Phase 8) — self-service and merchant edits/cancellations
+  'order.edited',
+  'order.cancelled',
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -127,7 +130,19 @@ export interface EventPayloads {
    * is absent for the same reason in a smaller size: it is the handle a provider's own API acts
    * on, and it has no business in a third party's log.
    */
-  'order.placed': { orderId: string; number: number; totalAgorot: number; currency: string };
+  'order.placed': {
+    orderId: string;
+    number: number;
+    totalAgorot: number;
+    currency: string;
+    /**
+     * Phase 8, cart channel only (absent/undefined for a buy_now order). Not PII — it identifies
+     * an ORDER, the same shape invariant this rule already grants `orderId` — and it is exactly
+     * what an n8n workflow needs to fold into the merchant's WhatsApp notification alongside the
+     * number, since the tracking page is the customer-facing counterpart to it.
+     */
+    trackingCode?: string;
+  };
   'order.paid': { orderId: string; number: number; totalAgorot: number; currency: string };
   'order.status_changed': {
     orderId: string;
@@ -135,6 +150,14 @@ export interface EventPayloads {
     status: string;
     previousStatus: string;
   };
+  /** Phase 8. A self-service or merchant edit to a cart order's contact/delivery details — never
+   *  the new values themselves, which would put a customer's edited phone or address in a
+   *  GLOBAL table (`webhook_deliveries`) the purge cascade cannot reach. A consumer that needs
+   *  the details opens the order in the dashboard. */
+  'order.edited': { orderId: string; number: number; editedBy: 'customer' | 'merchant' };
+  /** Phase 8. Cancellation reason is merchant-facing free text, not carried here for the same
+   *  reason the edited fields are not. */
+  'order.cancelled': { orderId: string; number: number; cancelledBy: 'customer' | 'merchant' };
 }
 
 export type EventPayload<T extends EventType = EventType> = T extends keyof EventPayloads

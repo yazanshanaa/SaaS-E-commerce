@@ -69,8 +69,18 @@ export const CONSTANT_SECURITY_HEADERS: ReadonlyArray<{ key: string; value: stri
    * a third-party host.
    */
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-  /** Belt to `frame-ancestors 'none'`, for anything that predates CSP3. */
-  { key: 'X-Frame-Options', value: 'DENY' },
+  /**
+   * `X-Frame-Options` IS DELIBERATELY ABSENT — Q37, decided by the owner on 2026-08-28.
+   *
+   * Framing is governed by `frame-ancestors` alone (below, in `buildCsp`), which every browser
+   * since Chrome 40 / Safari 10 enforces and which CSP3 defines as SUPERSEDING this header when
+   * both are present. The header was only ever a belt for IE11, which no Arabic mobile shopper
+   * and no merchant dashboard runs — and it cannot express the one exception the product needs:
+   * Next's `headers()` APPENDS rather than replaces, so a per-path `SAMEORIGIN` for the live
+   * preview (Track 11.D) would have shipped BOTH values and the browser takes the stricter one.
+   * One knob, per request, in the proxy — `tests/unit/phase6-security-headers.test.ts` pins both
+   * halves: the header is gone everywhere, and the `frame-ancestors` exception is one path wide.
+   */
   /**
    * Nothing on this platform asks for a camera, a microphone, a location or a payment handler.
    * The map section builds deep links rather than reading a position, which is what makes
@@ -117,6 +127,14 @@ export interface CspInput {
    * legitimately request breaks the shop.
    */
   surface: Surface;
+  /**
+   * Q37 / Track 11.D: `true` relaxes `frame-ancestors` from `'none'` to `'self'`, so the live
+   * preview can render inside the appearance screen's same-origin iframe. `proxy.ts` sets it for
+   * EXACTLY ONE path shape — the app surface's preview segment — and
+   * `tests/unit/phase6-security-headers.test.ts` asserts the exception is one path wide. Never
+   * `'self'` by default: every other page on every surface keeps refusing all ancestors.
+   */
+  framable?: boolean;
 }
 
 /**
@@ -127,7 +145,7 @@ export interface CspInput {
  * per-deployment anyway — a policy with a hostname baked in would be wrong on the first customer
  * who brought their own.
  */
-export function buildCsp({ surface }: CspInput): string {
+export function buildCsp({ surface, framable = false }: CspInput): string {
   const env = getEnv();
 
   const cdn = originOf(env.CDN_PUBLIC_BASE_URL);
@@ -182,8 +200,12 @@ export function buildCsp({ surface }: CspInput): string {
      * for clickjacking.
      */
     ['frame-src', ["'self'"]],
-    /** No page here is ever legitimately framed, on any surface. */
-    ['frame-ancestors', ["'none'"]],
+    /**
+     * No page here is ever legitimately framed — except the live preview, which is framed by our
+     * OWN origin and nothing else (`'self'`, never a host list). This directive carries framing
+     * ALONE since Q37 removed `X-Frame-Options`; see the note on `CONSTANT_SECURITY_HEADERS`.
+     */
+    ['frame-ancestors', [framable ? "'self'" : "'none'"]],
     /**
      * `form-action 'self'` matters more than it looks: the checkout form is a real HTML form
      * before hydration, and this is what stops an injected `action` from posting a customer's

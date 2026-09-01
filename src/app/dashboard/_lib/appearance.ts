@@ -3,6 +3,7 @@ import { can, canEdit } from '@/server/entitlements';
 import {
   COLOR_PRESETS,
   TEMPLATES,
+  TEMPLATE_KEYS,
   colorSelectionSchema,
   findPreset,
   isTemplateKey,
@@ -38,13 +39,28 @@ import { failure, invalid, type ActionState } from './validation';
 
 export interface TemplateChoice extends TemplateDescriptor {
   current: boolean;
+  /**
+   * Whether `templates_allowed` actually permits this key.
+   *
+   * `false` renders a LOCKED card — visible, described, previewed, not selectable — instead of
+   * omitting the template from the list. A أساسي merchant used to be shown a `<fieldset disabled>`
+   * containing exactly one option, which reads as a broken screen rather than as a plan boundary:
+   * there is nothing to compare, nothing to want, and no reason given. A locked card states the
+   * boundary and shows what is behind it, which is the difference between a picker that explains
+   * an upsell and one that just refuses.
+   */
+  available: boolean;
 }
 
 export interface AppearanceView {
   templateKey: string;
-  /** Only the templates this tenant's entitlement actually permits. */
+  /**
+   * ALL nine templates, each flagged `available`. Not just the permitted ones — see
+   * `TemplateChoice.available`. The server still refuses a locked key on submit; this list is
+   * what the merchant is allowed to SEE, which is a different question from what they may pick.
+   */
   templates: TemplateChoice[];
-  /** True when the plan permits exactly one — the picker becomes a statement of fact. */
+  /** True when the plan permits exactly one — the rest of the grid renders locked. */
   singleTemplate: boolean;
   colorMode: ColorMode;
   colorsEditable: boolean;
@@ -104,13 +120,23 @@ export async function loadAppearance(ctx: MerchantContext): Promise<AppearanceVi
    * newly choose. Omitting it would render a picker with nothing selected and let the first
    * click silently re-skin a live storefront.
    */
-  const keys = allowed.includes(site.templateKey as TemplateKey)
-    ? allowed
-    : [...allowed, ...(isTemplateKey(site.templateKey) ? [site.templateKey] : [])];
+  const selectable = new Set<TemplateKey>(allowed);
+  // The CURRENT template is always selectable, even if the entitlement no longer names it.
+  if (isTemplateKey(site.templateKey)) selectable.add(site.templateKey);
 
   return {
     templateKey: site.templateKey,
-    templates: keys.map((key) => ({ ...TEMPLATES[key], current: key === site.templateKey })),
+    /*
+     * The whole catalogue, in contract order, flagged rather than filtered.
+     *
+     * `TEMPLATE_KEYS` order is append-only and is the picker order on three surfaces, so mapping
+     * over it directly keeps a merchant's cards from moving under their cursor after a deploy.
+     */
+    templates: TEMPLATE_KEYS.map((key) => ({
+      ...TEMPLATES[key],
+      current: key === site.templateKey,
+      available: selectable.has(key),
+    })),
     singleTemplate: allowed.length <= 1,
     colorMode: mode === 'custom' ? 'custom' : 'preset',
     colorsEditable,
@@ -140,8 +166,9 @@ export async function saveTemplate(ctx: MerchantContext, raw: unknown): Promise<
   const allowed = await allowedTemplateKeys(ctx);
   const next = parsed.data.templateKey;
 
-  // Server-side, always. The picker only renders permitted templates, but a form is a hint and
-  // a plan is a boundary — accepting an unlisted key here would hand out an upgrade for free.
+  // Server-side, always. The picker now renders the WHOLE catalogue — locked cards included, so
+  // a merchant can see what the next plan buys — which makes this check the only thing standing
+  // between a hand-posted form and a free upgrade. A form is a hint; a plan is a boundary.
   if (!isTemplateKey(next) || !allowed.includes(next)) {
     return failure('dashboard:errors.templateNotAllowed');
   }

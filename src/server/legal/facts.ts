@@ -44,7 +44,7 @@ export function contactEmail(): string {
 function configuredProcessors(input: {
   analyticsEnabled: boolean;
   pushEnabled: boolean;
-  collectsOrders: boolean;
+  activeGatewayProvider: string | null;
   activeGatewayIsLocal: boolean;
 }): LegalProcessorKey[] {
   const env = getEnv();
@@ -94,7 +94,10 @@ function configuredProcessors(input: {
   }
 
   // A remote gateway is a processor. The local one is not — nothing leaves the platform for it.
-  if (input.collectsOrders && !input.activeGatewayIsLocal) keys.push('gateway');
+  // Gated on a gateway actually being CONFIGURED, not on `collectsOrders`: Phase 8's cart can make
+  // `collectsOrders` true with cash-on-delivery / pickup only and no gateway row at all, and that
+  // must not fabricate a processor that does not exist.
+  if (input.activeGatewayProvider !== null && !input.activeGatewayIsLocal) keys.push('gateway');
 
   return keys;
 }
@@ -132,10 +135,11 @@ export async function loadLegalFacts(
    * `can()` reads through the entitlement cache, which is invalidated on every admin toggle — so
    * these are the same answers the storefront gets on its next render, not a snapshot of the plan.
    */
-  const [analytics, push, paymentGateway] = await Promise.all([
+  const [analytics, push, paymentGateway, cart] = await Promise.all([
     can(tenantId, 'analytics'),
     can(tenantId, 'push_notifications'),
     can(tenantId, 'payment_gateway'),
+    can(tenantId, 'cart'),
   ]);
 
   /**
@@ -152,7 +156,11 @@ export async function loadLegalFacts(
   const activeGateway = activeAdapter?.status === 'active' ? activeAdapter : null;
 
   /** The storefront's own four conjuncts, in the same order and with the same meaning. */
-  const collectsOrders = paymentGateway === true && site.sellingEnabled && activeGateway !== null;
+  const collectsViaGateway = paymentGateway === true && site.sellingEnabled && activeGateway !== null;
+  /** Phase 8: cart checkout collects the same fields on its own — see the doc comment on
+   *  `LegalFacts.collectsViaCart`. */
+  const collectsViaCart = cart === true;
+  const collectsOrders = collectsViaGateway || collectsViaCart;
 
   /**
    * "Local" means the adapter has nothing to authenticate with, because it has nobody to
@@ -168,6 +176,7 @@ export async function loadLegalFacts(
     isDemo: tenant?.isDemo ?? false,
     sellingEnabled: site.sellingEnabled,
     collectsOrders,
+    collectsViaCart,
     analyticsEnabled: analytics === true,
     pushEnabled,
     activeGatewayProvider: activeGateway?.provider ?? null,
@@ -185,7 +194,7 @@ export async function loadLegalFacts(
     processors: configuredProcessors({
       analyticsEnabled: analytics === true,
       pushEnabled,
-      collectsOrders,
+      activeGatewayProvider: activeGateway?.provider ?? null,
       activeGatewayIsLocal,
     }),
   };

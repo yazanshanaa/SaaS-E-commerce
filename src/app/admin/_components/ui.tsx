@@ -36,15 +36,31 @@ export function Panel({
   actions,
   children,
   tone,
+  bloom,
 }: {
   title?: string;
   note?: string;
   actions?: React.ReactNode;
   children: React.ReactNode;
   tone?: 'danger';
+  /**
+   * «مرصد» signature element #2 — the corner bloom (`kit.css`, `[data-bloom]`).
+   *
+   * A single radial wash of the accent in the block-start / inline-end corner. It replaces the
+   * drop shadow, which is `none` in dark mode by policy — a shadow on a dark panel is a smudge,
+   * not a lift.
+   *
+   * AT MOST ONE PER SCREEN. Its only job is to say "this one is why you came here", and a page
+   * where every panel blooms says nothing at all. If a second panel wants it, the first one
+   * probably was not the primary.
+   */
+  bloom?: boolean;
 }) {
   return (
-    <section className={tone === 'danger' ? 'sba-panel sba-panel--danger' : 'sba-panel'}>
+    <section
+      className={tone === 'danger' ? 'sba-panel sba-panel--danger' : 'sba-panel'}
+      data-bloom={bloom ? 'true' : undefined}
+    >
       {title || actions ? (
         <div className="sba-panel-head">
           {title ? <h2 className="sba-panel-title">{title}</h2> : <span />}

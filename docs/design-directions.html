@@ -1,0 +1,897 @@
+<title>اتجاهات تصميم سوق برطعة</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Alexandria:wght@300;400;500;700;800&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Zain:wght@300;400;700;800&family=Rubik:wght@300;400;500;700;800&display=swap" rel="stylesheet">
+
+<style>
+/* ============ page chrome tokens ============ */
+:root{
+  --pg-bg:#F4F1EB; --pg-surface:#FFFFFF; --pg-surface-2:#FAF7F1;
+  --pg-text:#221B14; --pg-muted:#6B5F52; --pg-border:#DFD6C7;
+  --pg-clay:#A63D0B; --pg-olive:#4F6338; --pg-danger:#9C1C2C; --pg-warn:#B4770F;
+  --pg-shadow:0 1px 2px rgb(34 27 20/.05), 0 12px 32px -24px rgb(34 27 20/.4);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --pg-bg:#15120E; --pg-surface:#1D1915; --pg-surface-2:#241F1A;
+    --pg-text:#EFE8DE; --pg-muted:#A2968704; --pg-muted:#A29687; --pg-border:#3A322A;
+    --pg-clay:#E0834A; --pg-olive:#93AE72; --pg-danger:#E0808C; --pg-warn:#DFAA4A;
+    --pg-shadow:0 12px 32px -24px rgb(0 0 0/.8);
+  }
+}
+:root[data-theme="dark"]{
+  --pg-bg:#15120E; --pg-surface:#1D1915; --pg-surface-2:#241F1A;
+  --pg-text:#EFE8DE; --pg-muted:#A29687; --pg-border:#3A322A;
+  --pg-clay:#E0834A; --pg-olive:#93AE72; --pg-danger:#E0808C; --pg-warn:#DFAA4A;
+  --pg-shadow:0 12px 32px -24px rgb(0 0 0/.8);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; direction:rtl; text-align:start;
+  background:var(--pg-bg); color:var(--pg-text);
+  font-family:'IBM Plex Sans Arabic','Noto Sans Arabic',system-ui,sans-serif;
+  font-size:16px; line-height:1.8; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:76rem; margin:0 auto; padding:0 clamp(16px,4vw,40px)}
+h1,h2,h3,h4{font-family:'Alexandria',sans-serif; line-height:1.25; margin:0; font-weight:700}
+p{margin:0}
+code{font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:.82em; direction:ltr; display:inline-block;
+  background:var(--pg-surface-2); border:1px solid var(--pg-border); border-radius:4px; padding:.05em .4em}
+
+/* ============ sticky instruction ============ */
+.topbar{
+  position:sticky; top:0; z-index:50; background:var(--pg-clay); color:#fff;
+  padding:10px 0; font-size:.9rem; box-shadow:0 8px 24px -18px rgb(0 0 0/.6);
+}
+.topbar .wrap{display:flex; gap:16px; align-items:center; flex-wrap:wrap; justify-content:space-between}
+.topbar strong{font-family:'Alexandria',sans-serif; font-weight:700}
+.topbar span{opacity:.92}
+
+/* ============ hero ============ */
+.masthead{padding:clamp(48px,9vw,96px) 0 clamp(32px,5vw,56px)}
+.eyebrow{font-size:.75rem; letter-spacing:.22em; color:var(--pg-muted); font-weight:600; margin-bottom:18px}
+.masthead h1{font-size:clamp(2.1rem,6vw,3.6rem); font-weight:800; letter-spacing:-.02em; max-width:22ch}
+.masthead .lede{margin-top:20px; max-width:60ch; color:var(--pg-muted); font-size:1.05rem}
+.rule{height:1px; background:var(--pg-border); border:0; margin:0}
+
+/* ============ section frame ============ */
+.sec{padding:clamp(44px,7vw,80px) 0}
+.sec-head{display:flex; gap:20px; align-items:baseline; flex-wrap:wrap; margin-bottom:8px}
+.sec-num{font-family:'Alexandria',sans-serif; font-weight:800; font-size:.8rem; color:var(--pg-clay);
+  letter-spacing:.18em; padding-top:.4em}
+.sec h2{font-size:clamp(1.5rem,3.4vw,2.15rem); letter-spacing:-.01em}
+.sec-sub{color:var(--pg-muted); max-width:66ch; margin:12px 0 34px}
+
+/* ============ findings ============ */
+.findings{display:grid; gap:14px}
+.find{
+  display:grid; grid-template-columns:auto 1fr; gap:18px; align-items:start;
+  background:var(--pg-surface); border:1px solid var(--pg-border); border-radius:10px;
+  padding:20px 22px; border-inline-start:3px solid var(--sev);
+}
+.find[data-sev="high"]{--sev:var(--pg-danger)}
+.find[data-sev="mid"]{--sev:var(--pg-warn)}
+.find[data-sev="low"]{--sev:var(--pg-olive)}
+.find-n{font-family:'Alexandria',sans-serif; font-weight:800; font-size:1.5rem; color:var(--sev); line-height:1.1;
+  font-variant-numeric:tabular-nums; min-width:1.4em}
+.find h3{font-size:1.02rem; font-weight:700; margin-bottom:6px}
+.find p{color:var(--pg-muted); font-size:.94rem}
+.tagline{display:inline-block; font-size:.72rem; font-weight:700; letter-spacing:.08em;
+  color:var(--sev); border:1px solid var(--sev); border-radius:999px; padding:1px 9px; margin-bottom:8px}
+
+/* ============ direction divider ============ */
+.dir-bar{
+  display:grid; grid-template-columns:auto 1fr; gap:22px; align-items:center;
+  padding:26px 24px; border-radius:12px 12px 0 0; color:#fff;
+}
+.dir-letter{
+  font-family:'Alexandria',sans-serif; font-weight:800; font-size:2.6rem; line-height:1;
+  width:74px; height:74px; display:grid; place-items:center; border-radius:12px;
+  background:rgb(255 255 255/.14); border:1px solid rgb(255 255 255/.24);
+}
+.dir-bar h3{font-size:clamp(1.35rem,3vw,1.85rem); margin-bottom:4px}
+.dir-bar .pitch{font-size:.95rem; opacity:.9}
+.dir-block{margin-bottom:52px; border-radius:12px; overflow:hidden; box-shadow:var(--pg-shadow)}
+.dir-meta{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px;
+  background:var(--pg-border); border-inline:1px solid var(--pg-border);
+}
+.dir-meta div{background:var(--pg-surface); padding:14px 18px}
+.dir-meta dt{font-size:.7rem; letter-spacing:.14em; color:var(--pg-muted); font-weight:600; margin-bottom:4px}
+.dir-meta dd{margin:0; font-size:.88rem; font-weight:600}
+.swatches{display:flex; gap:5px; margin-top:6px}
+.swatches i{width:19px; height:19px; border-radius:4px; display:block; border:1px solid rgb(0 0 0/.14)}
+.dir-notes{background:var(--pg-surface-2); border:1px solid var(--pg-border); border-top:0;
+  border-radius:0 0 12px 12px; padding:20px 24px; display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:20px}
+.dir-notes h4{font-size:.76rem; letter-spacing:.14em; color:var(--pg-muted); margin-bottom:8px; font-weight:600}
+.dir-notes ul{margin:0; padding-inline-start:1.1em; font-size:.9rem; color:var(--pg-muted)}
+.dir-notes li{margin-bottom:5px}
+.dir-notes li b{color:var(--pg-text); font-weight:600}
+
+/* ==================================================================
+   MOCKUP — merchant dashboard, driven entirely by --m-* tokens
+   ================================================================== */
+.mock{
+  --m-r:10px; --m-r-sm:6px; --m-gap:18px;
+  background:var(--m-bg); color:var(--m-text); font-family:var(--m-font);
+  display:grid; grid-template-columns:196px 1fr; min-height:430px;
+  border-inline:1px solid var(--pg-border); overflow:hidden; container-type:inline-size;
+}
+@media (max-width:720px){ .mock{grid-template-columns:1fr} .mock .rail{display:none} }
+
+.rail{background:var(--m-rail); padding:20px 14px; border-inline-start:1px solid var(--m-rail-line)}
+.rail-brand{display:flex; gap:10px; align-items:center; margin-bottom:26px; padding:0 8px}
+.rail-mark{width:28px; height:28px; border-radius:var(--m-r-sm); background:var(--m-pri); flex:0 0 auto;
+  display:grid; place-items:center; color:var(--m-on-pri); font-weight:800; font-size:.8rem}
+.rail-name{font-weight:700; font-size:.92rem; color:var(--m-rail-text)}
+.rail a{display:flex; gap:10px; align-items:center; padding:8px 10px; border-radius:var(--m-r-sm);
+  color:var(--m-rail-muted); text-decoration:none; font-size:.86rem; margin-bottom:2px}
+.rail a svg{width:17px; height:17px; flex:0 0 auto; stroke:currentColor; fill:none; stroke-width:1.7}
+.rail a.on{background:var(--m-rail-on); color:var(--m-rail-on-text); font-weight:600}
+.rail hr{border:0; border-top:1px solid var(--m-rail-line); margin:14px 4px}
+
+.pane{padding:22px 24px; overflow:hidden}
+.pane-head{display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:20px; flex-wrap:wrap}
+.pane-head h4{font-size:1.3rem; font-weight:var(--m-display-w,700); letter-spacing:var(--m-track,0)}
+.pane-head p{font-size:.8rem; color:var(--m-muted); margin-top:3px}
+.btn{background:var(--m-pri); color:var(--m-on-pri); border:var(--m-btn-border,0); border-radius:var(--m-r-sm);
+  padding:8px 16px; font-size:.83rem; font-weight:600; font-family:inherit; cursor:default; white-space:nowrap}
+
+.kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:var(--m-gap); margin-bottom:var(--m-gap)}
+@container (max-width:620px){ .kpis{grid-template-columns:repeat(2,1fr)} }
+.kpi{background:var(--m-surface); border:1px solid var(--m-border); border-radius:var(--m-r); padding:14px 16px;
+  box-shadow:var(--m-shadow,none); position:relative; overflow:hidden}
+.kpi dt{font-size:.7rem; color:var(--m-muted); letter-spacing:.05em; margin-bottom:6px; font-weight:500}
+.kpi dd{margin:0; font-size:1.65rem; font-weight:var(--m-num-w,700); font-variant-numeric:tabular-nums;
+  line-height:1.1; letter-spacing:-.02em}
+.kpi .delta{font-size:.72rem; font-weight:600; margin-top:4px; color:var(--m-ok)}
+.spark{display:block; width:100%; height:26px; margin-top:8px; overflow:visible}
+.spark path{fill:none; stroke:var(--m-pri); stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round}
+.spark .fill{fill:var(--m-pri); opacity:.12; stroke:none}
+
+.grid2{display:grid; grid-template-columns:1.55fr 1fr; gap:var(--m-gap)}
+@container (max-width:620px){ .grid2{grid-template-columns:1fr} }
+.card{background:var(--m-surface); border:1px solid var(--m-border); border-radius:var(--m-r);
+  overflow:hidden; box-shadow:var(--m-shadow,none)}
+.card-h{padding:12px 16px; border-bottom:1px solid var(--m-border); font-size:.85rem; font-weight:700;
+  display:flex; justify-content:space-between; align-items:center}
+.card-h em{font-style:normal; font-size:.72rem; color:var(--m-muted); font-weight:500}
+table{width:100%; border-collapse:collapse; font-size:.79rem}
+th{text-align:start; padding:8px 16px; color:var(--m-muted); font-weight:600; font-size:.7rem;
+  letter-spacing:.05em; border-bottom:1px solid var(--m-border); background:var(--m-surface-alt,transparent)}
+td{padding:9px 16px; border-bottom:1px solid var(--m-border)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums; font-weight:600}
+.pill{display:inline-block; font-size:.68rem; font-weight:700; padding:2px 9px; border-radius:var(--m-pill,999px);
+  border:1px solid currentColor}
+.pill.ok{color:var(--m-ok)} .pill.wait{color:var(--m-warn)} .pill.no{color:var(--m-danger)}
+.bars{padding:16px}
+.bar-row{display:grid; grid-template-columns:64px 1fr auto; gap:10px; align-items:center; margin-bottom:11px; font-size:.76rem}
+.bar-track{height:7px; background:var(--m-track-bg); border-radius:var(--m-pill,999px); overflow:hidden}
+.bar-fill{height:100%; background:var(--m-pri); border-radius:inherit}
+.bar-row:nth-child(2) .bar-fill{background:var(--m-sec)}
+.bar-row span:last-child{color:var(--m-muted); font-variant-numeric:tabular-nums}
+
+/* -------- Direction A : DAFTAR (editorial ledger) -------- */
+.mock.a{
+  --m-font:'IBM Plex Sans Arabic',sans-serif; --m-display-w:600; --m-num-w:600; --m-track:-.01em;
+  --m-bg:#FBF7F0; --m-surface:#FFFFFF; --m-surface-alt:#FAF6EF; --m-border:#E2D8C8;
+  --m-text:#1E1A16; --m-muted:#6E6154; --m-pri:#A63D0B; --m-on-pri:#FFF; --m-sec:#4F6338;
+  --m-ok:#42632F; --m-warn:#96650B; --m-danger:#9C1C2C; --m-track-bg:#EFE8DC;
+  --m-rail:#FFFFFF; --m-rail-line:#E2D8C8; --m-rail-text:#1E1A16; --m-rail-muted:#6E6154;
+  --m-rail-on:#F4EDE1; --m-rail-on-text:#A63D0B;
+  --m-r:4px; --m-r-sm:3px; --m-pill:3px; --m-gap:16px;
+}
+.mock.a .kpi{border-width:1px 1px 1px 1px; border-radius:0; border-inline-start:2px solid var(--m-pri)}
+.mock.a .kpi dd{font-size:2rem; font-weight:600}
+.mock.a .card{border-radius:0}
+.mock.a .btn{border-radius:0; --m-btn-border:0}
+.mock.a .pane-head h4{font-family:'Alexandria',sans-serif; font-weight:700}
+.mock.a .rail a.on{border-inline-start:2px solid var(--m-pri); border-radius:0}
+
+/* -------- Direction B : SOUQ (warm organic) -------- */
+.mock.b{
+  --m-font:'Zain',sans-serif; --m-display-w:700; --m-num-w:700; --m-track:0;
+  --m-bg:#F8F1E5; --m-surface:#FFFDF9; --m-surface-alt:#F6EFE3; --m-border:#EADCC6;
+  --m-text:#2A211A; --m-muted:#7A6B5C; --m-pri:#B4472A; --m-on-pri:#FFF; --m-sec:#D98A2B;
+  --m-ok:#3F5233; --m-warn:#A66A12; --m-danger:#A32B2B; --m-track-bg:#F0E5D3;
+  --m-rail:#3A2A20; --m-rail-line:#4E3A2D; --m-rail-text:#FBF3E8; --m-rail-muted:#C0AB99;
+  --m-rail-on:#B4472A; --m-rail-on-text:#FFF6EC;
+  --m-r:16px; --m-r-sm:11px; --m-gap:16px;
+  --m-shadow:0 1px 2px rgb(42 33 26/.05), 0 14px 28px -22px rgb(42 33 26/.5);
+}
+.mock.b .pane-head h4{font-family:'Alexandria',sans-serif; font-weight:700; font-size:1.4rem}
+.mock.b .kpi{padding:16px 18px}
+.mock.b .kpi::after{content:''; position:absolute; inset-block-start:0; inset-inline:0; height:3px;
+  background:linear-gradient(to left,var(--m-pri),var(--m-sec))}
+.mock.b .btn{border-radius:999px; padding:9px 20px}
+.mock.b .card-h{background:var(--m-surface-alt)}
+.mock.b .rail-mark{border-radius:9px}
+
+/* -------- Direction C : MARSAD (calm night instrument) -------- */
+.mock.c{
+  --m-font:'IBM Plex Sans Arabic',sans-serif; --m-display-w:600; --m-num-w:600; --m-track:-.015em;
+  --m-bg:#0F1513; --m-surface:#171F1C; --m-surface-alt:#1C2622; --m-border:#2B3733;
+  --m-text:#E6EFEA; --m-muted:#8FA098; --m-pri:#5FD3A8; --m-on-pri:#08130E; --m-sec:#E8A33D;
+  --m-ok:#5FD3A8; --m-warn:#E8A33D; --m-danger:#E8757F; --m-track-bg:#243029;
+  --m-rail:#0B100E; --m-rail-line:#232E29; --m-rail-text:#E6EFEA; --m-rail-muted:#7E8F87;
+  --m-rail-on:#18291F; --m-rail-on-text:#5FD3A8;
+  --m-r:7px; --m-r-sm:5px; --m-gap:13px;
+}
+.mock.c .pane-head h4{font-family:'Alexandria',sans-serif; font-weight:600}
+.mock.c .kpi dd{font-size:1.5rem}
+.mock.c td,.mock.c th{padding-block:6px}
+.mock.c .kpi::before{content:''; position:absolute; inset-block-start:0; inset-inline-end:0;
+  width:34px; height:34px; background:radial-gradient(circle at 100% 0,var(--m-pri),transparent 70%); opacity:.13}
+.mock.c .btn{box-shadow:0 0 0 1px rgb(95 211 168/.3), 0 6px 18px -10px rgb(95 211 168/.6)}
+
+/* ==================================================================
+   TEMPLATE CATALOGUE
+   ================================================================== */
+.tpl-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)); gap:22px}
+.tpl{background:var(--pg-surface); border:1px solid var(--pg-border); border-radius:12px;
+  overflow:hidden; box-shadow:var(--pg-shadow)}
+.tpl-shot{
+  --s-r:6px; height:230px; padding:12px; overflow:hidden; position:relative;
+  background:var(--t-bg); color:var(--t-text); font-family:var(--t-font);
+}
+.tpl-nav{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;
+  padding-bottom:8px; border-bottom:1px solid var(--t-border)}
+.tpl-logo{font-weight:800; font-size:.86rem; color:var(--t-pri)}
+.tpl-nav-links{display:flex; gap:9px; font-size:.6rem; color:var(--t-muted)}
+.tpl-hero{position:relative; border-radius:var(--s-r); overflow:hidden; margin-bottom:10px; height:78px;
+  background:var(--t-surface); border:1px solid var(--t-border); display:grid; align-content:center; padding:0 12px}
+.tpl-hero h5{font-size:1rem; font-weight:800; letter-spacing:var(--t-track,0); line-height:1.15}
+.tpl-hero p{font-size:.6rem; color:var(--t-muted); margin-top:3px}
+.tpl-hero .cta{margin-top:7px; font-size:.58rem; font-weight:700; background:var(--t-pri); color:var(--t-on-pri);
+  padding:3px 10px; border-radius:var(--t-pill,var(--s-r)); justify-self:start}
+/* hero: split -> art block on the side */
+.tpl-hero[data-hero="split"]{padding-inline-end:88px}
+.tpl-hero[data-hero="split"]::after{content:''; position:absolute; inset-block:0; inset-inline-end:0; width:80px;
+  background:linear-gradient(150deg,var(--t-pri),var(--t-sec)); opacity:.85; border-start-start-radius:var(--t-mask-r,0)}
+/* hero: stage -> full bleed art with text over */
+.tpl-hero[data-hero="stage"]{background:linear-gradient(115deg,var(--t-pri) 0%,var(--t-sec) 130%); border-color:transparent}
+.tpl-hero[data-hero="stage"] h5,.tpl-hero[data-hero="stage"] p{color:var(--t-on-pri)}
+.tpl-hero[data-hero="stage"] .cta{background:var(--t-on-pri); color:var(--t-pri)}
+/* hero: ledger -> rules + label rows */
+.tpl-hero[data-hero="ledger"]{border-inline-start:3px solid var(--t-pri)}
+.tpl-hero[data-hero="ledger"]::after{content:''; position:absolute; inset-block-start:0; inset-inline:0; height:1px; background:var(--t-pri)}
+
+.tpl-cards{display:grid; gap:8px}
+.tpl-cards[data-cols="2"]{grid-template-columns:repeat(2,1fr)}
+.tpl-cards[data-cols="3"]{grid-template-columns:repeat(3,1fr)}
+.tpl-cards[data-cols="4"]{grid-template-columns:repeat(4,1fr)}
+.pc{border-radius:var(--s-r); overflow:hidden; background:var(--t-surface); border:1px solid var(--t-border)}
+.pc .art{height:44px; background:linear-gradient(135deg,var(--t-pri),var(--t-sec)); opacity:.55}
+.pc[data-mask="arch"] .art{border-start-start-radius:22px; border-start-end-radius:22px}
+.pc[data-mask="notch"] .art{clip-path:polygon(0 0,100% 0,100% 74%,84% 100%,0 100%)}
+.pc .lbl{padding:5px 7px; font-size:.56rem; line-height:1.3}
+.pc .price{font-weight:800; color:var(--t-pri); font-variant-numeric:tabular-nums}
+.pc .name{color:var(--t-muted); display:block}
+/* card style: overlay -> text sits on the art */
+.pc[data-card="overlay"]{position:relative; border:0}
+.pc[data-card="overlay"] .art{height:62px; opacity:.9}
+.pc[data-card="overlay"] .lbl{position:absolute; inset-inline:0; inset-block-end:0; padding:5px 7px;
+  background:linear-gradient(to top,rgb(0 0 0/.75),transparent)}
+.pc[data-card="overlay"] .price,.pc[data-card="overlay"] .name{color:#fff}
+/* card style: spec -> dense, no art, table-ish */
+.pc[data-card="spec"] .art{height:20px}
+.pc[data-card="spec"] .lbl{border-top:1px solid var(--t-border)}
+/* card style: framed */
+.pc[data-card="framed"]{border-width:2px; border-color:var(--t-sec)}
+
+.tpl-body{padding:16px 18px}
+.tpl-title{display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:6px}
+.tpl-title h3{font-size:1.15rem}
+.tpl-key{font-family:ui-monospace,monospace; font-size:.68rem; color:var(--pg-muted); direction:ltr}
+.tpl-desc{font-size:.87rem; color:var(--pg-muted); min-height:3.2em}
+.tpl-facts{display:flex; gap:6px; flex-wrap:wrap; margin-top:12px}
+.fact{font-size:.68rem; font-weight:600; border:1px solid var(--pg-border); border-radius:5px;
+  padding:2px 8px; color:var(--pg-muted); background:var(--pg-surface-2)}
+.fact.warn{color:var(--pg-danger); border-color:var(--pg-danger)}
+
+/* ============ closing ============ */
+.plan{display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:16px}
+.plan-item{background:var(--pg-surface); border:1px solid var(--pg-border); border-radius:10px; padding:18px 20px}
+.plan-item h4{font-size:.95rem; margin-bottom:8px}
+.plan-item p{font-size:.87rem; color:var(--pg-muted)}
+.plan-item .cost{display:inline-block; margin-top:10px; font-size:.72rem; font-weight:700;
+  color:var(--pg-olive); border:1px solid var(--pg-olive); border-radius:999px; padding:1px 9px}
+.ask{background:var(--pg-clay); color:#fff; border-radius:12px; padding:clamp(24px,4vw,40px);
+  margin:40px 0 72px}
+.ask h3{font-size:clamp(1.2rem,2.6vw,1.6rem); margin-bottom:12px}
+.ask p{opacity:.94; max-width:62ch}
+.ask ul{margin:16px 0 0; padding-inline-start:1.2em; opacity:.94}
+.ask li{margin-bottom:6px}
+</style>
+
+<div class="topbar">
+  <div class="wrap">
+    <strong>اختَر اتجاهاً واحداً للمنصة</strong>
+    <span>ردّ بـ «أ» أو «ب» أو «ج» — أو امزج: «ب بألوان أ»</span>
+  </div>
+</div>
+
+<header class="masthead wrap">
+  <div class="eyebrow">سوق برطعة · مراجعة تصميم</div>
+  <h1>القوالب موجودة. المشكلة أنك لا تراها.</h1>
+  <p class="lede">
+    فحصتُ المنصة بالكامل قبل أن أقترح أي شيء. النتيجة ليست «التصميم سيّئ» — بل خمسة أعطال محدّدة
+    تجعل عملاً مبنيّاً بعناية يبدو ناقصاً. أدناه: التشخيص، ثم ثلاثة اتجاهات بصرية كاملة للمنصة،
+    ثم استعراض القوالب التسعة التي لديك فعلاً.
+  </p>
+</header>
+
+<hr class="rule">
+
+<!-- ================= 1. DIAGNOSIS ================= -->
+<section class="sec wrap">
+  <div class="sec-head"><span class="sec-num">٠١</span><h2>لماذا تبدو المنصة هكذا</h2></div>
+  <p class="sec-sub">
+    هذه ليست انطباعات — كل بند مقروء من الكود. المفاجأة: عندك ٩ قوالب مكتملة و ٢٩٠٠ سطر CSS
+    مكتوبة يدوياً بنظام تصميم حقيقي (وضع ليلي، خمسة ألوان تمييز، شريط جانبي قابل للطي).
+    ما ينقص هو الطبقة التي تجعل هذا العمل مرئياً.
+  </p>
+
+  <div class="findings">
+    <div class="find" data-sev="high">
+      <div class="find-n">١</div>
+      <div>
+        <span class="tagline">الأثر الأكبر</span>
+        <h3>الخطوط لا تُحمَّل في لوحة التحكم إطلاقاً</h3>
+        <p>
+          <code>globals.css</code> يطلب <code>Zain</code> ثم <code>IBM Plex Sans Arabic</code> — لكن
+          <code>@font-face</code> معرَّف فقط داخل ملفات <code>src/templates/*.css</code>، وهذه
+          مستورَدة حصراً من <code>src/app/site/layout.tsx</code>. أي أن الواجهتين الوحيدتين اللتين
+          لا تحمّلان الخط هما لوحة الأدمن ولوحة التاجر. ما تراه فعلياً هو <b>Segoe UI / Tahoma</b> —
+          وهو أقبح ما يمكن أن يظهر به نص عربي على ويندوز. هذا وحده مسؤول عن معظم شعور «غير جميل بتاتاً».
+        </p>
+      </div>
+    </div>
+
+    <div class="find" data-sev="high">
+      <div class="find-n">٢</div>
+      <div>
+        <span class="tagline">سبب «لا أرى قوالب»</span>
+        <h3>باقة «أساسي» تُعطِّل منتقي القوالب بالكامل</h3>
+        <p>
+          في <code>dashboard/_lib/appearance.ts</code> السطر ١١٤: <code>singleTemplate: allowed.length &lt;= 1</code>،
+          و<code>prisma/seed.ts</code> يعطي باقة أساسي <code>templates_allowed: ['diwan']</code> — قالباً واحداً.
+          النتيجة: <code>&lt;fieldset disabled&gt;</code> كامل. التاجر على الباقة الأساسية لا يرى خياراً واحداً،
+          يرى حقلاً مطفأً. إن كنت تجرّب بحساب أساسي، فهذا بالضبط ما حدث.
+        </p>
+      </div>
+    </div>
+
+    <div class="find" data-sev="high">
+      <div class="find-n">٣</div>
+      <div>
+        <span class="tagline">صفر أصول</span>
+        <h3>لا توجد صورة معاينة واحدة لأي قالب</h3>
+        <p>
+          منتقي القوالب موجود في ثلاثة أماكن (إنشاء حساب، محتوى الحساب، مظهر التاجر)، ويعرض كل قالب
+          بـ<b>ثلاث نقاط ملوّنة قطرها ١٦ بكسل</b> ووصف نصّي. لا صورة، لا لقطة، لا معاينة مصغّرة.
+          مجلد <code>public/</code> لا يحتوي إلا ملفات الخطوط. حتى العمود <code>preview_path</code>
+          موجود في قاعدة البيانات — ولا يكتبه ولا يقرأه أي سطر في المستودع.
+        </p>
+      </div>
+    </div>
+
+    <div class="find" data-sev="mid">
+      <div class="find-n">٤</div>
+      <div>
+        <span class="tagline">قالبان معطوبان</span>
+        <h3>خط Rubik غير موجود على القرص</h3>
+        <p>
+          قالبا <b>«دار»</b> و<b>«جهاز»</b> يطلبان <code>/fonts/rubik/rubik-v31-arabic-regular.woff2</code>،
+          والمجلد <code>public/fonts/rubik/</code> غير موجود أصلاً → استجابة 404 → القالبان يعملان بخط
+          نظام احتياطي. الحل جاهز في المستودع: <code>scripts/fetch-rubik.mjs</code>، أمر واحد.
+        </p>
+      </div>
+    </div>
+
+    <div class="find" data-sev="mid">
+      <div class="find-n">٥</div>
+      <div>
+        <span class="tagline">سكون كامل</span>
+        <h3>صفر رسوم بيانية، صفر حركة، أيقونات في الشريط فقط</h3>
+        <p>
+          <code>insights</code> ثلاثة جداول، <code>analytics</code> جدول واحد — ولا رسم بياني واحد
+          في المنصة كلها. المؤشّر البصري الوحيد الموجود هو شريط تقدّم بارتفاع ٨ بكسل. وفي المستودع
+          بأكمله: <b>صفر <code>@keyframes</code></b> و<b>١٨ <code>transition</code></b> فقط.
+          الأيقونات موجودة لكنها محصورة في شريط التنقّل — لا أيقونة في زر أو جدول أو حالة فارغة.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ================= 2. DIRECTIONS ================= -->
+<section class="sec wrap">
+  <div class="sec-head"><span class="sec-num">٠٢</span><h2>ثلاثة اتجاهات لشكل المنصة</h2></div>
+  <p class="sec-sub">
+    كل اتجاه معروض كنموذج حيّ للوحة التاجر — الشريط الجانبي، مؤشرات الأداء، جدول الطلبات، ولوحة
+    الأكثر مبيعاً. ما تراه هو الخطوط والألوان وأنصاف الأقطار والمسافات الحقيقية للاتجاه، لا وصفاً له.
+    الثلاثة تحترم قيود <code>CLAUDE.md</code>: عربية أولاً RTL، بلا Inter/Poppins، بلا تدرّج بنفسجي،
+    بلا زجاجية، بلا إيموجي كأيقونات.
+  </p>
+
+  <!-- ---------- A ---------- -->
+  <div class="dir-block">
+    <div class="dir-bar" style="background:#A63D0B">
+      <div class="dir-letter">أ</div>
+      <div>
+        <h3>«دفتر» — سجلّ التاجر</h3>
+        <p class="pitch">هدوء ورقي وأرقام كبيرة. كأنك تفتح دفتر حسابات نظيفاً، لا تطبيقاً.</p>
+      </div>
+    </div>
+
+    <div class="mock a">
+      <nav class="rail">
+        <div class="rail-brand"><div class="rail-mark">س</div><div class="rail-name">بقالة الزيتونة</div></div>
+        <a class="on" href="#"><svg viewBox="0 0 24 24"><path d="M3 12l9-8 9 8v8a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>الرئيسية</a>
+        <a href="#"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a4 4 0 018 0v2"/></svg>الطلبات</a>
+        <a href="#"><svg viewBox="0 0 24 24"><path d="M4 7l8-4 8 4v10l-8 4-8-4z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg>المنتجات</a>
+        <a href="#"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>التقارير</a>
+        <hr>
+        <a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>المظهر</a>
+        <a href="#"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>الإعدادات</a>
+      </nav>
+      <div class="pane">
+        <div class="pane-head">
+          <div><h4>ملخّص اليوم</h4><p>الأحد ٣٠ آب — آخر تحديث قبل ٤ دقائق</p></div>
+          <button class="btn">منتج جديد</button>
+        </div>
+        <dl class="kpis">
+          <div class="kpi"><dt>مبيعات اليوم</dt><dd>١٬٢٤٠ ₪</dd><div class="delta">+١٨٪ عن أمس</div></div>
+          <div class="kpi"><dt>الطلبات</dt><dd>٢٧</dd><div class="delta">+٤</div></div>
+          <div class="kpi"><dt>متوسط الطلب</dt><dd>٤٦ ₪</dd><div class="delta">+٣ ₪</div></div>
+          <div class="kpi"><dt>الزوار</dt><dd>٣١٤</dd><div class="delta">+٦٢</div></div>
+        </dl>
+        <div class="grid2">
+          <div class="card">
+            <div class="card-h">أحدث الطلبات <em>٦ من ٢٧</em></div>
+            <table>
+              <tr><th>الزبون</th><th>القيمة</th><th>الحالة</th></tr>
+              <tr><td>محمود قبها</td><td class="num">١٤٠ ₪</td><td><span class="pill ok">مكتمل</span></td></tr>
+              <tr><td>سناء عامر</td><td class="num">٦٥ ₪</td><td><span class="pill wait">قيد التجهيز</span></td></tr>
+              <tr><td>وائل خطيب</td><td class="num">٢١٠ ₪</td><td><span class="pill ok">مكتمل</span></td></tr>
+              <tr><td>رنا زيود</td><td class="num">٣٨ ₪</td><td><span class="pill no">ملغى</span></td></tr>
+            </table>
+          </div>
+          <div class="card">
+            <div class="card-h">الأكثر مبيعاً</div>
+            <div class="bars">
+              <div class="bar-row"><span>زيت زيتون</span><div class="bar-track"><div class="bar-fill" style="width:92%"></div></div><span>٩٢</span></div>
+              <div class="bar-row"><span>زعتر بلدي</span><div class="bar-track"><div class="bar-fill" style="width:71%"></div></div><span>٧١</span></div>
+              <div class="bar-row"><span>لبنة</span><div class="bar-track"><div class="bar-fill" style="width:54%"></div></div><span>٥٤</span></div>
+              <div class="bar-row"><span>عسل</span><div class="bar-track"><div class="bar-fill" style="width:33%"></div></div><span>٣٣</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dir-meta">
+      <div><dt>الخطوط</dt><dd>IBM Plex Sans Arabic + Alexandria للعناوين</dd></div>
+      <div><dt>اللوحة</dt><dd>ورق كريمي · طين · زيتون
+        <div class="swatches"><i style="background:#FBF7F0"></i><i style="background:#A63D0B"></i><i style="background:#4F6338"></i><i style="background:#1E1A16"></i><i style="background:#E2D8C8"></i></div></dd></div>
+      <div><dt>نصف القطر</dt><dd>٤ بكسل — حادّ ومنضبط</dd></div>
+      <div><dt>الحركة</dt><dd>١٢٠ms، صعود ٨ بكسل، لا شيء يقفز</dd></div>
+    </div>
+    <div class="dir-notes">
+      <div><h4>العنصران المميّزان</h4><ul>
+        <li><b>الحافة الملوّنة</b> — شريط ٢ بكسل على بداية كل بطاقة بلون الحالة، بديل الظل تماماً.</li>
+        <li><b>الرقم الضخم</b> — قيمة المؤشر بحجم ٢rem فوقها تسمية صغيرة مباعدة الأحرف.</li>
+      </ul></div>
+      <div><h4>يناسبك إذا</h4><ul>
+        <li>تريد شيئاً <b>يبدو موثوقاً ومهنياً</b> أمام تاجر يدير مالاً.</li>
+        <li>تريد أقلّ مخاطرة — هذا امتداد للوحة ألوانك الحالية، لا قطيعة معها.</li>
+      </ul></div>
+      <div><h4>الثمن</h4><ul>
+        <li>الأرخص تنفيذاً: <b>ألوانك الحالية تبقى كما هي</b>، التغيير في الخط والإيقاع والمسافات.</li>
+        <li>قد يبقى «هادئاً زيادة» إن كنت تبحث عن وقع بصري قوي.</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <!-- ---------- B ---------- -->
+  <div class="dir-block">
+    <div class="dir-bar" style="background:#B4472A">
+      <div class="dir-letter">ب</div>
+      <div>
+        <h3>«سوق» — دفء البلد</h3>
+        <p class="pitch">ألوان أرضية غنية وزوايا مستديرة وشريط جانبي داكن. أدفأ شيء يمكن أن يظل عملياً.</p>
+      </div>
+    </div>
+
+    <div class="mock b">
+      <nav class="rail">
+        <div class="rail-brand"><div class="rail-mark">س</div><div class="rail-name">بقالة الزيتونة</div></div>
+        <a class="on" href="#"><svg viewBox="0 0 24 24"><path d="M3 12l9-8 9 8v8a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>الرئيسية</a>
+        <a href="#"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a4 4 0 018 0v2"/></svg>الطلبات</a>
+        <a href="#"><svg viewBox="0 0 24 24"><path d="M4 7l8-4 8 4v10l-8 4-8-4z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg>المنتجات</a>
+        <a href="#"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>التقارير</a>
+        <hr>
+        <a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>المظهر</a>
+        <a href="#"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>الإعدادات</a>
+      </nav>
+      <div class="pane">
+        <div class="pane-head">
+          <div><h4>ملخّص اليوم</h4><p>الأحد ٣٠ آب — آخر تحديث قبل ٤ دقائق</p></div>
+          <button class="btn">منتج جديد</button>
+        </div>
+        <dl class="kpis">
+          <div class="kpi"><dt>مبيعات اليوم</dt><dd>١٬٢٤٠ ₪</dd><div class="delta">+١٨٪ عن أمس</div></div>
+          <div class="kpi"><dt>الطلبات</dt><dd>٢٧</dd><div class="delta">+٤</div></div>
+          <div class="kpi"><dt>متوسط الطلب</dt><dd>٤٦ ₪</dd><div class="delta">+٣ ₪</div></div>
+          <div class="kpi"><dt>الزوار</dt><dd>٣١٤</dd><div class="delta">+٦٢</div></div>
+        </dl>
+        <div class="grid2">
+          <div class="card">
+            <div class="card-h">أحدث الطلبات <em>٦ من ٢٧</em></div>
+            <table>
+              <tr><th>الزبون</th><th>القيمة</th><th>الحالة</th></tr>
+              <tr><td>محمود قبها</td><td class="num">١٤٠ ₪</td><td><span class="pill ok">مكتمل</span></td></tr>
+              <tr><td>سناء عامر</td><td class="num">٦٥ ₪</td><td><span class="pill wait">قيد التجهيز</span></td></tr>
+              <tr><td>وائل خطيب</td><td class="num">٢١٠ ₪</td><td><span class="pill ok">مكتمل</span></td></tr>
+              <tr><td>رنا زيود</td><td class="num">٣٨ ₪</td><td><span class="pill no">ملغى</span></td></tr>
+            </table>
+          </div>
+          <div class="card">
+            <div class="card-h">الأكثر مبيعاً</div>
+            <div class="bars">
+              <div class="bar-row"><span>زيت زيتون</span><div class="bar-track"><div class="bar-fill" style="width:92%"></div></div><span>٩٢</span></div>
+              <div class="bar-row"><span>زعتر بلدي</span><div class="bar-track"><div class="bar-fill" style="width:71%"></div></div><span>٧١</span></div>
+              <div class="bar-row"><span>لبنة</span><div class="bar-track"><div class="bar-fill" style="width:54%"></div></div><span>٥٤</span></div>
+              <div class="bar-row"><span>عسل</span><div class="bar-track"><div class="bar-fill" style="width:33%"></div></div><span>٣٣</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dir-meta">
+      <div><dt>الخطوط</dt><dd>Zain للنص + Alexandria للعناوين</dd></div>
+      <div><dt>اللوحة</dt><dd>رمل · فخّار · زعفران · زيتون داكن
+        <div class="swatches"><i style="background:#F8F1E5"></i><i style="background:#B4472A"></i><i style="background:#D98A2B"></i><i style="background:#3A2A20"></i><i style="background:#3F5233"></i></div></dd></div>
+      <div><dt>نصف القطر</dt><dd>١٦ بكسل — ناعم ومستدير</dd></div>
+      <div><dt>الحركة</dt><dd>٢٠٠ms مرنة، البطاقات ترتفع ٢ بكسل، الأرقام تتصاعد</dd></div>
+    </div>
+    <div class="dir-notes">
+      <div><h4>العنصران المميّزان</h4><ul>
+        <li><b>الشريط العلوي المتدرّج</b> — خيط ٣ بكسل من الفخّاري إلى الزعفراني أعلى كل مؤشر.</li>
+        <li><b>الشريط الجانبي الترابي الداكن</b> — تباين قوي يجعل منطقة العمل تبدو أوسع وأنظف.</li>
+      </ul></div>
+      <div><h4>يناسبك إذا</h4><ul>
+        <li>تريد حرفياً ما طلبته: <b>جميل، جذّاب، ألوان مريحة للعين، فيه حركة</b>.</li>
+        <li>جمهورك أصحاب محلات في برطعة — لا شركات تقنية. هذا يبدو «بلدي» بلا أن يبدو رخيصاً.</li>
+      </ul></div>
+      <div><h4>الثمن</h4><ul>
+        <li>أكبر قطيعة مع الشكل الحالي — <b>تغيير لوحة الألوان بالكامل</b> ومراجعة الوضع الليلي.</li>
+        <li>الاستدارة ١٦ بكسل تحتاج ضبطاً في الجداول الكثيفة كي لا تبدو رخوة.</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <!-- ---------- C ---------- -->
+  <div class="dir-block">
+    <div class="dir-bar" style="background:#1B2A24">
+      <div class="dir-letter">ج</div>
+      <div>
+        <h3>«مرصد» — لوحة ليلية</h3>
+        <p class="pitch">خلفية داكنة وبيانات مضيئة وكثافة عالية. أداة قياس، لا صفحة تسويق.</p>
+      </div>
+    </div>
+
+    <div class="mock c">
+      <nav class="rail">
+        <div class="rail-brand"><div class="rail-mark">س</div><div class="rail-name">بقالة الزيتونة</div></div>
+        <a class="on" href="#"><svg viewBox="0 0 24 24"><path d="M3 12l9-8 9 8v8a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>الرئيسية</a>
+        <a href="#"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a4 4 0 018 0v2"/></svg>الطلبات</a>
+        <a href="#"><svg viewBox="0 0 24 24"><path d="M4 7l8-4 8 4v10l-8 4-8-4z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg>المنتجات</a>
+        <a href="#"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>التقارير</a>
+        <hr>
+        <a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>المظهر</a>
+        <a href="#"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>الإعدادات</a>
+      </nav>
+      <div class="pane">
+        <div class="pane-head">
+          <div><h4>ملخّص اليوم</h4><p>الأحد ٣٠ آب — آخر تحديث قبل ٤ دقائق</p></div>
+          <button class="btn">منتج جديد</button>
+        </div>
+        <dl class="kpis">
+          <div class="kpi"><dt>مبيعات اليوم</dt><dd>١٬٢٤٠ ₪</dd>
+            <svg class="spark" viewBox="0 0 100 26" preserveAspectRatio="none">
+              <path class="fill" d="M0 22 L14 18 L28 20 L42 11 L56 14 L70 7 L84 9 L100 3 L100 26 L0 26Z"/>
+              <path d="M0 22 L14 18 L28 20 L42 11 L56 14 L70 7 L84 9 L100 3"/></svg></div>
+          <div class="kpi"><dt>الطلبات</dt><dd>٢٧</dd>
+            <svg class="spark" viewBox="0 0 100 26" preserveAspectRatio="none">
+              <path class="fill" d="M0 16 L14 20 L28 13 L42 15 L56 8 L70 12 L84 6 L100 9 L100 26 L0 26Z"/>
+              <path d="M0 16 L14 20 L28 13 L42 15 L56 8 L70 12 L84 6 L100 9"/></svg></div>
+          <div class="kpi"><dt>متوسط الطلب</dt><dd>٤٦ ₪</dd>
+            <svg class="spark" viewBox="0 0 100 26" preserveAspectRatio="none">
+              <path class="fill" d="M0 12 L14 14 L28 10 L42 13 L56 11 L70 14 L84 10 L100 12 L100 26 L0 26Z"/>
+              <path d="M0 12 L14 14 L28 10 L42 13 L56 11 L70 14 L84 10 L100 12"/></svg></div>
+          <div class="kpi"><dt>الزوار</dt><dd>٣١٤</dd>
+            <svg class="spark" viewBox="0 0 100 26" preserveAspectRatio="none">
+              <path class="fill" d="M0 20 L14 15 L28 17 L42 9 L56 12 L70 5 L84 8 L100 4 L100 26 L0 26Z"/>
+              <path d="M0 20 L14 15 L28 17 L42 9 L56 12 L70 5 L84 8 L100 4"/></svg></div>
+        </dl>
+        <div class="grid2">
+          <div class="card">
+            <div class="card-h">أحدث الطلبات <em>٦ من ٢٧</em></div>
+            <table>
+              <tr><th>الزبون</th><th>القيمة</th><th>الحالة</th></tr>
+              <tr><td>محمود قبها</td><td class="num">١٤٠ ₪</td><td><span class="pill ok">مكتمل</span></td></tr>
+              <tr><td>سناء عامر</td><td class="num">٦٥ ₪</td><td><span class="pill wait">قيد التجهيز</span></td></tr>
+              <tr><td>وائل خطيب</td><td class="num">٢١٠ ₪</td><td><span class="pill ok">مكتمل</span></td></tr>
+              <tr><td>رنا زيود</td><td class="num">٣٨ ₪</td><td><span class="pill no">ملغى</span></td></tr>
+              <tr><td>باسل يوسف</td><td class="num">٩٥ ₪</td><td><span class="pill ok">مكتمل</span></td></tr>
+            </table>
+          </div>
+          <div class="card">
+            <div class="card-h">الأكثر مبيعاً</div>
+            <div class="bars">
+              <div class="bar-row"><span>زيت زيتون</span><div class="bar-track"><div class="bar-fill" style="width:92%"></div></div><span>٩٢</span></div>
+              <div class="bar-row"><span>زعتر بلدي</span><div class="bar-track"><div class="bar-fill" style="width:71%"></div></div><span>٧١</span></div>
+              <div class="bar-row"><span>لبنة</span><div class="bar-track"><div class="bar-fill" style="width:54%"></div></div><span>٥٤</span></div>
+              <div class="bar-row"><span>عسل</span><div class="bar-track"><div class="bar-fill" style="width:33%"></div></div><span>٣٣</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dir-meta">
+      <div><dt>الخطوط</dt><dd>IBM Plex Sans Arabic + Alexandria للعناوين</dd></div>
+      <div><dt>اللوحة</dt><dd>أخضر ليلي · نعناع · كهرماني
+        <div class="swatches"><i style="background:#0F1513"></i><i style="background:#171F1C"></i><i style="background:#5FD3A8"></i><i style="background:#E8A33D"></i><i style="background:#E6EFEA"></i></div></dd></div>
+      <div><dt>نصف القطر</dt><dd>٧ بكسل — كثافة أعلى، مسافات أضيق</dd></div>
+      <div><dt>الحركة</dt><dd>١٥٠ms، خطوط المؤشرات ترسم نفسها عند التحميل</dd></div>
+    </div>
+    <div class="dir-notes">
+      <div><h4>العنصران المميّزان</h4><ul>
+        <li><b>المؤشّر الصغير</b> — رسم بياني مصغّر داخل كل بطاقة KPI (تراه أعلاه فعلياً).</li>
+        <li><b>التوهّج المنضبط</b> — إضاءة خفيفة في زاوية البطاقة النشطة فقط، لا على كل شيء.</li>
+      </ul></div>
+      <div><h4>يناسبك إذا</h4><ul>
+        <li>تريد المنصة أن تبدو <b>أداة احترافية</b> بمستوى Vercel أو Linear، لا موقع خدمات.</li>
+        <li>لوحة الأدمن (أنت) تُستخدم ساعات طويلة — الداكن أرحم للعين ليلاً.</li>
+      </ul></div>
+      <div><h4>الثمن</h4><ul>
+        <li>الأغلى: يلزم <b>وضع فاتح كامل مكافئ</b> — التاجر يعمل نهاراً في محلّه.</li>
+        <li>«الأخضر النعناعي» قد يبدو تقنياً أكثر من اللازم لصاحب بقالة.</li>
+      </ul></div>
+    </div>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ================= 3. TEMPLATES ================= -->
+<section class="sec wrap">
+  <div class="sec-head"><span class="sec-num">٠٣</span><h2>القوالب التسعة — ما لديك فعلاً</h2></div>
+  <p class="sec-sub">
+    كل بطاقة أدناه مبنيّة بالتوكنز الحقيقية للقالب من <code>src/templates/{key}/definition.ts</code>:
+    ألوانه، خطّه، نصف قطره، عدد أعمدة شبكته، شكل بطاقة المنتج (مؤطّرة / متراكبة / مواصفات)،
+    وقناع الصورة (مربّع / قوس / قصّة). <b>هذه بالضبط المعاينات الناقصة من منتقي القوالب.</b>
+  </p>
+
+  <div class="tpl-grid">
+
+    <!-- diwan -->
+    <article class="tpl">
+      <div class="tpl-shot" style="--t-bg:#FAF3E7;--t-surface:#FFFAF0;--t-text:#2B2118;--t-pri:#C2410C;--t-sec:#5F6F3E;--t-border:#9B886D;--t-muted:#716A61;--t-on-pri:#fff;--t-font:'Zain',sans-serif;--s-r:14px;--t-pill:999px;--t-mask-r:26px">
+        <div class="tpl-nav"><span class="tpl-logo">بقالة الزيتونة</span><span class="tpl-nav-links"><span>الرئيسية</span><span>المنتجات</span><span>تواصل</span></span></div>
+        <div class="tpl-hero" data-hero="split"><h5>كل شي للبيت من عندنا</h5><p>توصيل داخل برطعة خلال ساعة</p><span class="cta">تصفّح المنتجات</span></div>
+        <div class="tpl-cards" data-cols="3">
+          <div class="pc" data-card="framed" data-mask="arch"><div class="art"></div><div class="lbl"><span class="name">زيت زيتون</span><span class="price">٨٠ ₪</span></div></div>
+          <div class="pc" data-card="framed" data-mask="arch"><div class="art"></div><div class="lbl"><span class="name">زعتر بلدي</span><span class="price">٢٥ ₪</span></div></div>
+          <div class="pc" data-card="framed" data-mask="arch"><div class="art"></div><div class="lbl"><span class="name">عسل جبلي</span><span class="price">٦٠ ₪</span></div></div>
+        </div>
+      </div>
+      <div class="tpl-body">
+        <div class="tpl-title"><h3>ديوان</h3><span class="tpl-key">diwan</span></div>
+        <p class="tpl-desc">دافئ وعائلي، مناسب للبقالات والمحلات العامة.</p>
+        <div class="tpl-facts"><span class="fact">Zain</span><span class="fact">فاتح</span><span class="fact">٣ أعمدة</span><span class="fact">بطاقة مؤطّرة</span><span class="fact">قناع قوس</span></div>
+      </div>
+    </article>
+
+    <!-- neon-souq -->
+    <article class="tpl">
+      <div class="tpl-shot" style="--t-bg:#0F0B10;--t-surface:#1A151C;--t-text:#F7EDF1;--t-pri:#E11D48;--t-sec:#F4C95D;--t-border:#675E66;--t-muted:#968E93;--t-on-pri:#fff;--t-font:'Alexandria',sans-serif;--s-r:4px;--t-pill:2px;--t-track:-.03em">
+        <div class="tpl-nav"><span class="tpl-logo">بيت القماش</span><span class="tpl-nav-links"><span>الرئيسية</span><span>الجديد</span><span>تواصل</span></span></div>
+        <div class="tpl-hero" data-hero="stage"><h5>موسم جديد</h5><p>أزياء وإكسسوارات ٢٠٢٦</p><span class="cta">اكتشف الآن</span></div>
+        <div class="tpl-cards" data-cols="2">
+          <div class="pc" data-card="overlay" data-mask="notch"><div class="art"></div><div class="lbl"><span class="name">جاكيت جينز</span><span class="price">٣٢٠ ₪</span></div></div>
+          <div class="pc" data-card="overlay" data-mask="notch"><div class="art"></div><div class="lbl"><span class="name">حقيبة جلد</span><span class="price">٤٥٠ ₪</span></div></div>
+        </div>
+      </div>
+      <div class="tpl-body">
+        <div class="tpl-title"><h3>سوق نيون</h3><span class="tpl-key">neon-souq</span></div>
+        <p class="tpl-desc">جريء وعصري، مناسب للأزياء والإكسسوارات.</p>
+        <div class="tpl-facts"><span class="fact">Alexandria</span><span class="fact">داكن</span><span class="fact">عمودان</span><span class="fact">بطاقة متراكبة</span><span class="fact">قناع قصّة</span></div>
+      </div>
+    </article>
+
+    <!-- warsheh -->
+    <article class="tpl">
+      <div class="tpl-shot" style="--t-bg:#171B21;--t-surface:#212832;--t-text:#EDEFF2;--t-pri:#F59E0B;--t-sec:#8A93A3;--t-border:#62676E;--t-muted:#9EA0A4;--t-on-pri:#000;--t-font:'IBM Plex Sans Arabic',sans-serif;--s-r:0;--t-pill:0">
+        <div class="tpl-nav"><span class="tpl-logo">أنوار للكهرباء</span><span class="tpl-nav-links"><span>الكتالوج</span><span>الأسعار</span><span>تواصل</span></span></div>
+        <div class="tpl-hero" data-hero="ledger"><h5>مواد ومعدّات بأسعار الجملة</h5><p>أكثر من ٤٠٠ صنف متوفّر</p><span class="cta">اطلب عرض سعر</span></div>
+        <div class="tpl-cards" data-cols="4">
+          <div class="pc" data-card="spec" data-mask="square"><div class="art"></div><div class="lbl"><span class="name">كيبل ٢٫٥</span><span class="price">٤ ₪</span></div></div>
+          <div class="pc" data-card="spec" data-mask="square"><div class="art"></div><div class="lbl"><span class="name">قاطع ١٦A</span><span class="price">٢٢ ₪</span></div></div>
+          <div class="pc" data-card="spec" data-mask="square"><div class="art"></div><div class="lbl"><span class="name">لمبة LED</span><span class="price">١٢ ₪</span></div></div>
+          <div class="pc" data-card="spec" data-mask="square"><div class="art"></div><div class="lbl"><span class="name">علبة توزيع</span><span class="price">٣٥ ₪</span></div></div>
+        </div>
+      </div>
+      <div class="tpl-body">
+        <div class="tpl-title"><h3>ورشة</h3><span class="tpl-key">warsheh</span></div>
+        <p class="tpl-desc">صارم وعملي، مناسب لمواد البناء والمعدّات.</p>
+        <div class="tpl-facts"><span class="fact">IBM Plex Arabic</span><span class="fact">داكن</span><span class="fact">٤ أعمدة</span><span class="fact">بطاقة مواصفات</span><span class="fact">زوايا صفر</span></div>
+      </div>
+    </article>
+
+    <!-- bayt -->
+    <article class="tpl">
+      <div class="tpl-shot" style="--t-bg:#221913;--t-surface:#30241B;--t-text:#F6EDE1;--t-pri:#E08A5F;--t-sec:#CDBBA0;--t-border:#71655B;--t-muted:#A69E95;--t-on-pri:#000;--t-font:'Alexandria',sans-serif;--s-r:4px;--t-pill:999px;--t-track:-.015em">
+        <div class="tpl-nav"><span class="tpl-logo">مفروشات السلام</span><span class="tpl-nav-links"><span>الرئيسية</span><span>المجموعات</span><span>تواصل</span></span></div>
+        <div class="tpl-hero" data-hero="split"><h5>بيت يشبهك</h5><p>مفروشات وأدوات منزلية مختارة</p><span class="cta">شاهد المجموعة</span></div>
+        <div class="tpl-cards" data-cols="2">
+          <div class="pc" data-card="overlay" data-mask="square"><div class="art"></div><div class="lbl"><span class="name">طقم سفرة</span><span class="price">٧٤٠ ₪</span></div></div>
+          <div class="pc" data-card="overlay" data-mask="square"><div class="art"></div><div class="lbl"><span class="name">سجادة صوف</span><span class="price">٥٢٠ ₪</span></div></div>
+        </div>
+      </div>
+      <div class="tpl-body">
+        <div class="tpl-title"><h3>بيت</h3><span class="tpl-key">bayt</span></div>
+        <p class="tpl-desc">هادي وأنيق بصور كبيرة، مناسب للألبسة وأدوات البيت.</p>
+        <div class="tpl-facts"><span class="fact">Alexandria</span><span class="fact">داكن</span><span class="fact">عمودان</span><span class="fact">بطاقة متراكبة</span><span class="fact warn">غير مستخدم في أي بيانات تجريبية</span></div>
+      </div>
+    </article>
+
+    <!-- raff -->
+    <article class="tpl">
+      <div class="tpl-shot" style="--t-bg:#EDEFEB;--t-surface:#FFFFFF;--t-text:#141D18;--t-pri:#116149;--t-sec:#A3320F;--t-border:#838980;--t-muted:#656B67;--t-on-pri:#fff;--t-font:'Zain',sans-serif;--s-r:2px;--t-pill:2px">
+        <div class="tpl-nav"><span class="tpl-logo">صيدلية البلد</span><span class="tpl-nav-links"><span>الأقسام</span><span>العروض</span><span>تواصل</span></span></div>
+        <div class="tpl-hero" data-hero="stage"><h5>كل الأسعار واضحة</h5><p>أكثر من ٦٠٠ صنف على الرفّ</p><span class="cta">ابحث في الأصناف</span></div>
+        <div class="tpl-cards" data-cols="4">
+          <div class="pc" data-card="spec" data-mask="square"><div class="art"></div><div class="lbl"><span class="name">فيتامين د</span><span class="price">٤٥ ₪</span></div></div>
+          <div class="pc" data-card="spec" data-mask="square"><div class="art"></div><div class="lbl"><span class="name">شراب سعال</span><span class="price">٢٨ ₪</span></div></div>
+          <div class="pc" data-card="spec" data-mask="square"><div class="art"></div><div class="lbl"><span class="name">كمّامات</span><span class="price">١٥ ₪</span></div></div>
+          <div class="pc" data-card="spec" data-mask="square"><div class="art"></div><div class="lbl"><span class="name">مقياس حرارة</span><span class="price">٦٠ ₪</span></div></div>
+        </div>
+      </div>
+      <div class="tpl-body">
+        <div class="tpl-title"><h3>رفّ</h3><span class="tpl-key">raff</span></div>
+        <p class="tpl-desc">مرتّب وكثيف يبيّن الأسعار، مناسب للبقالات والصيدليات ومحلات العدد.</p>
+        <div class="tpl-facts"><span class="fact">Zain</span><span class="fact">فاتح</span><span class="fact">٤ أعمدة</span><span class="fact">أعلى كثافة</span><span class="fact warn">غير مستخدم في أي بيانات تجريبية</span></div>
+      </div>
+    </article>
+
+    <!-- aldar -->
+    <article class="tpl">
+      <div class="tpl-shot" style="--t-bg:#FBF4EC;--t-surface:#FFFDFB;--t-text:#3B2A21;--t-pri:#AD532C;--t-sec:#637357;--t-border:#9D8973;--t-muted:#766B63;--t-on-pri:#fff;--t-font:'Rubik',sans-serif;--s-r:14px;--t-pill:999px;--t-mask-r:26px">
+        <div class="tpl-nav"><span class="tpl-logo">دار الأناقة</span><span class="tpl-nav-links"><span>الرئيسية</span><span>المجموعات</span><span>تواصل</span></span></div>
+        <div class="tpl-hero" data-hero="split"><h5>لمسة دافئة لبيتك</h5><p>ألبسة وأغراض بيت مختارة بعناية</p><span class="cta">تصفّح</span></div>
+        <div class="tpl-cards" data-cols="3">
+          <div class="pc" data-card="overlay" data-mask="arch"><div class="art"></div><div class="lbl"><span class="name">عباية</span><span class="price">٢٩٠ ₪</span></div></div>
+          <div class="pc" data-card="overlay" data-mask="arch"><div class="art"></div><div class="lbl"><span class="name">شال صوف</span><span class="price">١٢٠ ₪</span></div></div>
+          <div class="pc" data-card="overlay" data-mask="arch"><div class="art"></div><div class="lbl"><span class="name">مزهرية</span><span class="price">٨٥ ₪</span></div></div>
+        </div>
+      </div>
+      <div class="tpl-body">
+        <div class="tpl-title"><h3>دار</h3><span class="tpl-key">aldar</span></div>
+        <p class="tpl-desc">دافئ ومطمئن بلمسة مرسومة، مناسب للألبسة وأغراض البيت.</p>
+        <div class="tpl-facts"><span class="fact">Rubik</span><span class="fact">فاتح</span><span class="fact">٣ أعمدة</span><span class="fact warn">خط Rubik مفقود من القرص</span></div>
+      </div>
+    </article>
+
+    <!-- matbakh -->
+    <article class="tpl">
+      <div class="tpl-shot" style="--t-bg:#FFF7EE;--t-surface:#FFFFFF;--t-text:#33241C;--t-pri:#A62B1F;--t-sec:#57683B;--t-border:#A18A73;--t-muted:#786E66;--t-on-pri:#fff;--t-font:'Zain',sans-serif;--s-r:10px;--t-pill:999px">
+        <div class="tpl-nav"><span class="tpl-logo">حلويات أبو راتب</span><span class="tpl-nav-links"><span>القائمة</span><span>العروض</span><span>اطلب</span></span></div>
+        <div class="tpl-hero" data-hero="ledger"><h5>طازج كل يوم من الفرن</h5><p>كنافة، بقلاوة، ومعمول بالتمر</p><span class="cta">اطلب على واتساب</span></div>
+        <div class="tpl-cards" data-cols="3">
+          <div class="pc" data-card="framed" data-mask="notch"><div class="art"></div><div class="lbl"><span class="name">كنافة نابلسية</span><span class="price">٥٥ ₪</span></div></div>
+          <div class="pc" data-card="framed" data-mask="notch"><div class="art"></div><div class="lbl"><span class="name">بقلاوة</span><span class="price">٧٠ ₪</span></div></div>
+          <div class="pc" data-card="framed" data-mask="notch"><div class="art"></div><div class="lbl"><span class="name">معمول</span><span class="price">٤٠ ₪</span></div></div>
+        </div>
+      </div>
+      <div class="tpl-body">
+        <div class="tpl-title"><h3>مطبخ</h3><span class="tpl-key">matbakh</span></div>
+        <p class="tpl-desc">شهي ومباشر يليق بقوائم الطعام، مناسب للمطاعم والمخابز والحلويات.</p>
+        <div class="tpl-facts"><span class="fact">Zain</span><span class="fact">فاتح</span><span class="fact">٣ أعمدة</span><span class="fact">هيرو سجلّ</span><span class="fact warn">غير مستخدم في أي بيانات تجريبية</span></div>
+      </div>
+    </article>
+
+    <!-- mawid -->
+    <article class="tpl">
+      <div class="tpl-shot" style="--t-bg:#F2F6F5;--t-surface:#FFFFFF;--t-text:#182826;--t-pri:#0E6B5B;--t-sec:#8A4A67;--t-border:#7F8E8C;--t-muted:#656F6D;--t-on-pri:#fff;--t-font:'IBM Plex Sans Arabic',sans-serif;--s-r:12px;--t-pill:999px;--t-mask-r:20px">
+        <div class="tpl-nav"><span class="tpl-logo">عيادة الشفاء</span><span class="tpl-nav-links"><span>الخدمات</span><span>المواعيد</span><span>تواصل</span></span></div>
+        <div class="tpl-hero" data-hero="ledger"><h5>احجز موعدك بدقيقة</h5><p>خدمات وأوقات دوام واضحة</p><span class="cta">احجز الآن</span></div>
+        <div class="tpl-cards" data-cols="3">
+          <div class="pc" data-card="overlay" data-mask="arch"><div class="art"></div><div class="lbl"><span class="name">فحص عام</span><span class="price">١٥٠ ₪</span></div></div>
+          <div class="pc" data-card="overlay" data-mask="arch"><div class="art"></div><div class="lbl"><span class="name">استشارة</span><span class="price">١٠٠ ₪</span></div></div>
+          <div class="pc" data-card="overlay" data-mask="arch"><div class="art"></div><div class="lbl"><span class="name">متابعة</span><span class="price">٨٠ ₪</span></div></div>
+        </div>
+      </div>
+      <div class="tpl-body">
+        <div class="tpl-title"><h3>موعد</h3><span class="tpl-key">mawid</span></div>
+        <p class="tpl-desc">هادئ ومرتّب يقدّم الخدمات والمواعيد، مناسب للصالونات والعيادات والورش.</p>
+        <div class="tpl-facts"><span class="fact">IBM Plex Arabic</span><span class="fact">فاتح</span><span class="fact">٣ أعمدة</span><span class="fact">أضيق عرض</span><span class="fact warn">غير مستخدم في أي بيانات تجريبية</span></div>
+      </div>
+    </article>
+
+    <!-- jihaz -->
+    <article class="tpl">
+      <div class="tpl-shot" style="--t-bg:#0D1420;--t-surface:#18202E;--t-text:#E7EDF6;--t-pri:#58B7E6;--t-sec:#8FD0A9;--t-border:#5C6675;--t-muted:#9197A1;--t-on-pri:#000;--t-font:'Rubik',sans-serif;--s-r:6px;--t-pill:6px">
+        <div class="tpl-nav"><span class="tpl-logo">الشرق موبايل</span><span class="tpl-nav-links"><span>الأجهزة</span><span>المقارنة</span><span>تواصل</span></span></div>
+        <div class="tpl-hero" data-hero="stage"><h5>أجهزة بمواصفات واضحة</h5><p>قارن قبل ما تشتري</p><span class="cta">ابدأ المقارنة</span></div>
+        <div class="tpl-cards" data-cols="4">
+          <div class="pc" data-card="spec" data-mask="notch"><div class="art"></div><div class="lbl"><span class="name">هاتف ١٢٨GB</span><span class="price">١٤٥٠ ₪</span></div></div>
+          <div class="pc" data-card="spec" data-mask="notch"><div class="art"></div><div class="lbl"><span class="name">سمّاعات</span><span class="price">٣٢٠ ₪</span></div></div>
+          <div class="pc" data-card="spec" data-mask="notch"><div class="art"></div><div class="lbl"><span class="name">شاحن ٦٥W</span><span class="price">١٢٠ ₪</span></div></div>
+          <div class="pc" data-card="spec" data-mask="notch"><div class="art"></div><div class="lbl"><span class="name">ساعة ذكية</span><span class="price">٦٩٠ ₪</span></div></div>
+        </div>
+      </div>
+      <div class="tpl-body">
+        <div class="tpl-title"><h3>جهاز</h3><span class="tpl-key">jihaz</span></div>
+        <p class="tpl-desc">تقني وواضح يقارن المواصفات، مناسب للإلكترونيات والأجهزة والهواتف.</p>
+        <div class="tpl-facts"><span class="fact">Rubik</span><span class="fact">داكن</span><span class="fact">٤ أعمدة</span><span class="fact warn">خط Rubik مفقود من القرص</span></div>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ================= 4. WHAT CHANGES ================= -->
+<section class="sec wrap">
+  <div class="sec-head"><span class="sec-num">٠٤</span><h2>ما الذي سيتغيّر فعلياً</h2></div>
+  <p class="sec-sub">
+    مهما كان الاتجاه الذي تختاره، هناك أربعة إصلاحات لا علاقة لها بالذوق — إصلاحات لأعطال.
+    أنصح بتنفيذها أولاً لأن أثرها البصري أكبر من أي إعادة تصميم، وكلفتها أقل بكثير.
+  </p>
+  <div class="plan">
+    <div class="plan-item">
+      <h4>١ · تحميل الخطوط في لوحة التحكم</h4>
+      <p>نقل تعريفات <code>@font-face</code> إلى ملف مشترك يستورده الجذر، أو استخدام <code>next/font/local</code>. لحظة واحدة تحوّل شكل كل صفحة في المنصة.</p>
+      <span class="cost">أقل من ساعة · أكبر أثر</span>
+    </div>
+    <div class="plan-item">
+      <h4>٢ · معاينات حقيقية للقوالب</h4>
+      <p>لقطة ٤:٣ لكل قالب في <code>public/templates/</code> وتفعيل عمود <code>preview_path</code> المهجور. المنتقي يصبح شبكة صور بدل نقاط ملوّنة.</p>
+      <span class="cost">نصف يوم · يحلّ «لا أرى قوالب»</span>
+    </div>
+    <div class="plan-item">
+      <h4>٣ · جلب خط Rubik</h4>
+      <p>تشغيل <code>scripts/fetch-rubik.mjs</code> مرة واحدة. قالبا «دار» و«جهاز» يعملان بخطّهما الصحيح فوراً.</p>
+      <span class="cost">دقيقة واحدة</span>
+    </div>
+    <div class="plan-item">
+      <h4>٤ · قرار الباقة الأساسية</h4>
+      <p>حالياً «أساسي» = قالب واحد وحقل مطفأ. الاقتراح: امنحها ٣ قوالب، أو أظهر البقية مقفلة بشارة «متوفّر في باقة متجر» — قفل مرئي يبيع، وحقل مطفأ لا يبيع.</p>
+      <span class="cost">قرار منتج · ساعة تنفيذ</span>
+    </div>
+  </div>
+
+  <div class="ask">
+    <h3>ردّك المطلوب</h3>
+    <p>
+      اختر حرفاً واحداً للمنصة — <b>أ (دفتر)</b> أو <b>ب (سوق)</b> أو <b>ج (مرصد)</b> — والمزج مرحّب به
+      («ب لكن بألوان أ»، أو «ج للأدمن وأ للتاجر»).
+    </p>
+    <ul>
+      <li>بعد اختيارك أكتب <code>DESIGN_BRIEF.md</code> بقرارات محدّدة قابلة للفحص، ثم أنفّذه توكنز أولاً.</li>
+      <li>قل لي أيضاً إن أردت البدء بالإصلاحات الأربعة أعلاه قبل إعادة التصميم — أنصح بذلك بشدّة.</li>
+      <li>وإن أردت تعديل قالب أو قالبين من التسعة (لا المنصة)، سمِّهما وسأعيد تصميمهما وحدهما.</li>
+    </ul>
+  </div>
+</section>

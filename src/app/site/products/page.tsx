@@ -2,7 +2,11 @@ import type { CSSProperties } from 'react';
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import { getEnv } from '@/env';
+import { queryTagFacets } from '@/server/catalogue';
+import { PUBLIC_ACTOR, tenantDb } from '@/server/db';
+import { canBool } from '@/server/entitlements';
 import { t } from '@/shared/i18n';
+import { beaconDecision } from '@/server/analytics';
 import { analyticsDecision, pluralCount, ProductCard, StorefrontShell } from '@/templates';
 import { CONSENT_COOKIE, readConsentCookie } from '../_data/consent';
 import { loadStorefrontContext } from '../_data/context';
@@ -34,7 +38,12 @@ const PAGE_SIZE = 24;
  * the truth is what makes the compiler force the normalisation below.
  */
 interface PageProps {
-  searchParams: Promise<{ category?: string | string[]; page?: string | string[] }>;
+  searchParams: Promise<{
+    category?: string | string[];
+    /** Phase 9. Same shape and same reasoning as `category` — see above. */
+    tag?: string | string[];
+    page?: string | string[];
+  }>;
 }
 
 /** The first value of a possibly-repeated parameter, trimmed to nothing-or-something. */
@@ -62,7 +71,9 @@ function pageNumber(value: string | string[] | undefined): number {
 export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
   const surface = await requireStorefront();
   const context = await loadStorefrontContext(surface);
-  const category = firstParam((await searchParams).category);
+  const params = await searchParams;
+  const category = firstParam(params.category);
+  const tag = firstParam(params.tag);
 
   const categoryName = category
     ? context.categories.find((entry) => entry.key === category)?.name
@@ -72,6 +83,14 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
     context,
     title: categoryName ?? t('storefront', 'products.all'),
     path: category ? `/products?category=${encodeURIComponent(category)}` : '/products',
+    /**
+     * A TAG-FILTERED page is noindex. Not because tags are secret — the links are right there for a
+     * crawler to follow — but because ten tags across eight categories is eighty URLs whose content
+     * is a re-slice of one catalogue, and letting a small shop's whole crawl budget go on them is how
+     * the pages that matter stop being visited. The `path` above deliberately stays the CANONICAL
+     * category URL for the same reason.
+     */
+    noindex: tag !== undefined,
     suspended: surface.isSuspended,
   });
 }
@@ -90,14 +109,34 @@ export default async function ProductsPage({ searchParams }: PageProps) {
   // answer than the whole catalogue.
   const activeCategory = known ? category : undefined;
 
+  /**
+   * The tag filter, resolved the same way the category filter is — and validated the same way.
+   *
+   * `product_tags` is asked PER REQUEST rather than travelling on the cached storefront context,
+   * matching what `flags.cart` and `flags.payments` already do: an admin revoking the feature closes
+   * the filter row on the very next page view instead of five minutes later. When the feature is off
+   * the facets are not even read, so a `?tag=` in a stale link is simply ignored.
+   */
+  const tagsEnabled = await canBool(context.tenantId, 'product_tags');
+  const facets = tagsEnabled
+    ? await queryTagFacets(tenantDb(context.tenantId, PUBLIC_ACTOR), context.tenantId)
+    : [];
+
+  const requestedTag = firstParam(params.tag);
+  // Checked against the FACETS, which are the tags that actually exist on published products. An
+  // arbitrary `?tag=` string would otherwise be a query the visitor composes — and, echoed back
+  // into the heading, a place to put text of their choosing on someone else's shop.
+  const activeTag = facets.some((facet) => facet.tag === requestedTag) ? requestedTag : undefined;
+
   const page = pageNumber(params.page);
   const [products, total] = await Promise.all([
     queryProducts(context.tenantId, {
       categoryKey: activeCategory,
+      tag: activeTag,
       take: PAGE_SIZE,
       skip: (page - 1) * PAGE_SIZE,
     }),
-    countProducts(context.tenantId, activeCategory),
+    countProducts(context.tenantId, activeCategory, activeTag),
   ]);
 
   const consent = readConsentCookie((await cookies()).get(CONSENT_COOKIE)?.value);
@@ -119,6 +158,18 @@ export default async function ProductsPage({ searchParams }: PageProps) {
       context={context}
       analytics={analytics}
       consentAnswered={consent.answered}
+      /*
+        Phase 9. Both gates — the feature and the consent cookie — resolved by the page, because
+        only the page holds the cookie. `path` is the route's own shape rather than
+        `location.pathname`, which would report the proxy's internal `/site/…` rewrite.
+      */
+      beacon={{
+        enabled: beaconDecision({
+          featureEnabled: context.flags.visitorAnalytics,
+          consentGranted: consent.granted,
+        }).enabled,
+        path: '/products',
+      }}
       current="products"
     >
       <section className="sf-block">
@@ -153,9 +204,43 @@ export default async function ProductsPage({ searchParams }: PageProps) {
             </nav>
           ) : null}
 
+          {/*
+            The tag row is PLAIN LINKS, exactly like the category row above, and the file's own
+            opening comment is the reason: "on Fast 3G a filter that needs a bundle to work is a
+            filter that does not work". Each chip is a real URL — shareable, bookmarkable,
+            crawlable, and working with the back button — which a click handler over a chip
+            component would have taken away in exchange for nothing.
+
+            Both filters compose: a tag chip keeps the active category, so «تنزيلات» inside
+            «فساتين» is one navigation rather than a dead end.
+          */}
+          {facets.length > 0 ? (
+            <nav className="sf-chips" aria-label={t('catalogue', 'tags.filterLabel')}>
+              <a
+                className="sf-btn sf-btn--ghost"
+                href={buildHref(activeCategory, undefined, 1)}
+                aria-current={activeTag ? undefined : 'page'}
+              >
+                {t('catalogue', 'tags.filterAll')}
+              </a>
+              {facets.map((facet) => (
+                <a
+                  key={facet.tag}
+                  className="sf-btn sf-btn--ghost"
+                  href={buildHref(activeCategory, facet.tag, 1)}
+                  aria-current={activeTag === facet.tag ? 'page' : undefined}
+                >
+                  {facet.tag}
+                </a>
+              ))}
+            </nav>
+          ) : null}
+
           {products.length === 0 ? (
             <p className="sf-note" style={{ marginBlockStart: 'var(--t-space-xl)' }}>
-              {t('storefront', activeCategory ? 'products.emptyCategory' : 'products.empty')}
+              {activeTag
+                ? t('catalogue', 'tags.empty')
+                : t('storefront', activeCategory ? 'products.emptyCategory' : 'products.empty')}
             </p>
           ) : (
             <div
@@ -168,6 +253,7 @@ export default async function ProductsPage({ searchParams }: PageProps) {
                   product={product}
                   template={context.template}
                   priority={index < columns}
+                  cart={{ tenantId: context.tenantId, enabled: context.flags.cart }}
                 />
               ))}
             </div>
@@ -186,7 +272,7 @@ export default async function ProductsPage({ searchParams }: PageProps) {
                   key={number}
                   className="sf-btn sf-btn--ghost"
                   aria-current={number === page ? 'page' : undefined}
-                  href={buildHref(activeCategory, number)}
+                  href={buildHref(activeCategory, activeTag, number)}
                 >
                   {number}
                 </a>
@@ -199,9 +285,22 @@ export default async function ProductsPage({ searchParams }: PageProps) {
   );
 }
 
-function buildHref(category: string | undefined, page: number): string {
+/**
+ * Every link on this page goes through here, so the two filters and the page number can never fall
+ * out of step.
+ *
+ * `page` is dropped when it is 1 and the filters are dropped when absent, which keeps the canonical
+ * URL of the unfiltered first page exactly `/products` — the address the sitemap, the header nav and
+ * `generateMetadata` all already use.
+ */
+function buildHref(
+  category: string | undefined,
+  tag: string | undefined,
+  page: number,
+): string {
   const params = new URLSearchParams();
   if (category) params.set('category', category);
+  if (tag) params.set('tag', tag);
   if (page > 1) params.set('page', String(page));
   const query = params.toString();
   return query ? `/products?${query}` : '/products';

@@ -19,6 +19,30 @@ export const SECTION_ANCHORS: Record<SectionType, string> = {
   contact_whatsapp: 'contact',
   map: 'location',
   custom_html: 'more',
+
+  // --- Phase 9. Eight more, and the naming rule is the one above: an anchor is a PROMISE, so it
+  // reads like a place in the shop rather than like the section type that happens to render it.
+  //
+  // These are also the allow-list the analytics beacon validates a reported section against
+  // (src/server/analytics/ingest.ts). That is the second reason they are a closed record and not a
+  // derived string: an open target field written into a daily rollup is unbounded cardinality and a
+  // stored-XSS vector in the merchant's own report.
+  //
+  // `trust` and `stats` were `why-us` and `story` when this list first landed. Changed at integration
+  // because the anchors are ALSO the keys of the section-dwell report's label map — `SECTION_LABELS`
+  // in src/app/dashboard/insights/page.tsx and `report.sectionNames.*` in messages/ar/insights.json
+  // are both keyed on `trust` and `stats`, and an unlabelled anchor is rendered as itself. Two Latin
+  // tokens on an Arabic screen is a language-policy failure, and both of those files belong to Track
+  // C, so the one file that could move was this one. The no-hyphen style is kept for the reason the
+  // rest of the list keeps it: `anchorFor()` suffixes a repeat with `-2`.
+  banner_slider: 'banners',
+  trust_badges: 'trust',
+  opening_hours: 'hours',
+  store_stats: 'stats',
+  new_arrivals: 'new',
+  best_sellers: 'bestsellers',
+  related_products: 'related',
+  search_bar: 'search',
 };
 
 /**

@@ -1,5 +1,5 @@
 /*
- * Storefront structure, shared by all three templates.
+ * Storefront structure, shared by all five templates.
  *
  * Every value here comes from a `--t-*` token, so a template changes its whole personality by
  * shipping a different token set plus its own overrides file — and a tenant changes its colours
@@ -9,6 +9,14 @@
  * `padding-inline`, `margin-block` and `text-align: start` are the vocabulary, which is why the
  * same stylesheet would work in an LTR locale without a single override — and why nothing
  * flipped the wrong way when Arabic went in.
+ *
+ * NO TEMPLATE SHEET IS IMPORTED FROM HERE. `src/app/site/layout.tsx` imports one stylesheet per
+ * template (all five) into a single bundle and explains why: that list is the ONE place that says
+ * which templates a storefront can render, and a registered template whose stylesheet nobody
+ * imports is not a type error — it is an unstyled shop, discovered by a merchant. The two Phase 9
+ * sheets (bayt, raff) briefly arrived through an `@import` here while Track F could not touch
+ * `src/app/**`; the layout import landed at the merge, and the pre-launch cleanup (2026-08-20)
+ * deleted the now-duplicate `@import`s so the same bytes stop shipping twice.
  */
 
 /* ---------------------------------------------------------------- shell -- */
@@ -320,6 +328,22 @@
   padding-inline: var(--t-space-sm);
 }
 
+/*
+  The FILLED button, named. `src/app/site/not-found.tsx` already ships `class="sf-btn sf-btn--solid"`
+  and there was no such rule, so the modifier was dead markup that happened to look right because
+  `.sf-btn` is filled by default.
+
+  Declaring it costs three lines and buys two things: the 404 page's intent becomes readable rather
+  than accidental, and a template that makes its default button quieter — a hairline, a ghost — has a
+  name for "the emphatic one" instead of having to reach past `--ghost` with a longer selector. None
+  of the five needs that today, which is why the rule only restates the default.
+*/
+.sf-btn--solid {
+  background: var(--t-primary);
+  color: var(--t-on-primary);
+  border-color: var(--t-primary);
+}
+
 .sf-btn[aria-disabled='true'],
 .sf-btn:disabled {
   opacity: 0.55;
@@ -369,12 +393,22 @@
   display: grid;
   place-items: center;
   block-size: 100%;
-  background:
-    repeating-linear-gradient(
-      135deg,
-      var(--t-surface-alt) 0 10px,
-      var(--t-surface) 10px 20px
-    );
+  /*
+    A HAIRLINE HATCH IN `--t-border`, not two bands of surface tones.
+
+    It used to alternate `--t-surface-alt` and `--t-surface`, and on a light palette those two are
+    derived from each other: `surfaceAlt = mix(surface, text, 0.05)`, which on ديوان is #F4F2ED
+    against #FFFDF8 and on رفّ is #F3F4F3 against #FFFFFF — 1.03:1. The "deliberate no-image state"
+    was therefore invisible on every light template, so a merchant's first day looked like a blank
+    box rather than like a decision, which is the one thing the state exists to avoid.
+
+    `--t-border` is the only token guaranteed to be visible against the page: the guard holds it to
+    3:1 as non-text UI. At 1px every 9px it reads as a texture rather than as stripes, which is why
+    the contrast is safe to spend here — a 10px band of a 3:1 colour would be loud enough to fight
+    the product photograph that replaces it.
+  */
+  background: repeating-linear-gradient(135deg, var(--t-border) 0 1px, transparent 1px 9px)
+    var(--t-surface-alt);
   color: var(--t-text-muted);
 }
 
@@ -515,6 +549,19 @@
   flex-wrap: wrap;
 }
 
+/* Phase 8: the add-to-cart control, a SIBLING of `.sf-card__link` (see product-card.tsx). */
+.sf-card__cart {
+  padding: 0 var(--t-space-md) var(--t-space-md);
+}
+
+.sf-card__cart .sf-order {
+  gap: var(--t-space-sm);
+}
+
+.sf-card__cart .sf-btn {
+  inline-size: 100%;
+}
+
 .sf-price {
   font-size: var(--t-text-lg);
   font-weight: var(--t-weight-display);
@@ -610,6 +657,130 @@
 
 .sf-rail > li {
   scroll-snap-align: start;
+}
+
+/*
+  Phase 9 — the banner board's rail. ONE SLIDE PER VIEW.
+
+  `.sf-rail` above is the category rail's `minmax(14rem, 1fr)`, which lays all six banners out side
+  by side; a banner is full-bleed. This is the only rule in this file whose absence turns a component
+  into a different component — `banner-carousel.tsx` carried it as an inline style until it landed,
+  with a comment saying so, because the alternative is a carousel that is not one.
+
+  Everything else the new blocks want — `.sf-carousel`, `.sf-banner*`, `.sf-trust*`, `.sf-hours`,
+  `.sf-stats`, `.sf-catnav` and the four `.sf-block--*` modifiers — is DESIGN, and Track F's. Each
+  degrades to readable stacked markup without a rule, and `MediaImage` already holds the CLS budget
+  with its reserved box.
+*/
+.sf-rail--banners {
+  grid-auto-columns: 100%;
+}
+
+/*
+  Phase 9 — the text strips.
+
+  `.sf-strip` deliberately sets NO `background` and NO `color`. Both arrive as an inline token pair
+  from the loader (`stripStyle`, whose four pairs are proved against the guarded tokens in
+  `src/server/content/strips.ts`), and a colour here would either lose to the inline style — which
+  reads as a rule that does not work — or win with `!important`, which would silently discard the
+  merchant's choice. Padding, type scale and link colour only.
+*/
+.sf-strip {
+  padding-block: var(--t-space-sm);
+}
+
+.sf-strip__inner {
+  display: flex;
+  justify-content: center;
+  gap: var(--t-space-sm);
+}
+
+.sf-strip__text {
+  margin: 0;
+  font-size: var(--t-text-sm);
+  text-align: center;
+}
+
+.sf-strip a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+/*
+  Phase 9 — the search box. One row on desktop, stacked on a narrow phone: an Arabic submit label
+  beside a full-width input is what makes the input too short to read a product name in.
+
+  `min-inline-size: 0` is not decoration. A flex item keeps an intrinsic minimum width by default, so
+  without it the input refuses to shrink and pushes the submit button off a 320px viewport.
+*/
+.sf-search {
+  margin-block-start: var(--t-space-lg);
+}
+
+.sf-search__label {
+  display: block;
+  margin-block-end: var(--t-space-xs);
+  font-weight: 600;
+}
+
+.sf-search__row {
+  display: flex;
+  gap: var(--t-space-sm);
+  flex-wrap: wrap;
+}
+
+.sf-search__input {
+  flex: 1 1 16rem;
+  min-inline-size: 0;
+}
+
+.sf-search__submit {
+  flex: 0 0 auto;
+}
+
+/*
+  Phase 9 — `details > summary` on the storefront (the size guide, the care block).
+
+  It had no affordance at all: no marker, no pointer, no focus ring, with `.sf-link` doing the
+  colour. A disclosure a keyboard user cannot see the focus on is a disclosure they cannot find.
+*/
+details.sf-note > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+/*
+  `--t-primary`, not `--t-color-primary`. There is no such token — `templateCssVars` emits
+  `--t-primary` — and an unresolvable `var()` with no fallback makes the whole declaration invalid at
+  computed-value time, so `outline` fell back to its initial value: `outline-style: none`. This
+  selector scores (0,2,2) and beats `.sf-root :focus-visible` at (0,2,0), so it did not merely fail
+  to add a ring, it REMOVED the one the shell provides. The size guide and the care disclosure had no
+  visible focus at all.
+
+  Invisible to axe, which reads the cascade and finds a focus rule present and correct; visible only
+  by tabbing a real page, which is the class of defect this whole file's comments exist to record.
+*/
+details.sf-note > summary:focus-visible {
+  outline: 2px solid var(--t-primary);
+  outline-offset: 2px;
+}
+
+/*
+  The size chart itself. `.sf-prose table` set only `margin-block-start`, so a chart rendered as
+  unpadded cells with no header rule. `text-align: start` rather than `left`, because this is RTL.
+*/
+.sf-prose table {
+  border-collapse: collapse;
+}
+
+.sf-prose th,
+.sf-prose td {
+  padding: var(--t-space-xs) var(--t-space-sm);
+  text-align: start;
+}
+
+.sf-prose thead th {
+  border-block-end: var(--t-rule-hair);
 }
 
 .sf-index {
@@ -850,6 +1021,36 @@
   text-underline-offset: 3px;
 }
 
+/*
+  The agency credit line, under the legal strip on every shop that has it switched on.
+
+  TOKENS ONLY, which is the entire design: the sentence takes `--t-text-muted` and the linked name
+  takes `--t-link` at body weight — both already guarded to AA against every surface they can land
+  on (`deriveColorTokens`), so the line matches ديوان's cream exactly as it matches ليلي's
+  near-black with no per-tenant styling anywhere. Centered and hairline-separated so it reads as
+  the page's colophon, not as one more legal link.
+*/
+.sf-credit {
+  border-block-start: var(--t-rule-hair);
+  margin: 0;
+  padding-block: var(--t-space-sm);
+  font-size: var(--t-text-xs);
+  color: var(--t-text-muted);
+  text-align: center;
+}
+
+/*
+  Classed, because the shell's `.sf-root a:not([class])` (specificity 0,2,1) forces every
+  UNCLASSED link to inherit — it would beat `.sf-credit a` (0,1,1) and render the name muted.
+*/
+.sf-credit__link {
+  color: var(--t-link);
+  /* The template's DISPLAY weight — its own idea of emphasis — not a phantom `--t-weight-strong`,
+     which is precisely the unresolvable-token defect phase9-templates.test.ts exists to catch. */
+  font-weight: var(--t-weight-display);
+  text-underline-offset: 3px;
+}
+
 /* ------------------------------------------------- consent + watermark -- */
 
 /*
@@ -875,11 +1076,62 @@
   pointer-events: none;
 }
 
+/*
+  Phase 8's floating cart button. Fixed at the INLINE-END corner (the left in RTL) — the
+  opposite side from `.sf-dock`'s own content, which sits inline-start — so a demo tenant with
+  BOTH cart and the watermark on screen never has one cover the other, the same reasoning that
+  keeps the watermark and the consent banner from overlapping each other.
+*/
+.sf-cart-fab {
+  position: fixed;
+  inset-block-end: var(--t-space-lg);
+  inset-inline-end: var(--t-space-lg);
+  z-index: 55;
+  display: grid;
+  place-items: center;
+  inline-size: 3.25rem;
+  block-size: 3.25rem;
+  border-radius: 999px;
+  background: var(--t-primary);
+  color: var(--t-on-primary);
+  /*
+    `--t-elev-raised`, not `--t-elev-card`.
+
+    Until Phase 9 nothing in the storefront read `raised` at all: every definition declared it, five
+    token sets carried a value for it, and no stylesheet used it — a token that exists only in a type.
+    The two surfaces that genuinely float above the page are this button and the consent dock below,
+    and they are exactly what the token was written for: ورشة sets it to `none` and stays flat, سوق
+    نيون and بيت make it a ring rather than a blur, ديوان a soft warm one.
+  */
+  box-shadow: var(--t-elev-raised);
+  text-decoration: none;
+}
+
+.sf-cart-fab__count {
+  position: absolute;
+  inset-block-start: -0.35rem;
+  inset-inline-end: -0.35rem;
+  min-inline-size: 1.35rem;
+  block-size: 1.35rem;
+  padding-inline: 0.25rem;
+  border-radius: 999px;
+  background: var(--t-surface);
+  color: var(--t-text);
+  border: 2px solid var(--t-primary);
+  font-size: var(--t-text-xs);
+  font-weight: var(--t-weight-display);
+  display: grid;
+  place-items: center;
+  unicode-bidi: isolate;
+}
+
 .sf-consent {
   inline-size: 100%;
   pointer-events: auto;
   background: var(--t-surface);
   border-block-start: var(--t-rule-frame);
+  /* See `.sf-cart-fab` above: this is the other surface `--t-elev-raised` was written for. */
+  box-shadow: var(--t-elev-raised);
   padding: var(--t-space-lg);
 }
 
@@ -1070,6 +1322,99 @@
   text-underline-offset: 3px;
 }
 
+.sf-select {
+  font: inherit;
+  font-size: 1rem;
+  color: var(--t-text);
+  background: var(--t-bg);
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+  padding: 0.6rem 0.75rem;
+  min-block-size: 44px;
+  inline-size: 100%;
+}
+
+.sf-root .sf-select:focus-visible {
+  outline: 2px solid var(--t-primary);
+  outline-offset: 2px;
+}
+
+.sf-check {
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-sm);
+  font-size: var(--t-text-sm);
+}
+
+.sf-check input {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+/* ------------------------------------------------------------ Phase 8: cart -- */
+
+.sf-cart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--t-space-lg);
+}
+
+.sf-cart__lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--t-space-md);
+}
+
+.sf-cart__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--t-space-md);
+  padding-block: var(--t-space-sm);
+  border-block-end: var(--t-rule-hair);
+}
+
+.sf-cart__line-name {
+  flex: 1 1 12rem;
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-sm);
+}
+
+.sf-cart__coupon {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-inline-size: 24rem;
+}
+
+.sf-cart__totals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--t-space-xs);
+  max-inline-size: 24rem;
+}
+
+.sf-cart__totals div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--t-space-md);
+}
+
+.sf-cart__totals dt {
+  color: var(--t-text-muted);
+}
+
+.sf-cart__totals-grand {
+  border-block-start: var(--t-rule-frame);
+  padding-block-start: var(--t-space-xs);
+  font-size: var(--t-text-lg);
+}
+
 /* --------------------------------------------------------- responsive -- */
 
 @media (max-width: 60rem) {
@@ -1120,8 +1465,23 @@
  * looks like part of the site is read as an offer, while one that floats over the page is read
  * as an interruption and dismissed without being read at all.
  */
+/*
+  Three token names in this Phase 4 block never existed: `--t-ink-soft`, `--t-ink` and
+  `--t-font-display`. `templateCssVars` emits `--t-text-muted`, `--t-text` and `--t-font`.
+
+  An unresolvable custom property is not a no-op — the declaration is dropped at computed-value time
+  and the property INHERITS. On `color` that is survivable (the parent's colour is a real colour), so
+  the push hint has been rendering in full-strength text instead of muted for four phases. On
+  `.sf-offline`'s `font-family` it is not: the offline page inherits from `<html>`, which is outside
+  `.sf-root` and therefore has none of these tokens, so the shop's Arabic name rendered in the
+  browser's default font — on the one page a visitor sees when their connection has already failed.
+*/
+.sf-push {
+  min-inline-size: 0;
+}
+
 .sf-push__hint {
-  color: var(--t-ink-soft);
+  color: var(--t-text-muted);
   font-size: var(--t-text-sm);
   margin-block: var(--t-space-xs) var(--t-space-sm);
   max-inline-size: 34ch;
@@ -1144,23 +1504,494 @@
   text-align: center;
   padding: var(--t-space-2xl) var(--t-space-lg);
   background: var(--t-bg);
-  color: var(--t-ink);
+  color: var(--t-text);
 }
 
 .sf-offline__shop {
-  color: var(--t-ink-soft);
+  color: var(--t-text-muted);
   font-size: var(--t-text-sm);
   letter-spacing: 0.04em;
 }
 
 .sf-offline__title {
-  font-family: var(--t-font-display);
+  font-family: var(--t-font);
   font-size: var(--t-text-2xl);
   margin: 0;
 }
 
 .sf-offline__body {
-  color: var(--t-ink-soft);
+  color: var(--t-text-muted);
   max-inline-size: 38ch;
   margin-block-end: var(--t-space-md);
+}
+
+/* --- Phase 9: the eight new blocks, structurally --------------------------- *
+ *
+ * Track F's half of the division `docs/PHASE-9-integration.md` records: the loader tracks landed
+ * `.sf-rail--banners`, `.sf-strip*` and `.sf-search*` because without those three the components
+ * are not what they claim to be, and left everything below as design. So this section is the
+ * SHARED skeleton only — the composition each template gives these blocks lives in its own sheet.
+ *
+ * The bar for a rule being here rather than in a template sheet: it would have to be repeated
+ * five times, and being wrong in one of the five would be a defect rather than a difference. A
+ * hours table whose rows do not line up is broken in every template; whether the rows are ruled,
+ * banded or bare is the template's business.
+ *
+ * IT IS AT THE END OF THE FILE ON PURPOSE. `.sf-hours > div` and `.sf-facts div` score identically
+ * at (0,1,1), and the responsive block above collapses `.sf-facts div` to one column at 40rem —
+ * so a hours row placed earlier would lose that tie inside the media query and stack the day above
+ * its own opening time on every phone. Source order is the tie-break, so these come last.
+ */
+
+/*
+  The banner board. `.sf-rail--banners` (above) already makes it one slide per view; this is the
+  frame around it and the caption inside it.
+
+  THE SCROLLBAR IS SUPPRESSED, which is normally the wrong instinct — it is the affordance. It is
+  right here because `banner-carousel.tsx` renders «السابق» / «التالي» as real buttons whenever there
+  is more than one slide, so the affordance is text rather than a 6px bar, and because the rail stays
+  a native scroll-snap container: touch, trackpad and (in engines that focus scrollers) the arrow
+  keys all still work with JavaScript switched off entirely. `scrollbar-width` is the standard
+  property, so no vendor pseudo-element is needed.
+*/
+.sf-carousel {
+  position: relative;
+  display: grid;
+  gap: var(--t-space-md);
+}
+
+.sf-rail--banners {
+  padding-block-end: 0;
+  scrollbar-width: none;
+}
+
+.sf-carousel__controls {
+  /* `flex-end` in a flex row is the INLINE end — the left in RTL. Never `justify-content: right`. */
+  justify-content: flex-end;
+}
+
+.sf-banner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+/*
+  The caption sits UNDER the photograph by default, and two templates move it on top of one.
+
+  Beneath is the only position whose contrast is knowable: the photograph is a merchant upload, so
+  text laid over it has no guaranteed ratio at all. سوق نيون and بيت do overlay theirs — both on a
+  SOLID token background, never a translucent one, for the reason `neon-souq.css` already gives on
+  its product card: contrast against an unknown image has to be guaranteed rather than hoped for,
+  and a frosted panel is on CLAUDE.md's forbidden list.
+*/
+.sf-banner__copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--t-space-sm);
+  padding-block-start: var(--t-space-md);
+}
+
+.sf-banner__title {
+  font-size: var(--t-text-xl);
+}
+
+.sf-banner__text {
+  color: var(--t-text-muted);
+  /* 46ch, not 60: a banner subtitle is a line, and a merchant who types a paragraph into one
+     should get a paragraph shape rather than a single 90-character run across a wide screen. */
+  max-inline-size: 46ch;
+}
+
+/*
+  The trust row. `auto-fit` rather than `repeat(3, …)` because the count is `config.limit ?? 3` and a
+  merchant may publish two — three tracks with one empty is a gap a visitor reads as a missing item.
+
+  15rem is the floor at which «ادفعي لما توصلك» plus its subtitle stays on two lines beside a 24px
+  glyph. Below it the row collapses to one column, which is the right answer on a phone: three
+  claims stacked are three claims, three claims squeezed side by side are none.
+*/
+.sf-trust {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--t-space-lg);
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+
+.sf-trust__item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--t-space-md);
+  min-inline-size: 0;
+}
+
+.sf-trust__icon {
+  /* The SVG carries width/height attributes; without this it is a flex item that can be squashed. */
+  flex: 0 0 auto;
+  /* `--t-accent`, the secondary held to 4.5:1. A 24px glyph would pass at the 3:1 non-text bar, and
+     the extra headroom costs nothing — while a merchant whose secondary is a pale gold gets an icon
+     that is actually visible rather than one that technically qualifies. */
+  color: var(--t-accent);
+  margin-block-start: 0.15em;
+}
+
+.sf-trust__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.sf-trust__title {
+  font-weight: var(--t-weight-display);
+}
+
+.sf-trust__text {
+  color: var(--t-text-muted);
+  font-size: var(--t-text-sm);
+}
+
+/*
+  The week. `<dl class="sf-facts sf-hours">`, so `.sf-facts`'s two-column grid is the starting point
+  and this makes it a table of seven rows: the day at the inline start, the hours at the inline end,
+  a hairline between.
+
+  `tabular-nums` is the detail that matters. Seven rows of «09:00 – 21:00» set with proportional
+  figures do not line up on the colon, and a column of times that does not line up is read as seven
+  unrelated facts instead of as a schedule. `unicode-bidi: isolate` keeps the range in the order the
+  i18n layer assembled it — a bidi run of digits, a dash and more digits inside RTL text is the
+  classic place where «09:00 – 21:00» renders as «21:00 – 09:00».
+*/
+.sf-hours {
+  gap: 0;
+}
+
+.sf-hours > div {
+  grid-template-columns: minmax(6rem, 1fr) auto;
+  gap: var(--t-space-md);
+  align-items: baseline;
+  padding-block: var(--t-space-sm);
+  border-block-end: var(--t-rule-hair);
+}
+
+.sf-hours > div:last-child {
+  border-block-end: 0;
+}
+
+.sf-hours dd {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+  unicode-bidi: isolate;
+}
+
+/*
+  «مفتوح الآن». `.sf-badge` is `inline-block`, and this one contains a 14px clock glyph followed by
+  text — which without a flex context sits on the baseline with no gap and a descender's worth of
+  misalignment.
+*/
+.sf-block--hours .sf-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--t-space-xs);
+  margin-block-end: var(--t-space-md);
+}
+
+/*
+  The stats row.
+
+  `column-reverse`, and it is the one deliberate divergence between visual and DOM order in the
+  storefront. `store-stats.tsx` renders the LABEL first and argues for it: «7+ / سنوات في السوق»
+  reads as a definition, and a screen reader announcing the label before the figure is the sequence a
+  human reads it in. Visually the figure has to come first, because it is the thing being read at a
+  glance. Reversing in CSS keeps both, and it is safe here in the way it usually is not: there is
+  nothing focusable inside a `<dl>`, so no tab order is affected — only the paint order of two
+  static lines.
+*/
+.sf-stats {
+  display: grid;
+  gap: var(--t-space-lg);
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  margin: 0;
+}
+
+.sf-stat {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--t-space-xs);
+  min-inline-size: 0;
+}
+
+.sf-stat__value {
+  margin: 0;
+  font-size: var(--t-text-2xl);
+  font-weight: var(--t-weight-display);
+  line-height: var(--t-line-tight);
+  /* «4000+» is Western digits and a plus inside an RTL paragraph; isolating stops the plus sign
+     from being pushed to the wrong end of the number. */
+  unicode-bidi: isolate;
+}
+
+.sf-stat__label {
+  color: var(--t-text-muted);
+  font-size: var(--t-text-sm);
+}
+
+/*
+  The department row in the header.
+
+  `.sf-header__inner` is a wrapping flex row, so `flex: 1 1 100%` puts this on its own line under the
+  brand and the nav rather than competing with them for the first — which is what `category-nav.tsx`
+  assumes when it caps the list at six ("the number that fits one line beside the brand on a 360px
+  viewport before wrapping").
+
+  Its anchors have NO class of their own, so nothing else in this file reaches them: `.sf-nav a` is a
+  different row and `.sf-chips` only lays out the list. They therefore need their own hit area and
+  their own hover, and the underline-on-current matches `.sf-nav a[aria-current]` so the header reads
+  as one navigation system in two rows.
+*/
+.sf-catnav {
+  flex: 1 1 100%;
+  min-inline-size: 0;
+  border-block-start: var(--t-rule-hair);
+  padding-block-start: var(--t-space-sm);
+}
+
+.sf-catnav .sf-chips {
+  gap: var(--t-space-xs) var(--t-space-md);
+}
+
+.sf-catnav a {
+  display: inline-block;
+  text-decoration: none;
+  font-size: var(--t-text-sm);
+  padding-block: var(--t-space-xs);
+  border-block-end: 2px solid transparent;
+}
+
+.sf-catnav a:hover,
+.sf-catnav a[aria-current='page'] {
+  border-block-end-color: var(--t-primary);
+}
+
+/*
+  The search SECTION, as opposed to the search box on a results page. `.sf-search` carries a top
+  margin for the latter, where it sits under a heading inside another block; inside its own section
+  `SectionBlock` has already spent that space on the head.
+*/
+.sf-block .sf-search {
+  margin-block-start: 0;
+}
+
+/* --- Phase 11: the signature layer ----------------------------------------- *
+ *
+ * Track 11.A. Every ornament is implemented ONCE here and selected by the five `data-*` attributes
+ * the shell stamps from the template definition (`data-mask` / `data-mark` / `data-button` /
+ * `data-panel` / `data-badge`), with its magnitudes read from the `--t-*` tokens `templateCssVars`
+ * emits. The markup is identical on all nine templates — a template swap stays a class swap.
+ *
+ * SPECIFICITY IS BUDGETED, not accidental: every rule here scores (0,2,0) against `.sf-*` children
+ * (the `:where()` wrappers exist to keep it there), which is exactly what a template's own
+ * namespaced sheet scores — and the template sheets are imported AFTER this file, so a template
+ * that wants to override a shared treatment simply writes the rule and wins on source order. A
+ * higher score here would have silently locked nine sheets out of their own buttons.
+ */
+
+/* -- the heading mark -- */
+
+/*
+  Hidden entirely by default — a span with three hidden SVGs still takes its margin, so the
+  `none` templates (ورشة، موعد) must not pay a phantom gap under every heading.
+*/
+.sf-mark {
+  display: none;
+  color: var(--t-accent);
+  line-height: 0;
+  margin-block-start: var(--t-space-sm);
+}
+
+.sf-mark svg {
+  display: none;
+  max-inline-size: 100%;
+}
+
+.sf-mark path {
+  /* `round` linecaps at 3.4px is what makes the squiggle read as drawn rather than plotted. */
+  stroke-width: var(--t-mark-stroke);
+}
+
+[data-mark='squiggle'] .sf-mark,
+[data-mark='rule'] .sf-mark,
+[data-mark='ticket'] .sf-mark {
+  display: block;
+}
+
+[data-mark='squiggle'] .sf-mark .sf-mark__squiggle,
+[data-mark='rule'] .sf-mark .sf-mark__rule,
+[data-mark='ticket'] .sf-mark .sf-mark__ticket {
+  display: inline-block;
+}
+
+/* -- the image masks -- */
+
+/*
+  `arch` and `notch` only: a `square` template keeps the exact radius it shipped with rather than
+  taking `--t-media-radius`'s 0 — the retrofit must not repaint ورشة/بيت/رفّ as a side effect.
+  The tokens are still emitted for every template (tokens.ts), so this reads nothing that does
+  not exist. The mask applies to EVERY `.sf-media` — product cards, category tiles, the gallery,
+  the hero board — which is what turns a one-off detail into a signature.
+*/
+[data-mask='arch'] .sf-media {
+  border-radius: var(--t-media-radius);
+}
+
+[data-mask='notch'] .sf-media {
+  border-radius: var(--t-media-radius);
+  clip-path: var(--t-media-clip);
+}
+
+/* -- the buttons -- */
+
+/*
+  `printed` and `stamp`: a SOLID offset shadow — never a blur — whose depth is the token the
+  definition chose (6px printed, 4px stamp, 0 elsewhere). In `--t-border`, the one non-text token
+  the guard holds visible against the page on every palette. Ghost and quiet buttons are exempt:
+  an offset shadow under a borderless text button reads as a rendering error.
+*/
+[data-button='printed'] .sf-btn:where(:not(.sf-btn--ghost, .sf-btn--quiet)),
+[data-button='stamp'] .sf-btn:where(:not(.sf-btn--ghost, .sf-btn--quiet)) {
+  box-shadow: 0 var(--t-press-depth) 0 0 var(--t-border);
+}
+
+/*
+  `outline`: the default button is a drawn frame in the guarded link colour; `--solid` remains the
+  named emphatic fill (that is what the modifier exists for) and ghost/quiet keep their meaning.
+*/
+[data-button='outline'] .sf-btn:where(:not(.sf-btn--ghost, .sf-btn--quiet, .sf-btn--solid)) {
+  background: transparent;
+  color: var(--t-link);
+  border-color: var(--t-link);
+}
+
+/* -- the panels -- */
+
+/*
+  The reassurance / CTA block treatments. `plain` templates have no rule here at all, so the
+  `sf-panel` class is inert on them — which is what lets the class sit in shared markup without
+  repainting the templates that predate it.
+*/
+[data-panel='soft-block'] .sf-panel {
+  background: var(--t-surface-alt);
+  border-radius: var(--t-radius-lg);
+  padding: var(--t-space-xl);
+}
+
+[data-panel='framed'] .sf-panel {
+  border: var(--t-rule-frame);
+  border-radius: var(--t-radius-md);
+  padding: var(--t-space-xl);
+}
+
+[data-panel='tape'] .sf-panel {
+  background: var(--t-surface-alt);
+  padding: var(--t-space-xl);
+  /* The torn strip: a jagged edge top and bottom, a flyer pasted to the wall. Static clip, no
+     motion, no blur — and the polygon is symmetric enough to survive RTL untouched. */
+  clip-path: polygon(
+    0% 4%, 3% 0%, 8% 5%, 13% 1%, 19% 6%, 25% 1%, 31% 5%, 38% 0%, 44% 5%, 50% 1%,
+    56% 6%, 63% 1%, 69% 5%, 75% 0%, 81% 5%, 88% 1%, 94% 6%, 100% 2%,
+    100% 96%, 97% 100%, 91% 95%, 85% 99%, 79% 94%, 72% 100%, 66% 95%, 59% 99%,
+    53% 94%, 47% 100%, 41% 95%, 34% 99%, 28% 94%, 22% 100%, 16% 95%, 9% 99%, 4% 94%, 0% 98%
+  );
+}
+
+/* -- the badge position -- */
+
+/*
+  `top` lifts the card's status badge onto the photograph's upper corner — the classic retail
+  sticker. `bottom` is the flow position the cards have always had, so the five `bottom` templates
+  render byte-identically. The arch templates are FORCED to `bottom` by a unit test: an arch
+  narrows the top of the frame and clips a sticker placed there.
+*/
+[data-badge='top'] .sf-card {
+  position: relative;
+}
+
+[data-badge='top'] .sf-card__foot .sf-badge {
+  position: absolute;
+  inset-block-start: var(--t-space-sm);
+  inset-inline-start: var(--t-space-sm);
+  z-index: 1;
+}
+
+/* --- honouring prefers-reduced-motion ------------------------------------- *
+ *
+ * ONLY the duration lives here. What actually changes on hover is declared by each template, and
+ * that is a cascade decision rather than a stylistic one: a card's `border` is set as a SHORTHAND by
+ * four of the five sheets (`border: 2px solid var(--t-border)`), and a shorthand at (0,2,0) beats a
+ * shared `.sf-card:hover` at (0,1,1) — so a hover written here would simply not paint on those
+ * templates, and would paint on the fifth. Relying on source order instead would be no better:
+ * all five sheets arrive after this file through `src/app/site/layout.tsx`, so an
+ * equal-specificity tie always resolves toward the template — invisibly, per template.
+ *
+ * The gate is written as `no-preference` rather than as a `reduce` block that unsets things, because
+ * that is the direction that cannot be forgotten: this is the only place in the storefront where a
+ * duration exists at all, so a property some future rule animates is simply not animated for a
+ * visitor who asked for that.
+ *
+ * There is no `transform` on any IMAGE in any stylesheet, and `phase9-templates.test.ts` enforces
+ * that by parsing rule blocks and failing when a transforming rule's selector touches media. A
+ * photograph that zooms inside a mask is chaos, and an arch plus a zoom is the worst version of it.
+ *
+ * The ban used to be blanket, and Phase 11 (Q36) narrowed it to its stated intent so the `printed`
+ * button's 3px press could exist — the alternatives were a `margin` shift that moves every sibling
+ * and costs layout shift on the interaction a shopper performs most, or dropping one of the five
+ * signature elements a template is built from.
+ *
+ * What that gives up, so it reads as a decision and not an oversight: a card that lifts on hover now
+ * passes the mechanical rule. It is still motion — it costs a compositor layer per card on a
+ * forty-item grid, and it is the most generic interaction on the web — so the objection stands, it
+ * simply has to be made in review now rather than by the test.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .sf-card,
+  .sf-cat,
+  .sf-btn,
+  .sf-nav a,
+  .sf-catnav a,
+  .sf-index a {
+    transition:
+      border-color 140ms ease-out,
+      background-color 140ms ease-out,
+      color 140ms ease-out;
+  }
+}
+
+/*
+ * Phase 11 (Q36): the pressed button — the ONE ornament that moves, so the whole of it lives
+ * inside the motion guard. A visitor who asked for reduced motion gets the printed shadow at
+ * constant depth and no travel; everyone else gets a press that drops the button by half its
+ * depth and shortens the shadow to match, which is what "printed" means. The `transform` here is
+ * legal under the narrowed ban — its selector touches no image — and a `margin` press instead
+ * would shift every sibling and cost layout on the interaction a shopper performs most.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  [data-button='printed'] .sf-btn:where(:not(.sf-btn--ghost, .sf-btn--quiet)),
+  [data-button='stamp'] .sf-btn:where(:not(.sf-btn--ghost, .sf-btn--quiet)) {
+    transition:
+      transform 90ms ease-out,
+      box-shadow 90ms ease-out,
+      border-color 140ms ease-out,
+      background-color 140ms ease-out,
+      color 140ms ease-out;
+  }
+
+  [data-button='printed'] .sf-btn:where(:not(.sf-btn--ghost, .sf-btn--quiet)):active,
+  [data-button='stamp'] .sf-btn:where(:not(.sf-btn--ghost, .sf-btn--quiet)):active {
+    transform: translateY(calc(var(--t-press-depth) / 2));
+    box-shadow: 0 calc(var(--t-press-depth) / 2) 0 0 var(--t-border);
+  }
 }

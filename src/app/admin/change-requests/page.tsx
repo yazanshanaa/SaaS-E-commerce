@@ -288,5 +288,112 @@ function describePayload(row: ChangeRequestRow): PayloadEntry[] {
         };
       });
     }
+
+    // Phase 8. In practice unreachable while every plan seeds `editable_by: 'merchant'` for
+    // this capability (prisma/seed.ts) — but a super admin CAN override it per tenant, and the
+    // queue must still render something readable if they ever do.
+    case 'order_settings':
+      return [
+        { label: t('dashboard', 'orderSettings.editWindow'), value: scalar(payload.editWindowMinutes) },
+        { label: t('dashboard', 'orderSettings.deliveryFee'), value: scalar(payload.deliveryFeeAgorot) },
+        { label: t('dashboard', 'orderSettings.freeDeliveryOver'), value: scalar(payload.freeDeliveryOverAgorot) },
+        { label: t('dashboard', 'orderSettings.minOrderAmount'), value: scalar(payload.minOrderAmountAgorot) },
+        {
+          label: t('dashboard', 'orderSettings.paymentMethods'),
+          value: Array.isArray(payload.paymentMethods) ? payload.paymentMethods.join('، ') : scalar(undefined),
+        },
+        { label: t('dashboard', 'orderSettings.orderingPaused'), value: scalar(payload.orderingPaused) },
+      ];
+
+    /**
+     * Phase 9's eight.
+     *
+     * The four collection capabilities are summarised as ONE ROW PER ITEM carrying that item's own
+     * heading, which is the same shape `announcements_board` above uses and for the same reason: an
+     * operator deciding on a banner board needs to see what the board says, not a JSON blob, and
+     * printing every column of six banners would bury the decision. The two structural ones print
+     * their fields.
+     *
+     * `scalar()` is what makes this safe as well as readable — every value on this screen is
+     * merchant-authored text rendered as text, and none of these payloads carries a URL the operator
+     * is invited to follow.
+     */
+    case 'banners': {
+      const banners = Array.isArray(payload.banners) ? payload.banners : [];
+      return banners.map((raw, index) => ({
+        label: `${t('admin', 'content.bannerTitle')} ${formatNumber(index + 1)}`,
+        value: scalar(asRecord(raw).title),
+      }));
+    }
+
+    case 'trust_badges': {
+      const badges = Array.isArray(payload.badges) ? payload.badges : [];
+      return badges.map((raw) => ({
+        label: t('admin', 'content.trustBadge'),
+        value: scalar(asRecord(raw).title),
+      }));
+    }
+
+    case 'store_stats': {
+      const stats = Array.isArray(payload.stats) ? payload.stats : [];
+      return stats.map((raw) => {
+        const stat = asRecord(raw);
+        return { label: scalar(stat.label), value: scalar(stat.value) };
+      });
+    }
+
+    case 'opening_hours': {
+      const days = Array.isArray(payload.days) ? payload.days : [];
+      return days.map((raw) => {
+        const day = asRecord(raw);
+        const weekday = Number(day.weekday);
+        return {
+          label: t('admin', `content.weekday${Number.isInteger(weekday) ? weekday : 0}`),
+          value: day.closed
+            ? t('admin', 'content.dayClosed')
+            : `${scalar(day.opensAt)} – ${scalar(day.closesAt)}`,
+        };
+      });
+    }
+
+    case 'logo':
+      return [
+        { label: t('admin', 'content.logo'), value: scalar(payload.logoMediaId) },
+        { label: t('admin', 'content.favicon'), value: scalar(payload.faviconMediaId) },
+        { label: t('admin', 'content.ogImage'), value: scalar(payload.ogImageMediaId) },
+      ];
+
+    case 'size_guide': {
+      const rows = Array.isArray(payload.rows) ? payload.rows : [];
+      return [
+        { label: t('admin', 'content.sizeGuideScope'), value: scalar(payload.categoryId) },
+        {
+          label: t('admin', 'content.sizeGuideColumns'),
+          value: Array.isArray(payload.columns) ? payload.columns.join('، ') : scalar(undefined),
+        },
+        { label: t('admin', 'content.sizeGuideRows'), value: formatNumber(rows.length) },
+      ];
+    }
+
+    case 'delivery_zones': {
+      const zones = Array.isArray(payload.zones) ? payload.zones : [];
+      return zones.map((raw) => {
+        const zone = asRecord(raw);
+        const towns = Array.isArray(zone.towns) ? zone.towns.length : 0;
+        return {
+          label: scalar(zone.name),
+          // Fee and coverage together: a zone name alone tells an operator nothing about what
+          // approving it charges a customer, which is the whole decision.
+          value: `${formatNumber(Number(zone.feeAgorot ?? 0))} · ${formatNumber(towns)}`,
+        };
+      });
+    }
+
+    case 'tax_settings':
+      return [
+        { label: t('admin', 'content.legalName'), value: scalar(payload.legalName) },
+        { label: t('admin', 'content.businessNumber'), value: scalar(payload.businessNumber) },
+        { label: t('admin', 'content.vatRate'), value: scalar(payload.vatRateBasisPoints) },
+      ];
   }
 }

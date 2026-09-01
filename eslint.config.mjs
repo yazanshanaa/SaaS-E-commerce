@@ -104,7 +104,17 @@ export default tseslint.config(
 
   // Scripts, seeds, tests and the local test harness legitimately reach for raw clients.
   {
-    files: ['scripts/**/*.ts', 'tests/**/*.ts', 'tests/**/*.tsx', '*.config.ts', '*.config.mjs'],
+    // `scripts/**/*.mjs` is listed beside the .ts form on purpose: a one-shot asset fetcher
+    // (scripts/fetch-rubik.mjs) reports its progress on stdout, which is the whole point of an
+    // operator running it by hand. Without this it is the one script file the relaxation missed.
+    files: [
+      'scripts/**/*.ts',
+      'scripts/**/*.mjs',
+      'tests/**/*.ts',
+      'tests/**/*.tsx',
+      '*.config.ts',
+      '*.config.mjs',
+    ],
     rules: {
       'no-restricted-imports': 'off',
       '@typescript-eslint/no-restricted-imports': 'off',

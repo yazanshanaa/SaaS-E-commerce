@@ -33,6 +33,25 @@ export const SECTION_TYPES = [
   'contact_whatsapp',
   'map',
   'custom_html',
+
+  // --- Phase 9. Must stay in lockstep with the prisma `SectionType` enum; `tests/unit/
+  // site-contract.test.ts` compares the two lists so a value added on one side alone fails.
+  /** The IMAGE banner board. `announcements` above is the TEXT board — two content models, two
+   *  capabilities, two section types, so a merchant can have both without either pretending to be
+   *  a mode of the other. */
+  'banner_slider',
+  'trust_badges',
+  'opening_hours',
+  'store_stats',
+  /** Products created in the last N days. Reads the catalogue, holds no content of its own. */
+  'new_arrivals',
+  /** Ordered by units sold, from `OrderItem`. Falls back to `sort` when there are no orders yet —
+   *  a brand-new shop must not render an empty "الأكثر مبيعًا". */
+  'best_sellers',
+  /** Only meaningful on a product page, and the renderer says so: on the home arrangement it
+   *  renders nothing rather than guessing which product to relate to. */
+  'related_products',
+  'search_bar',
 ] as const;
 
 export type SectionType = (typeof SECTION_TYPES)[number];
@@ -126,6 +145,73 @@ const customHtmlConfig = z.object({
   html: z.string().max(20_000).default(''),
 });
 
+// --- Phase 9 ---------------------------------------------------------------------------------
+
+const bannerSliderConfig = z.object({
+  title: optionalText,
+  limit: z.number().int().min(1).max(6).default(6),
+  /**
+   * Milliseconds between slides. Floor of 3000 because anything faster is unreadable in Arabic at
+   * banner size, and 0 is not an option — "don't rotate" is expressed by having one banner, not by
+   * a zero interval that a naive `setInterval` would turn into a busy loop.
+   */
+  intervalMs: z.number().int().min(3000).max(15_000).default(6000),
+  /**
+   * NO DEFAULT, and for the same reason `products_grid.columns` has none: the renderer reads
+   * `config.aspect ?? template.layout.bannerAspect`, so an unset value is how each template keeps
+   * its own proportions. Defaulting it here would silently flatten all five templates to one shape,
+   * which is the exact bug documented on `productsGridConfig` above.
+   */
+  aspect: z.enum(['4:5', '16:9', '1:1']).optional(),
+});
+
+const trustBadgesConfig = z.object({
+  title: optionalText,
+  limit: z.number().int().min(1).max(4).default(3),
+});
+
+const openingHoursConfig = z.object({
+  title: optionalText,
+  /** Show the note under the table. The note itself lives on `Site.hoursNote`. */
+  showNote: z.boolean().default(true),
+  /** Render an «مفتوح الآن / مغلق» pill. Off by default: it is only honest if the shop's hours are
+   *  actually up to date, and a wrong "open now" is worse than no pill at all. */
+  showOpenNow: z.boolean().default(false),
+});
+
+const storeStatsConfig = z.object({
+  title: optionalText,
+  limit: z.number().int().min(1).max(4).default(3),
+});
+
+const newArrivalsConfig = z.object({
+  title: optionalText,
+  /** «الجديد هالأسبوع» — the window, in days. */
+  days: z.number().int().min(1).max(90).default(7),
+  limit: z.number().int().min(1).max(24).default(8),
+  columns: z.union([z.literal(2), z.literal(3), z.literal(4)]).optional(),
+});
+
+const bestSellersConfig = z.object({
+  title: optionalText,
+  /** How far back to count units sold. */
+  days: z.number().int().min(7).max(365).default(90),
+  limit: z.number().int().min(1).max(24).default(4),
+  columns: z.union([z.literal(2), z.literal(3), z.literal(4)]).optional(),
+});
+
+const relatedProductsConfig = z.object({
+  title: optionalText,
+  limit: z.number().int().min(1).max(12).default(3),
+  /** Prefer the same category; fall back to the rest of the catalogue when it has too few. */
+  sameCategoryFirst: z.boolean().default(true),
+});
+
+const searchBarConfig = z.object({
+  title: optionalText,
+  placeholder: optionalText,
+});
+
 export const SECTION_CONFIG_SCHEMAS = {
   hero: heroConfig,
   products_grid: productsGridConfig,
@@ -137,6 +223,16 @@ export const SECTION_CONFIG_SCHEMAS = {
   contact_whatsapp: contactWhatsappConfig,
   map: mapConfig,
   custom_html: customHtmlConfig,
+
+  // Phase 9
+  banner_slider: bannerSliderConfig,
+  trust_badges: trustBadgesConfig,
+  opening_hours: openingHoursConfig,
+  store_stats: storeStatsConfig,
+  new_arrivals: newArrivalsConfig,
+  best_sellers: bestSellersConfig,
+  related_products: relatedProductsConfig,
+  search_bar: searchBarConfig,
 } as const satisfies Record<SectionType, z.ZodType>;
 
 export type SectionConfig<T extends SectionType = SectionType> = z.infer<
@@ -164,16 +260,42 @@ export function safeParseSectionConfig(type: SectionType, config: unknown) {
   return SECTION_CONFIG_SCHEMAS[type].safeParse(config ?? {});
 }
 
-/** The site-level announcement bar is not a section; it still needs one shared shape. */
+/**
+ * Phase 9. A text strip's colour is a CLOSED set of four token-derived choices, never a hex field.
+ * The reference shop states the reasoning and it is correct: a free colour picker on a strip that
+ * spans every page is how a merchant breaks their own site. Each value resolves through the ACTIVE
+ * TEMPLATE's tokens, so the same stored choice looks deliberate on all five templates instead of
+ * looking right on one and wrong on four.
+ */
+export const STRIP_COLORS = ['dark', 'primary', 'secondary', 'light'] as const;
+export type StripColor = (typeof STRIP_COLORS)[number];
+export const stripColorSchema = z.enum(STRIP_COLORS);
+
+/**
+ * The site-level announcement bar is not a section; it still needs one shared shape.
+ *
+ * Phase 9 note on the 160-character cap: it replaced a 200-character one, and the reason is the
+ * reference shop's — the strip has to stay readable on a phone in one or two lines, and the text is
+ * REAL TEXT rather than an image precisely so it reaches search results and costs nothing to
+ * render. 200 characters of Arabic wraps to four lines on a 360px viewport.
+ */
 export const announcementBarSchema = z.object({
   enabled: z.boolean().default(false),
-  text: z.string().trim().max(200).optional(),
+  text: z.string().trim().max(160).optional(),
   link: z.string().trim().max(500).optional(),
   startsAt: z.coerce.date().optional(),
   endsAt: z.coerce.date().optional(),
+  color: stripColorSchema.default('dark'),
 });
 
 export type AnnouncementBar = z.infer<typeof announcementBarSchema>;
+
+/** The second strip: mid-homepage rather than site-wide. Same shape, different default colour. */
+export const homeStripSchema = announcementBarSchema.extend({
+  color: stripColorSchema.default('primary'),
+});
+
+export type HomeStrip = z.infer<typeof homeStripSchema>;
 
 /** Scheduling is shared by the bar and the board: outside its window, nothing renders. */
 export function isWithinSchedule(

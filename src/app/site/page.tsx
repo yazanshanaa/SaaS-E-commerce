@@ -1,8 +1,11 @@
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import { getEnv } from '@/env';
+import { beaconDecision } from '@/server/analytics';
+import { t } from '@/shared/i18n';
 import {
   analyticsDecision,
+  HomeStrip,
   JsonLdScript,
   SectionList,
   storeJsonLd,
@@ -59,6 +62,18 @@ export default async function StorefrontHomePage() {
       analytics={analytics}
       consentAnswered={consent.answered}
       current="home"
+      /*
+        Phase 9. Both gates, resolved here because only the page holds the consent cookie — the same
+        division of labour `analytics` above already uses. `path` is the route's own shape and not
+        `location.pathname`, which would report the proxy's internal `/site/…` rewrite.
+      */
+      beacon={{
+        enabled: beaconDecision({
+          featureEnabled: context.flags.visitorAnalytics,
+          consentGranted: consent.granted,
+        }).enabled,
+        path: '/',
+      }}
     >
       {/*
         Structured data, withheld from a demo: a rich snippet is the artefact that survives
@@ -74,7 +89,27 @@ export default async function StorefrontHomePage() {
       */}
       {hasHero ? null : <h1 className="sf-vh">{context.site.name}</h1>}
 
-      <SectionList context={context} sections={context.sections} />
+      {/*
+        The mid-homepage strip goes through `afterFirst` rather than between two `SectionList`
+        calls: `SectionList` numbers anchors by occurrence over one call, and splitting the list
+        would restart the counter and emit `id="products"` twice on a page with a grid on both
+        sides of the strip. It renders on the HOME page only, which is why it is here and not in
+        the shell beside the announcement bar.
+      */}
+      <SectionList
+        context={context}
+        sections={context.sections}
+        afterFirst={
+          context.homeStrip ? (
+            <HomeStrip
+              text={context.homeStrip.text}
+              link={context.homeStrip.link}
+              style={context.homeStrip.style}
+              regionLabel={t('content', 'strips.home')}
+            />
+          ) : null
+        }
+      />
     </StorefrontShell>
   );
 }

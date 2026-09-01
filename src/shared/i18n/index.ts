@@ -5,6 +5,19 @@ import storefront from '../../../messages/ar/storefront.json';
 import media from '../../../messages/ar/media.json';
 import billing from '../../../messages/ar/billing.json';
 import demo from '../../../messages/ar/demo.json';
+// Phase 9. Five new namespaces rather than five new blocks inside `dashboard.json`, and the reason
+// is not aesthetic: `dashboard.json` was already forty kilobytes, and Phase 9 builds its five
+// surfaces in parallel tracks. One file that five tracks all append to is one file that produces
+// five merge conflicts and, worse, silently loses a block when two of them resolve badly. Per-domain
+// namespaces are also what `media`, `billing` and `demo` already are, so this follows the layout
+// rather than inventing one.
+import catalogue from '../../../messages/ar/catalogue.json';
+import content from '../../../messages/ar/content.json';
+import insights from '../../../messages/ar/insights.json';
+import delivery from '../../../messages/ar/delivery.json';
+import customers from '../../../messages/ar/customers.json';
+// Phase 11 (Track 11.D): the appearance studio's copy — preview, picker, live contrast verdicts.
+import appearance from '../../../messages/ar/appearance.json';
 
 /**
  * Single locale, `ar`, dir="rtl".
@@ -42,6 +55,14 @@ const NAMESPACES = {
   media,
   billing,
   demo,
+  // Phase 9
+  catalogue,
+  content,
+  insights,
+  delivery,
+  customers,
+  // Phase 11
+  appearance,
 } as const;
 
 export type Namespace = keyof typeof NAMESPACES;

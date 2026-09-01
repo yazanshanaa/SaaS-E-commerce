@@ -5,6 +5,7 @@ import { getEnv } from '@/env';
 import { PUBLIC_ACTOR, tenantDb } from '@/server/db';
 import { type SectionType } from '@/shared/site-contract';
 import { t } from '@/shared/i18n';
+import { beaconDecision } from '@/server/analytics';
 import {
   analyticsDecision,
   isLegalSlug,
@@ -140,7 +141,23 @@ export default async function ContentPage({ params }: PageProps) {
   });
 
   return (
-    <StorefrontShell context={context} analytics={analytics} consentAnswered={consent.answered}>
+    <StorefrontShell
+      context={context}
+      analytics={analytics}
+      consentAnswered={consent.answered}
+      /*
+        Phase 9. Both gates — the feature and the consent cookie — resolved by the page, because
+        only the page holds the cookie. `path` is the route's own shape rather than
+        `location.pathname`, which would report the proxy's internal `/site/…` rewrite.
+      */
+      beacon={{
+        enabled: beaconDecision({
+          featureEnabled: context.flags.visitorAnalytics,
+          consentGranted: consent.granted,
+        }).enabled,
+        path: `/p/${slug}`,
+      }}
+    >
       <section className="sf-block">
         <div className="sf-shell">
           <div className="sf-block__head">

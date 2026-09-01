@@ -4,6 +4,7 @@ import { addMonths, jerusalemDateKey } from '@/server/time';
 import { storefrontHost } from '@/env';
 import { TEMPLATES, TEMPLATE_KEYS } from '@/shared/site-contract';
 import { formatAgorot, t } from '@/shared/i18n';
+import { TemplatePreview } from '@/app/_components/kit/template-preview';
 import { requireAdminPage } from '../../_components/guard';
 import { ActionForm } from '../../_components/action-form';
 import { Checkbox, Field, PageHead, Panel, Select, TextInput } from '../../_components/ui';
@@ -131,19 +132,57 @@ export default async function NewAccountPage() {
               {t('admin', 'accounts.new.setupFeeWaived')}
             </p>
 
-            <Field
-              label={t('admin', 'accounts.new.template')}
-              name="templateKey"
-              hint={t('admin', 'accounts.new.templateHint')}
-            >
-              <Select
-                name="templateKey"
-                options={TEMPLATE_KEYS.map((key) => ({
-                  value: key,
-                  label: TEMPLATES[key].name,
-                }))}
-              />
-            </Field>
+            {/*
+              The kit's card grid (Phase 11, 11.G) — the same markup the per-account «شكل الموقع»
+              screen and the merchant's own studio render. A `<select>` of nine Arabic names told
+              an operator nothing about what they were picking on the call where they pick it; the
+              card carries the description and the palette. The first key stays the default, which
+              is what the `<select>` did implicitly by selecting its first option.
+
+              The three colour dots were still not enough — «ديوان» and «دار» are both warm light
+              palettes and the dots make them near-identical, while what actually separates them is
+              the grid and the mask. `TemplatePreview` draws the STRUCTURE from each template's own
+              definition, so the operator sees the difference they are choosing between.
+            */}
+            <fieldset className="sba-look-group">
+              <legend className="sba-label">{t('admin', 'accounts.new.template')}</legend>
+              <p className="sba-hint">{t('admin', 'accounts.new.templateHint')}</p>
+              <div className="sbk-look-grid">
+                {TEMPLATE_KEYS.map((key) => {
+                  const template = TEMPLATES[key];
+                  return (
+                    <label className="sbk-look-pick" key={key}>
+                      <input
+                        type="radio"
+                        name="templateKey"
+                        value={key}
+                        defaultChecked={key === TEMPLATE_KEYS[0]}
+                        required
+                      />
+                      <span className="sbk-look-pick__shot">
+                        <TemplatePreview templateKey={key} />
+                      </span>
+                      <span className="sbk-look-pick__name">{template.name}</span>
+                      <span className="sbk-look-pick__dots" aria-hidden="true">
+                        <span
+                          className="sbk-look-pick__dot"
+                          style={{ background: template.defaults.primary }}
+                        />
+                        <span
+                          className="sbk-look-pick__dot"
+                          style={{ background: template.defaults.secondary }}
+                        />
+                        <span
+                          className="sbk-look-pick__dot"
+                          style={{ background: template.defaults.background }}
+                        />
+                      </span>
+                      <span className="sbk-look-pick__desc">{template.description}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
           </fieldset>
         </ActionForm>
       </Panel>

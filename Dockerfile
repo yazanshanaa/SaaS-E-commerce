@@ -125,6 +125,36 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 CMD ["pnpm", "start"]
 
 # ---------------------------------------------------------------------------
+# standalone-source — the platform's own code, tarred, for an exported bundle (Phase 10, Q25)
+# ---------------------------------------------------------------------------
+#
+# A standalone bundle ships the application source so a merchant's server can build and run it.
+# Producing that tarball HERE, from the same build context that produced the running image, is what
+# makes the guarantee "the bundle contains exactly the code that built this platform" true rather
+# than aspirational — the alternative (fetching a git tag at export time) can hand out a commit
+# that was never deployed.
+#
+# `.dockerignore` already excludes `node_modules`, `.next` and `.env*` from the context, so they
+# cannot be in here. The extra exclusions below are things the context DOES carry and a bundle has
+# no business shipping: this platform's own e2e fixtures and phase notes, and — belt and braces —
+# anything env-shaped. `--exclude` is listed before the source path, which is where GNU tar wants
+# it and where a subtle no-op would otherwise hide.
+FROM base AS standalone-source
+COPY . /src
+RUN mkdir -p /opt/standalone \
+  && tar -czf /opt/standalone/source.tar.gz \
+       --exclude='./node_modules' \
+       --exclude='./.next' \
+       --exclude='./.git' \
+       --exclude='./.env' \
+       --exclude='./.env.*' \
+       --exclude='./tests/e2e' \
+       --exclude='./docs/PHASE-9-*' \
+       --exclude='./seed-assets' \
+       -C /src . \
+  && rm -rf /src
+
+# ---------------------------------------------------------------------------
 # worker — BullMQ processors, no HTTP surface
 # ---------------------------------------------------------------------------
 FROM base AS worker
@@ -135,6 +165,12 @@ COPY --chown=node:node prisma ./prisma
 COPY --chown=node:node messages ./messages
 COPY --chown=node:node src ./src
 COPY --chown=node:node scripts ./scripts
+
+# Phase 10 (Q25). The worker is the process that builds a standalone bundle, so it is the one that
+# needs the source tarball. Read-only to `node`: nothing at runtime should be able to rewrite what
+# a customer is about to be handed.
+COPY --from=standalone-source --chown=root:root /opt/standalone /opt/standalone
+
 USER node
 
 # No HTTP surface means no HTTP healthcheck. The worker's liveness is its Redis connection, and

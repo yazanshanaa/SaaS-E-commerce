@@ -1,0 +1,194 @@
+/*
+ * مطبخ — restaurants, bakeries, sweets, catering (Phase 11, Track 11.E).
+ *
+ * Personality: a laminated menu on a warm counter. The ledger hero is the letterhead — hours, phone,
+ * address ruled like an order pad — and every photograph is a meal ticket: the shared `notch` mask
+ * cuts its corners, the shared `ticket` mark perforates the section titles, the offers strip is
+ * pasted on `tape`, and the order buttons take the `stamp` press. Pomegranate acts, za'atar
+ * structures. Zain, set large: a menu is read at arm's length by someone hungry.
+ *
+ * Against its neighbours: سوق نيون shares the notch and the stamp — مطبخ answers on light paper with
+ * framed description cards where نيون overlays names on near-black film. رفّ shares the ticket mark —
+ * مطبخ's is under generous menu headings, رفّ's over dense shelf labels; the two grounds, faces and
+ * card bodies never let them meet.
+ */
+
+/* ------------------------------------------------------- chrome + heads -- */
+
+[data-template='matbakh'] .sf-header {
+  border-block-end: 2px solid var(--t-primary);
+  background: var(--t-surface);
+}
+
+/* The section title is a menu heading: big, warm, with the perforated tear line under it. */
+[data-template='matbakh'] .sf-block__head {
+  margin-block-end: var(--t-space-lg);
+}
+
+[data-template='matbakh'] .sf-mark {
+  color: var(--t-link);
+}
+
+/* --------------------------------------------------------- ledger hero --- */
+
+/*
+ * The letterhead. The facts list renders as an order pad: each row on the card surface, the label
+ * column in za'atar, the whole pad under a pomegranate top rule — the same two-colour discipline
+ * the rest of the menu keeps.
+ */
+[data-template='matbakh'] .sf-hero--ledger {
+  background: var(--t-surface);
+  border-block-end: 2px solid var(--t-primary);
+  padding-block: var(--t-space-2xl);
+}
+
+[data-template='matbakh'] .sf-hero__facts {
+  border: 1px solid var(--t-border);
+  border-block-start: 3px solid var(--t-primary);
+}
+
+[data-template='matbakh'] .sf-hero__fact dt {
+  color: var(--t-accent);
+  font-weight: var(--t-weight-display);
+}
+
+/* ----------------------------------------------------------- the cards -- */
+
+/*
+ * The framed body carries the dish's sentence — the one card body with a description, and the
+ * reason this template chose it. The photograph keeps its ticket notch from the shared mask; the
+ * card itself stays a soft plate so the notch is the only sharp thing on it.
+ */
+[data-template='matbakh'] .sf-card {
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-lg);
+  background: var(--t-surface);
+}
+
+[data-template='matbakh'] .sf-card:hover,
+[data-template='matbakh'] .sf-cat:hover {
+  border-color: var(--t-primary);
+}
+
+[data-template='matbakh'] .sf-card__media .sf-media {
+  --sf-ratio: 1 / 1;
+}
+
+/* The price is the menu's other headline: pomegranate, at the card name's size. */
+[data-template='matbakh'] .sf-price {
+  color: var(--t-link);
+  font-size: var(--t-text-lg);
+}
+
+/* The dotted leader between a dish and its price — the one device every menu on earth shares.
+   Drawn with the hairline token on the foot's own top edge, dotted rather than solid. */
+[data-template='matbakh'] .sf-card__foot {
+  border-block-start: 1px dotted var(--t-border);
+  padding-block-start: var(--t-space-sm);
+}
+
+[data-template='matbakh'] .sf-badge {
+  border-radius: var(--t-radius-sm);
+}
+
+/* ------------------------------------------------------ categories rail -- */
+
+[data-template='matbakh'] .sf-cat {
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+}
+
+[data-template='matbakh'] .sf-cat .sf-media {
+  --sf-ratio: 1 / 1;
+}
+
+[data-template='matbakh'] .sf-cat__label {
+  font-weight: var(--t-weight-display);
+}
+
+/* -------------------------------------------------------------- buttons -- */
+
+[data-template='matbakh'] .sf-btn {
+  border-radius: var(--t-radius-pill);
+}
+
+[data-template='matbakh'] .sf-btn--ghost {
+  border-color: var(--t-secondary);
+  color: var(--t-accent);
+}
+
+/* -------------------------------------------------- panels, hours, stats -- */
+
+/*
+ * The offers strip arrives on the shared `tape` panel — the day's specials pasted to the counter.
+ * The glyphs stay inline in za'atar: a menu's trust row is a sentence, not a row of app icons.
+ */
+[data-template='matbakh'] .sf-trust__icon {
+  color: var(--t-accent);
+}
+
+[data-template='matbakh'] .sf-hours {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-block-start: 3px solid var(--t-primary);
+  padding: var(--t-space-sm) var(--t-space-lg);
+  max-inline-size: 32rem;
+}
+
+[data-template='matbakh'] .sf-hours dt {
+  color: var(--t-text);
+  font-weight: var(--t-weight-display);
+}
+
+[data-template='matbakh'] .sf-stat {
+  border-block-start: 3px solid var(--t-primary);
+  padding-block-start: var(--t-space-md);
+}
+
+[data-template='matbakh'] .sf-stat__value {
+  color: var(--t-link);
+}
+
+[data-template='matbakh'] .sf-quote {
+  border-radius: var(--t-radius-md);
+  border-inline-start: 4px solid var(--t-primary);
+}
+
+[data-template='matbakh'] .sf-offer {
+  border-radius: var(--t-radius-md);
+  border: 1px dotted var(--t-border);
+}
+
+/* ------------------------------------------------------- Phase 9 boards -- */
+
+[data-template='matbakh'] .sf-banner__copy {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-block-start: 3px solid var(--t-primary);
+  margin-inline: var(--t-space-md);
+  margin-block-start: calc(-1 * var(--t-space-md));
+  padding: var(--t-space-lg);
+  position: relative;
+}
+
+/* ------------------------------------------------------------ the form -- */
+
+[data-template='matbakh'] .sf-checkout {
+  border-radius: var(--t-radius-lg);
+  border: 1px solid var(--t-border);
+  border-block-start: 3px solid var(--t-primary);
+  background: var(--t-surface);
+}
+
+[data-template='matbakh'] .sf-input,
+[data-template='matbakh'] .sf-textarea,
+[data-template='matbakh'] .sf-select {
+  border-radius: var(--t-radius-md);
+  background: var(--t-bg);
+}
+
+/* -------------------------------------------------------------- footer -- */
+
+[data-template='matbakh'] .sf-footer {
+  background: var(--t-surface-alt);
+}

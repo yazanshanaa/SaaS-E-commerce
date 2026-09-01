@@ -13,6 +13,7 @@ import {
   type ActionState,
   type PlanMatrixInput,
 } from '@/server/admin';
+import { setBrandingBar, setOrderEditWindowMaxMinutes } from '@/server/platform-settings';
 import { CAPABILITY_KEYS, FEATURE_KEYS } from '@/shared/features';
 import { requireAdminPage } from '../_components/guard';
 
@@ -112,4 +113,57 @@ export async function deletePlanAction(form: FormData): Promise<void> {
   }
 
   redirect('/plans?ok=admin:plans.deleted');
+}
+
+/**
+ * Phase 8, item 9: the platform-wide cap on `OrderSettings.editWindowMinutes`. Lives on this
+ * page rather than a screen of its own — this is the one existing surface where a super admin
+ * already edits a platform-wide numeric policy, and `setOrderEditWindowMaxMinutes` is itself the
+ * audited, invariant-3-compliant write (src/server/platform-settings.ts).
+ */
+export async function savePlatformSettingsAction(form: FormData): Promise<void> {
+  const ctx = await requireAdminPage();
+  const minutes = Number(text(form, 'orderEditWindowMaxMinutes'));
+
+  if (!Number.isInteger(minutes) || minutes < 0 || minutes > 10_080) {
+    redirect('/plans?error=admin:errors.invalidValue');
+  }
+
+  await setOrderEditWindowMaxMinutes(ctx, minutes);
+  revalidatePath('/plans');
+  redirect('/plans?ok=admin:account.saved');
+}
+
+/**
+ * The agency credit bar (2026-08-21). Same audited, owner-only door as the cap above — and the
+ * COHERENCE rule is enforced here as well as by the database CHECK: switching the bar on with an
+ * empty name or link is refused with a message, not saved as a broken footer on every shop.
+ */
+export async function saveBrandingBarAction(form: FormData): Promise<void> {
+  const ctx = await requireAdminPage();
+
+  const enabled = checkbox(form, 'brandingBarEnabled');
+  const name = text(form, 'brandingBarName').trim() || null;
+  const rawUrl = text(form, 'brandingBarUrl').trim() || null;
+
+  // http(s) only. A javascript: URL in a link rendered on every storefront on the platform is
+  // exactly the kind of thing a write-side check exists for.
+  let url: string | null = null;
+  if (rawUrl) {
+    try {
+      const parsed = new URL(rawUrl);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('scheme');
+      url = parsed.toString();
+    } catch {
+      redirect('/plans?error=admin:platformSettings.branding.invalidUrl');
+    }
+  }
+
+  if (enabled && (!name || !url)) {
+    redirect('/plans?error=admin:platformSettings.branding.incomplete');
+  }
+
+  await setBrandingBar(ctx, { enabled, name, url });
+  revalidatePath('/plans');
+  redirect('/plans?ok=admin:account.saved');
 }

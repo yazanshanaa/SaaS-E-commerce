@@ -2073,3 +2073,1251 @@ without a server has been verified — the image defects by reading the Dockerfi
 filesystem, the compose and Caddy configuration by reasoning, the seed scenario and the export
 machinery by running them. The restore itself is the operator's first task and `docs/DEPLOY.md` §6
 is the checklist. **It is not ticked in `TODO.md`, and it should not be until it has happened.**
+
+## Phase 8 — Cart, checkout settings and coupons
+
+A second order channel next to Phase 5's `buy_now`, not a replacement for it. `Order` and
+`OrderItem` are shared tables, extended additively (`channel` defaults every existing row to
+`buy_now` for free); everything else — `OrderSettings`, `Coupon`, `CouponRedemption`,
+`OrderHistoryEntry` — is new. Off by default for every tenant, existing or future, behind
+`can(tenantId, 'cart')` and `can(tenantId, 'coupons')`, both plan defaults `false`. The three things
+worth recording are a design reversal caught by the test suite before it shipped, two real bugs an
+end-to-end pass caught that no unit or integration test could have, and a dozen dead i18n keys an
+adversarial pass found on the way out.
+
+### "Available from متجر" is an eligibility floor, not a grant — caught by a1-super-admin, not by review
+
+The change plan's item 1 says cart is "available from متجر" (the middle plan). The first draft read
+that as every other plan-gated feature on this platform reads it — `custom_domain`, `analytics`,
+`payment_gateway` all turn on the moment a tenant's plan includes them — and set `cart: true,
+coupons: true` as the PLAN DEFAULT on متجر and احترافي in `prisma/seed.ts`.
+
+`tests/integration/a1-super-admin.test.ts` failed. Its fixture creates a fresh account on `store`
+(متجر) to exercise something unrelated, and the failure was a legal-copy assertion: the tenant's
+privacy page showed `collectCartOrders` copy instead of `collectNoOrders`. Reading why landed on the
+actual bug — every متجر account, existing and future, would have had checkout silently switched on
+the moment this shipped, collecting a name, a phone and an address from every tenant's customers
+with nobody having asked for it. That is exactly the "zero behavioural change until the toggle is
+flipped" acceptance line, broken by the seed file rather than by a route.
+
+Every OTHER PII-collecting mechanism on this platform needs a deliberate act first —
+`payment_gateway` needs the feature AND a configured gateway row AND the merchant's own
+`sellingEnabled` switch, three gates deep before a single phone number is ever asked for. Cart now
+matches that shape: `cart`/`coupons` are `false` on every plan, including متجر and احترافي, in
+`prisma/seed.ts`. "Available from متجر" is the ELIGIBILITY FLOOR for the super admin's own
+per-account toggle (item 9), never an automatic grant — the comment in `seed.ts` says so, so the
+next person who reads "available from X plan" in a future change plan does not make the same read.
+Nobody flagged this in review; the regression test did, which is the argument for running the full
+suite after a schema change rather than only the new tests for the phase that made it.
+
+### Two bugs only a browser found
+
+`tests/integration/phase8-*.test.ts` proves the money, the concurrency and the isolation are
+correct against a real Postgres. It cannot prove a label actually renders, or that a fixture that
+looks like it moved a clock actually moved it — both showed up the moment
+`tests/e2e/phase8-cart-checkout.spec.ts` drove the real pages in a real browser.
+
+**The tracking link's own label never rendered.** `CheckoutViewLabels.trackingLink` ("تتبّع طلبك")
+was threaded all the way from `messages/ar/storefront.json` through the page down to
+`checkout-view.tsx` — and then never read. The link's visible and accessible text was
+`trackingUrl`, the raw `https://…/order/{code}` string, with `dir="ltr"` forced on it. The change
+plan's own words are "a copyable «تتبّع طلبك» link"; what shipped in the first draft was a raw URL a
+customer would have had to read character by character, in a component that took an Arabic label as
+a prop for exactly this and silently dropped it. `getByRole('link', { name: 'تتبّع طلبك' })` failed
+immediately in the e2e run — a unit test on this component, had one existed, would have had to
+assert on the exact same prop being unused to catch it, which is a strange thing to think to write
+in advance. Fixed by rendering `labels.trackingLink` as the link text and dropping the forced `ltr`;
+the raw URL is still one click away via the existing "انسخ الرابط" copy button, which already wrote
+`trackingUrl` to the clipboard correctly.
+
+**The e2e fixture that aged an order aged it the wrong direction.** Testing "self-service closes
+once the window elapses" needs a way to move a clock without waiting thirty real minutes, and the
+natural thing to write is `UPDATE orders SET created_at = now() - interval '2 hours'` through the
+raw superuser `pg` client the e2e suite's fixtures already use. It passed the type checker and read
+correctly. It did not work: the edit and cancel buttons were still there after the "aging."
+
+This is the exact bug already recorded once in this file, one phase back — Phase 7's
+`ageSuspension` fixture, `now() - interval '3 hours'` subtracting three hours from a clock already
+three ahead, because `created_at` is a `timestamp` column Prisma both writes and reads as UTC, while
+the raw `pg` session that ran the `UPDATE` answers `now()` in `Asia/Jerusalem` (the embedded
+cluster's own default zone). A value computed from the session's `now()` and stored into a naive UTC
+column is not "two hours in the past" from the application's point of view; depending on the time of
+year it can read as barely past, or as being in the future. Phase 7's fix was to age a row relative
+to its OWN stored value rather than to a freshly computed `now()`; this file's fixture was written
+from scratch without that lesson carried over, which is worth saying plainly rather than smoothing
+over. Fixed the same way: `UPDATE orders SET created_at = created_at - interval '2 hours'`, which
+needs no session timezone to agree with anything.
+
+Both were found only because the plan's own requirement — drive the real journey in a real browser —
+was followed rather than treated as satisfied by the lower-level tests. Neither would have failed
+`tests/integration/phase8-self-service.test.ts`, which ages its fixture with a JS `Date` through the
+Prisma client directly and was never exposed to the raw-SQL timezone trap at all.
+
+### Twelve i18n keys that were never going to be missed, and were added anyway
+
+`src/server/orders/schema.ts` gives every zod field a message string shaped like an i18n key
+(`storefront:cart.errors.tooManyItems`, and eleven more like it) — the convention this codebase's
+DASHBOARD validation module states outright: "messages are i18n keys, never sentences." For the
+dashboard's own schemas (`orderSettingsSchema`, `couponSchema`) that is load-bearing: a failed
+`safeParse` there returns `parsed.error`'s message straight to `t()`. For the five STOREFRONT-only
+routes underneath `cartCheckoutSchema`/`cartQuoteSchema`/`orderContactEditSchema`/
+`orderCancelSchema`/`trackingLookupSchema`, it is not — every one of those routes catches a failed
+parse and returns a generic machine `reason` (`'invalid'`, `'not_found'`, …), by the same
+"NO ARABIC CROSSES THIS FILE" rule Phase 5's own `checkout/route.ts` documents, and the zod message
+itself is discarded before it ever reaches a response.
+
+So the twelve keys these particular schemas reference were never rendered, and a grep for the exact
+string never found a call site to report as broken — the language-gate self-check that closed every
+earlier batch of this phase's copy (0 missing across storefront/dashboard/admin, run repeatedly) is
+built to catch a `t()`/`st()` call with nothing behind it, and a zod `message:` string literal is
+neither. They surfaced only from listing every `namespace:dotted.key` literal in the file by hand and
+checking each one against the real JSON. Dead today, and a trap for whoever next changes one of
+these five routes to surface the field it currently discards, thinking — reasonably, given the
+dashboard's own convention — that the string is already a real key. Added to
+`messages/ar/storefront.json` (`cart.errors.{empty,tooManyItems,quantity,paymentMethod,
+deliveryArea,deliveryAddress,couponInvalid,failed}`, `order.errors.{notFound,phoneLast4,
+reasonRequired,reasonTooLong}`) rather than left as documentation nobody would ever read literally.
+
+### Everything else, briefly
+
+- **RLS** on all four new tenant tables (`order_settings`, `coupons`, `coupon_redemptions`,
+  `order_history_entries`) via the exact generic DO-block template migration 0001 established —
+  verified by reading the migration, not assumed.
+- **Money** stays Int agorot end to end; `redeemCouponInTx`'s atomic conditional `UPDATE …
+  WHERE uses_count < max_uses` is the actual concurrency guard for a coupon's last remaining use,
+  `coupons_uses_within_max` is the database-level backstop that catches a bug in it rather than
+  replacing it.
+- **Events never carry PII.** Every `order.placed` / `order.edited` / `order.cancelled` /
+  `order.status_changed` payload is id, number, amount and (only for `order.placed`) the tracking
+  code — checked against `src/server/events/types.ts` and every `emitEvent` call site in
+  `src/server/orders/*.ts`. The dispatcher's own log line is type and identity only, never the
+  payload (`src/server/events/emit.ts`).
+- **The connection-pool timeout in the concurrent-redemption test was the test harness, not the
+  app.** Ten concurrent `checkoutCart()` calls each hold an interactive transaction (multiple
+  round trips, one of them a row lock on the single coupon row every attempt targets) for its full
+  duration; the embedded Postgres cluster's default Prisma pool size is CPU-derived
+  (`2 × cores + 1`, five on this sandbox) — plenty for the existing 20-way `placeOrder` precedent,
+  whose transactions are three or four short point queries, not enough for ten heavier ones queued
+  behind a shared lock. Raised `connection_limit`/`pool_timeout` on the TEST harness's own
+  `app_web`/`app_system` URLs only (`tests/setup/postgres-harness.ts`) — production's pool size is
+  whatever is on the real `DATABASE_URL`, untouched by this file.
+
+### Known gaps, logged rather than fixed (the change plan's own rule: found, not folded in)
+
+1. No combined buy_now + cart order inbox when a tenant somehow has both channels' history.
+2. `order_settings` has no merchant-facing "اطلب تعديل" (request change) submission yet — the
+   admin-apply side of that capability is complete, the merchant-request side is not built.
+3. Self-serve data export does not yet include the new cart fields (address, tracking code,
+   coupon, payment method) on an exported order row.
+4. Cart's `gateway` payment method has no live `GatewayAdapter` payment-link integration — label
+   only, the merchant records payment manually, matching how `paymentMethods` already strips it
+   the moment `payment_gateway` is off.
+5. The per-phone coupon limit has a narrow, documented, deliberately un-hardened concurrency race
+   (`validateCoupon`'s own comment) — unlike `maxUses`, which the change plan explicitly required a
+   concurrency test for, this is one customer racing themselves for a discount they were entitled
+   to once either way.
+6. **Order PII has no automatic anonymization after a retention period, for either channel.**
+   Item 10 asked for it; it does not exist for `buy_now` either — `pruneExpiredRecords`
+   (`src/server/jobs/prune-records.ts`) sweeps four GLOBAL tables (tombstones, platform audit
+   logs, webhook deliveries, DSR requests) and touches no per-tenant `Order` row. The DSR flow
+   itself is real (a subject can be identified and a request tracked), but nothing sweeps a live
+   tenant's old orders on a schedule. A pre-existing Phase 5/6 gap Phase 8 inherits rather than
+   introduces or worsens — real feature work (a retention window, merchant- or platform-configured,
+   scoped to which statuses "erasable" even means), not a fix that belongs folded into this change.
+
+### Tests
+
+`tests/integration/phase8-checkout.test.ts` (7), `phase8-coupons.test.ts` (9, including ten
+concurrent checkouts against a coupon with `maxUses: 1` — exactly one succeeds, nine report
+`coupon_max_uses_reached`), `phase8-self-service.test.ts` (8) — all against a real Postgres with RLS
+on, matching this project's own convention that DB-dependent business-logic tests live in
+`tests/integration/`, not `tests/unit/`, the same shelf `phase5-orders.test.ts` sits on.
+`tests/e2e/phase8-cart-checkout.spec.ts` (11): the admin toggle taking effect immediately, add to
+cart → checkout → tracking → self-edit → self-cancel, the edit window actually closing, a tracking
+code from one tenant resolving to nothing on a different tenant's own host while still resolving on
+its own, and — cart off — the exact pre-Phase-8 WhatsApp flow with every cart page and API route
+404ing rather than 403ing. Full existing suite (63 files / 1018 tests, unit + integration) reconfirmed
+green after every fix in this phase, run to completion twice.
+
+### Every `ActionForm` in the app wiped itself on any validation mistake, not only the field that failed
+
+Reported live: opening `/accounts/new` on `admin.{DOMAIN}`, typing the store's Arabic name into the
+slug field and a local-format phone into the WhatsApp field (both very ordinary mistakes for an
+Arabic-speaking operator who has not memorised `SLUG_PATTERN`/`WHATSAPP_PATTERN`), submitting, and
+getting back a form with EVERY field blank — including `name`, `address`, `ownerName`, `ownerEmail`,
+all of which had been typed correctly. Fixing only the two flagged fields and resubmitting meant
+retyping the other five from nothing, every single time, which reads exactly like "no matter what I
+enter it fails" from the operator's chair.
+
+Root cause is React itself, not this codebase's validation: a `<form action={fn}>` bound through
+`useActionState` is reset to every field's `defaultValue` as soon as `fn`'s promise SETTLES —
+success or failure makes no difference to React, because `createAccountAction` (and every action in
+`src/server/admin` / `src/app/dashboard/**/actions.ts`) never THROWS on a validation failure; it
+resolves to `{ status: 'error', ... }`. From React's point of view that is a successful action, so
+the automatic post-action reset fires regardless, and every field with no `defaultValue` reset to
+"". This is not specific to `accounts/new` — `ActionForm` is the ONE wrapper both the admin panel and
+the merchant dashboard use for every mutating form (`src/app/admin/_components/action-form.tsx`,
+`src/app/dashboard/_components/action-form.tsx`), so the same wipe was live on every form in both
+surfaces: plans, coupons, products, staff, domains, sections, gateway credentials — any multi-field
+form where a first attempt has one mistake.
+
+Fixed once, at the wrapper, for every form at once — no changes to `validation.ts`, to any of the
+~20 individual actions, or to any page: `preserveFormValuesOnSubmit`
+(`src/shared/form-values.ts`) runs on the form's native `submit` event, before React's action
+machinery takes over, and writes each field's current `.value`/`.checked` back into its DOM
+`defaultValue`/`defaultChecked`. React's `defaultValue` PROP is read once at mount and never
+reapplied on a later render, so nothing declarative could have reached an input already sitting on
+the page — the fix has to be an imperative DOM write, because it targets exactly what the native
+`reset()` algorithm (the thing React calls after the action settles) reads to decide what "empty"
+means for that field. `password` inputs are excluded on purpose: the payment-gateway credential
+fields on `admin/accounts/[tenantId]` are write-only by product design (never re-shown after
+saving), and mirroring one into a DOM attribute would leave a secret sitting in plain text for
+devtools to read. `file` inputs are excluded because browsers do not let a script set their value at
+all.
+
+Verified two ways: `tests/e2e/a1-admin.spec.ts`'s account-creation tests (setup fee, reserved-slug
+rejection) still pass unchanged, and a manual Playwright run reproducing the exact report — bad slug
+and bad WhatsApp, everything else valid — now returns with `name`/`address`/`ownerName`/`ownerEmail`
+still filled and only the two actually-wrong fields needing a retype.
+
+## Phase 9 integration — reconciling five parallel tracks
+
+Five tracks (A–E) finished into five handoff documents, each written without knowledge of the other
+four. `docs/PHASE-9-integration.md` is the full record; these are the decisions worth having here,
+where a later phase will look for them.
+
+**The reconciled order of the checkout hooks: validate → quote → reserve stock → number → persist →
+derive customer.** Three tracks each specified a call site inside `checkoutCart` and none knew about
+the other two; taken literally, the order would have spent a variant's stock and then asked whether
+the town could be delivered to. The rule now written into the function is one sentence: anything that
+can refuse must refuse before stock is spent. It also holds the exclusive row lock on the shop's
+hottest rows for the shortest window, and it reaches `allocateOrderNumber` — which bumps a counter
+serialising every checkout for that tenant — only after everything that could make this one
+pointless. The single refusal that cannot come first is the coupon race, because `redeemCouponInTx`
+needs an order id; that is safe only because it is the same transaction, which is also why the
+decrement may never be moved out of one.
+
+**A cancellation puts the stock back, on all four paths.** `placeOrder` now spends stock too, so
+`changeOrderStatus`'s `→ cancelled` needed the restore that Track A had only asked for on the two cart
+paths — without it a cancelled order removes units the merchant still has, silently, with nothing on
+any screen connecting the two. `src/server/orders/stock-restore.ts` exists because three callers
+needed the same `OrderItem`-row-to-stock-line conversion and a rule implemented three times is a rule
+that will eventually be applied twice. Each caller runs it immediately after claiming the transition
+with its own conditional `updateMany`, which is what makes it safe to run unconditionally: exactly one
+caller reaches it per cancellation.
+
+**An edited phone rebuilds TWO customers.** `orderContactEditSchema` carries `customerPhone`, so both
+the merchant's edit and the customer's self-edit can move an order from one derived customer to
+another. Recomputing only the new one leaves the previous customer permanently counting an order they
+no longer have. Both are rebuilt, after the transaction, best-effort — the same contract
+`refreshStorefront` has, and for the same reason: the edit has committed and failing it over a cache
+rebuild would be the wrong trade.
+
+**The announcement bar's text cap is 160 characters, everywhere.** Three definitions of one bar
+disagreed (the shared schema said 160; `_lib/site.ts` and `capability-payloads.ts` said 200) and only
+160 had a reason written beside it — the strip is on every page, it is real text rather than an image
+so that it reaches search results, and 200 characters of Arabic wraps to four lines on a 360px
+viewport. The two stragglers moved to the considered number. Nothing truncates on READ, so a merchant
+who already saved 180 characters keeps their bar exactly as it renders today; both screens now refuse
+to re-save it until it is shortened, through `dashboard:errors.textTooLong`. Silent truncation on save
+was rejected: cutting a merchant's sentence mid-word without telling them is the worse failure and it
+is undiscoverable.
+
+**Track A's conditional `updateMany` for the stock decrement is accepted over the literal wording of
+`docs/PHASE-9.md` invariant 2.** `UPDATE … WHERE stock_qty >= :n` takes the same exclusive row lock as
+`SELECT … FOR UPDATE` in one statement instead of two — no window between the lock and the write, no
+second statement for a refactor to move out of the transaction, the pattern `redeemCouponInTx` and
+`changeOrderStatus` already proved, and it stays inside the typed client (`ScopedDb` omits
+`$queryRaw`, so the literal reading would have meant widening the isolation boundary to satisfy a rule
+about locking). Read the invariant as "atomic under a row lock, proved by a concurrency test".
+
+**The 30-day raw analytics prune fans out from `pruneExpiredRecords`, and deletes nothing itself.**
+Granting `app_system` DELETE on `analytics_events` was rejected because the Phase 9 migration
+explicitly keeps that role SELECT-only on every new tenant-owned table, and names this exact
+temptation. Fanning out from `sweep-analytics` was rejected too, for a subtler reason: that job
+enumerates tenants that had events on the target DAY, so a shop which stopped trading two months ago
+is never swept and keeps its raw rows for ever — the one case a retention job exists for. The prune
+pass asks the opposite question, "who still holds rows older than the window", which `app_system` may
+answer with a SELECT, and hands each tenant to a `prune-analytics` TenantJob that deletes as
+`app_web` inside `withTenantTxn`. The cutoff travels in the payload so every tenant in one nightly
+pass is cut at the same instant rather than drifting with the queue. The three rollup tables are never
+pruned: `analytics_daily.visitors` cannot be recomputed once the raw rows are gone, because
+`visitor_key` is salted per day precisely so it cannot be joined across days.
+
+**Four new merchant scopes, not five.** `delivery`, `tax`, `customers` and `insights` each bind a role
+question to a plan feature, which is what `FEATURE_GATED` is for; written once, a nav and a route
+guard cannot disagree. A `content` scope was rejected — it would carry no feature key, so for every
+role it resolves identically to `settings`, which is the scope the `/content` routes already guard on,
+and a second name for one rule is how the two start drifting. None of the four is in `STAFF_ALLOWED`:
+Q13's staff list is products + orders + media exhaustively, and `customers` in particular is the whole
+list sorted by lifetime spend with marketing consent beside it.
+
+**`SectionList` gained an `afterFirst` prop rather than being called twice.** Anchors are numbered by
+occurrence over the sections that actually render, and `seen` is local to one call — so splitting
+`context.sections` around the mid-homepage strip would give each half a counter starting at zero and
+emit `id="products"` twice on a page with a grid on both sides of it. Invalid HTML, an axe finding,
+`#products` ambiguous in a link a merchant already sent, and the beacon double-reporting one anchor's
+dwell because it reads `main .sf-block[id]`. Passing a starting offset into a second call was the
+rejected alternative: it works, and it makes every caller responsible for a counter it cannot see in
+order to place one element.
+
+**Two section anchors were renamed at integration: `why-us` → `trust` and `story` → `stats`.** They
+are the keys of the section-dwell report's label map, and `messages/ar/insights.json` and
+`SECTION_LABELS` are both keyed on the short forms. An unlabelled anchor renders as itself, on
+purpose — so the mismatch would have printed two Latin tokens on an Arabic-only screen in the
+merchant's own report. Both other files belong to Track C; `section-anchors.ts` was the one that could
+move, and moving it also restored the no-hyphen rule the rest of the list follows (`anchorFor`
+suffixes a repeat with `-2`, and `isKnownSectionAnchor` parses that back off).
+
+**`SECTION_TYPES` and the prisma `SectionType` enum now prove they are the same set.**
+`tests/unit/site-contract.test.ts` compares them in both directions, reading the enum out of
+`schema.prisma` rather than the generated client — a build artefact can be stale, and surviving that
+is exactly what makes the test worth having. The drift is silent both ways: a type in the contract but
+not the enum means `Section.type` refuses the insert and a merchant adding a block gets an
+unexpected-error banner; a value in the enum but not the contract means the loader filters the row out
+as unknown, so the block is stored, invisible and undeletable from a UI that cannot list it.
+
+**Applying a change request now drops the storefront's cached content unit — for all fifteen
+capabilities, once, centrally.** Every managed capability is by definition content the storefront
+renders, and the merchant's own save path has always ended in `refreshStorefront`; this path never
+did, so an operator applying a request watched nothing change for up to the cache TTL (longer, since
+Next serves a stale entry while it revalidates). Phase 9 made it visible enough to fix: a banner board
+applied by an admin is the largest element on the homepage. Best-effort, like every other caller.
+
+**The trust row's five glyphs moved into `src/templates/components/icons.tsx`.** `TrustBadge.icon`
+defaults to `"check"` and the platform had no check mark, so the default named a picture that did not
+exist and a merchant who added a badge without choosing a glyph got a blank. They had been drawn
+locally in `sections/trust-badges.tsx` against a duplicated copy of that file's `Svg` wrapper only
+because no track owned the icon set.
+
+## Phase 9 Track F — the template layer
+
+Q21, applied: three templates reworked in place, two added. `docs/PHASE-9-track-f-handoff.md` carries
+the design intent per template, every token decision, the Rubik upgrade path and the honest list of
+what only a browser can settle. What belongs here is the five decisions that constrain future work.
+
+**The three original templates' brand colours did not move, and that was the point of the rework.**
+`#C2410C/#5F6F3E/#FAF3E7`, `#E11D48/#F4C95D/#0F0B10` and `#F59E0B/#8A93A3/#171B21` are also the
+`صحراء`, `ليلي` and `فولاذ` presets in `src/shared/site-contract/colors.ts` — the sets an أساسي merchant
+picks by name. Changing a template default would have desynced a preset from the template it was drawn
+from and repainted every tenant who never touched their palette. Everything a merchant cannot write was
+reworked instead: spacing, type scale, radii, rules, elevation, block rhythm and every stylesheet. The
+one exception is ديوان's card surface (#FFFDF8 → #FFFAF0), which is not tenant-facing in the picker and
+which the warm price plate is derived from; #FFFAF0 is the last value that keeps `--t-link` unadjusted.
+
+**"Five distinct templates" is defined as a DISTANCE, not as uniqueness.** There are three values on
+each structural axis (`hero`, `productCard`, `categories`) and five templates, so every value is
+shared. The five triples are chosen so no two templates agree on more than one axis, and
+`tests/unit/phase9-templates.test.ts` asserts it — which is what stops a sixth template from being a
+re-skin of an existing one, and what let the three original templates keep their exact structure so a
+live tenant's page does not rearrange under them.
+
+**A design-time colour that the guard has to move is a bug, and the definitions now prove they agree
+with `deriveColorTokens`.** Both new palettes were chosen by computing the guard's output rather than by
+eye, so `--t-link` and `--t-accent` come back unchanged and a price can be set in the brand colour. The
+same test caught four years of drift in the older files: ديوان documented a warm `surfaceAlt` the
+storefront never rendered, and سوق نيون's and ورشة's written-out `link` / `accent` / `onPrimary` /
+`textMuted` values were stale — سوق نيون's `--t-link` is a lightened rose, not the gold the file claimed.
+
+**Four unresolvable CSS custom properties had been shipping since Phase 4, and one of them removed a
+focus ring.** `var(--t-color-primary)` in the disclosure's `:focus-visible` rule made the whole
+declaration invalid at computed-value time, so `outline` fell back to `outline-style: none` — and the
+selector outranks the shell's own focus rule, so the size guide and the care disclosure had no visible
+focus at all. `--t-ink`, `--t-ink-soft` and `--t-font-display` were the other three; the last left the
+offline page rendering the shop's Arabic name in the browser's default font. `phase9-templates.test.ts`
+now asserts every `var(--t-*)` a stylesheet reads is a property `templateCssVars` actually emits, which
+is a class of defect no build step and no accessibility audit can see.
+
+**The two new stylesheets reach the bundle through `storefront.css`'s `@import`, not through the
+layout.** Track F does not own `src/app/**`, and a registered template whose stylesheet nobody imports
+is not a type error — it is a storefront that renders with base structure and no design. The equivalent
+two-line layout diff is in the handoff (§7) and is the tidier end state; the test accepts either
+mechanism, so applying it and deleting the `@import`s keeps the gate green.
+(Superseded 2026-08-20: the layout diff had landed at the merge, so the `@import`s were the duplicate
+half and were deleted — see the pre-launch fixes below.)
+
+## Pre-launch fixes — 2026-08-20 (main session, owner-directed)
+
+An owner-requested audit (`PRE-LAUNCH-REPORT.ar.md`; findings verified against code, not TODO.md's
+claims) closed the carried-forward items below in one pass. Phase 10 (owner backups surface,
+per-tenant backup/restore, standalone export — decisions Q23–Q26) was specified in
+`docs/PHASE-10.md` but not built here. NOTE: this session could not execute the toolchain; every
+item below still needs the full gate run (`pnpm typecheck && pnpm lint && pnpm test && pnpm build &&
+pnpm e2e`) before any of it is called done.
+
+**The combined-inbox gap is closed with a channel SWITCH, not a merged table.** With `cart` on,
+`/orders` stays the cart inbox and `?channel=buy_now` renders the untouched Phase 5 view; the switch
+appears only when buy_now history exists (`countBuyNowOrders`), so a cart-only shop sees no new
+chrome. One merged table was rejected because the two channels run different status vocabularies and
+different actions — half its rows would be captioned with the other half's states.
+
+**`resolveColors` no longer defaults `surface` to the background; the editor no longer pre-fills
+it.** `ResolvedColors.surface` is now `string | null`, null meaning "derive it"
+(`templates/tokens.ts` `defaultSurface`), which was unreachable for every custom-mode tenant since
+B3 raised it. Both halves had to move together: the contract stopped inventing the value, and the
+editor stopped submitting a copy of the background (empty input = automatic, said in Arabic).
+`ThemeSettings.surface` was already nullable; existing rows keep whatever they stored — no data
+migration, deliberately, because rewriting stored surfaces would repaint live storefronts unasked.
+
+**`demo_request.received` is finally emitted — platform-scoped, deliveries-only.** `Event` is
+tenant-owned and a request exists precisely because no tenant does, so `emitPlatformEvent` writes
+`WebhookDelivery` rows directly (nullable `tenantRef`, synthetic `eventId` — the shape `purged`
+already forced on that table) from the public form's own `publicDb()` context, admitted by the
+EXISTING `webhook_delivery_enqueue` policy (any non-empty `app.actor_role`). Payload is the prefix
+and the pack, never the prospect's WhatsApp or address; best-effort at the call site because a
+prospect's submit must not fail over notification bookkeeping. The Notification-table route
+(nullable `tenantId`) was rejected as a wider change than the problem: the inbox count already
+covers in-app, n8n covers out-of-band.
+
+**`Tenant.demoPackKey` exists (migration `20260820000000_pre_launch_fixes`), written by
+`createDemo`.** The demos list prefers it and falls back to the originating `DemoRequest` for
+pre-column demos — which the day-30 sweep deletes, which is why the column and not the join is the
+record. The same migration adds the Phase 5 belt: partial unique index
+`gateway_configs_one_enabled_per_tenant` on `(tenant_id) WHERE enabled`. `setGatewayEnabled`'s
+disable-then-enable order is now load-bearing (uniques check per statement) and its doc says so.
+
+**The self-serve/suspension order ledger carries Phase 8 and 9, split on decision (a)'s line.**
+`orders.csv` gains channel, cancellation date, variant label, cart money columns (blank — not
+zero — on buy_now rows), payment method, delivery AREA and tracking code: all the merchant's own
+commercial record, so both delivery channels get them. The customer's delivery ADDRESS and their
+cancellation free-text join the name and phone in `orders-customers.csv`, self-serve only. Cart
+status labels were added to the CSV map — a cart order previously exported as a raw English `new`.
+
+**`order_settings` locked view gets the same «اطلب تعديل» every other managed capability has** —
+fields stay typeable for the owner (delivery/page.tsx's stated reason), the submit files a change
+request against the already-registered `orderSettingsPayload`, staff keep the read-only view (Q13;
+`submitChangeRequest` enforces owner-only regardless). One form reader serialises both the direct
+save and the request, so the operator applies exactly what the merchant saw.
+
+**Smaller closures:** `media/upload.ts` enqueues through billing's bounded `dispatchJob` (the last
+request-thread await against a broker with no timer), with `false` triggering the same full rollback
+a throw did; the bayt/raff `@import` duplication is gone (layout.tsx is the one list of renderable
+templates); dead `NotImplementedInPhaseError` and its two catch sites and its orphaned i18n key are
+deleted; the stale "six capabilities" and "no tables after Phase 5" comments now state the world as
+it is.
+
+## Phase 10 — owner backups, per-tenant backup/restore, standalone export
+
+Built 2026-08-20/21 to the spec in `docs/PHASE-10.md` (Q23–Q26). Same caveat as the fix batch
+above and it is not a small one: **this session had no working toolchain**, so nothing here has been
+typechecked, linted, tested or run. Migration `20260821000000_phase10_backups` must be applied
+before any of it works. Treat every claim below as "written and reviewed", not "proven".
+
+**The web container still cannot take a backup, and that is the design.** `docker/backup/` keeps
+`pg_dump`, `age`, the write credentials and now `redis-cli`; the web container gets a third,
+READ-ONLY R2 credential pair (`R2_BACKUP_READ_*`) and a Redis key. Run-now is `SET {prefix}run-request
+NX EX 3600`; the sidecar's sleep is now taken in 60-second slices so it notices within a minute
+**without resetting the published interval** — an on-demand round resets the clock, a poll does not.
+The channel runs over `cacheRedis()` (fail-fast) rather than `queueRedis()` (retries forever, would
+hang the screen), and the compose points the sidecar at the same database; a flush costs one pending
+request and one status card, both self-healing, while the manifests on R2 stay the source of truth.
+
+**No restore button, and the runbook is rendered on the screen instead.** A restore drops and
+recreates a database. A button for it on a page an operator opens to READ is one mis-click from the
+worst outcome the page exists to prevent, and the person reading it is doing so at 3am on a phone —
+so `docs/DEPLOY.md` §6's steps are rendered inline rather than linked.
+
+**Interval and retention are read-only on that screen.** Both are interpolated into every tenant's
+Arabic privacy policy by `src/server/legal/facts.ts`. An editable field would let an operator make a
+published legal claim false from a screen that says nothing about legal claims. The copy says so.
+
+**A tenant backup is TENANT-OWNED, which costs a capability on purpose.** The rows die in the purge
+cascade and the objects die with `deleteByPrefix(tenants/{id}/)`, so a merchant told their data is
+destroyed does not have a copy of their catalogue outliving that promise inside a table invented
+three phases later. The consequence is stated rather than worked around: **a backup cannot resurrect
+a purged tenant.** That is the platform dump's job (Q10) and the restore runbook's.
+
+**The dump is `row_to_json` over `SELECT *` inside `withTenantTxn`, and that combination is the
+security property the whole feature rests on.** RLS filters the result before the code sees it, so
+even a bug in `tables.ts` — a wrong table name, a stray entry — cannot put a neighbour's row in the
+archive. Postgres decides what is in the file, not a `where` clause somebody could forget. Generic
+also means a `SELECT *` cannot forget a column added last week, which is the defect that only
+surfaces at restore time months later.
+
+**`tables.ts` classifies every tenant-owned table, and a DMMF-shaped guardrail keeps it honest.**
+`tests/unit/phase10-tenant-backup.test.ts` parses the schema and fails on a model with a `tenantId`
+that is in neither list. Subscriptions, payments, gateway configs, audit logs and events are IN the
+artifact and NOT restored (invariant 5; a gateway config is also sealed under this deployment's key
+and would be unreadable elsewhere). Excluded outright: raw `analytics_events` (largest table, already
+superseded by the rollups the backup does carry), `push_subscriptions` and `push_messages` (visitors'
+device credentials, not the merchant's), `demo_links` (live bearer tokens), `subscription_reminders`
+(idempotency marks whose restore would re-send or suppress a warning), and the backup inventory
+itself.
+
+**Restore order: refuse an inexact schema → verify every checksum → quiesce → one transaction.**
+The schema gate is exact, not "compatible": accepting an older artifact because "the new columns
+will be null" is precisely the silent loss it guards against — `NOT NULL DEFAULT` columns would take
+their defaults and a shop would come back subtly wrong with nothing saying so. Checksums are verified
+BEFORE a row is deleted, because a truncated archive found halfway would leave a shop with neither
+its old data nor its new. The quiesce is the purge's own pair (platform lock + queue drain) because
+the two operations do the same thing to the same tenant. Media is written before the commit: an
+object with no row is collected by the sweep, whereas rows pointing at photographs never written are
+not recoverable.
+
+**The ZIP reader is hand-written, ~150 lines, and reads the CENTRAL DIRECTORY.** `archiver` only
+writes; every reader is a new dependency in the production image for parsing an archive this
+codebase produced and stored encrypted under the tenant's own prefix. The central directory matters:
+`archiver` streams local headers with zeroed sizes and a trailing data descriptor, so a forward scan
+returns empty files **with no error** — a restore that reports success over an empty shop. ZIP64 is
+detected and refused loudly rather than misread.
+
+**`restore-tenant-backup` is a SystemJob carrying `tenantId` in its payload**, the same shape B1 was
+forced into for `suspend-tenant`: it must open its own transaction after taking the purge lock, and
+nesting that inside the one `createWorker` opens for a TenantJob would deadlock or blow the budget.
+`removeTenantJobs` matches on the payload, so a purge still drains a queued restore.
+
+**Single-tenant mode is one file (`src/server/single-tenant.ts`) and four named branches.** Root host
+→ storefront, `/dashboard` → dashboard, admin and demo routes 404, entitlements from a frozen
+snapshot, billing sweeps unscheduled, nothing `editable_by: admin` (there is no admin to ask). What
+it does NOT change is isolation: RLS, the scoped client and `withTenantTxn` run exactly as they do
+here, because a single-tenant deployment has one tenant, not no tenants. **A missing snapshot falls
+through to the plan query, which answers "no features" — fail closed.** Resolving it to "everything
+on" would silently enable the PII-collecting features (`cart`, `payment_gateway`) on a broken bundle.
+The mode being INERT when off is the property the unit test actually asserts, because the platform
+runs with it off.
+
+**The bundle's source comes from a Dockerfile stage, not a git fetch.** `standalone-source` tars the
+same build context that produced the running image, so "the bundle contains exactly the code that
+built this platform" is true rather than aspirational — fetching a tag at export time can hand out a
+commit that was never deployed. `.dockerignore` already excludes `node_modules`/`.next`/`.env*`; the
+stage additionally drops `tests/e2e`, the phase notes and `seed-assets`.
+
+**`scripts/standalone-import.ts` is deliberately NOT the platform's restore.** It creates the Tenant
+row (the platform's restore refuses to — invariant 5) and imports the billing history (which the
+platform's restore skips, same invariant), because it runs against a database created ninety seconds
+earlier by `bootstrap.sh` rather than over a live shop, and a dashboard showing an empty payment
+history for a five-year-old business is wrong in a way the merchant notices immediately. It refuses
+a schema mismatch and refuses an artifact whose `tenantId` is not `SINGLE_TENANT_ID`.
+
+**Known gaps, carried rather than hidden:** no e2e for any of it (needs a browser and a stack); the
+bundle's bootstrap has never been executed end to end (needs a docker-capable machine); the backup
+build and restore are memory-bound in the same way `src/server/export` already documents, with a
+512MB media budget and omissions counted rather than hidden; and `CURRENT_SCHEMA_VERSION` is
+hand-maintained, so the next migration that changes a COLUMN on a backed-up table must bump it and
+say so here.
+
+## The agency credit bar + the 2026-08-21 security/QA session
+
+**The credit bar is PLATFORM state on the settings singleton, owner-only by construction.**
+«تم إنشاء وتصميم وبرمجة هذا الموقع بواسطة {name}» renders under the legal strip on every
+storefront when `branding_bar_enabled` is on — migration `20260821020000_platform_branding_bar`,
+edited from the /plans panel, audited, with a DB CHECK making enabled-but-empty unrepresentable and
+the write refusing non-http(s) URLs. No feature key, no capability, no dashboard surface: a
+merchant cannot see the toggle, ask about it, or file a change request against it, which is the
+requirement stated by the owner. The sentence is i18n; the NAME and URL are data on the row.
+
+**It rides the request-scoped half of the storefront context, through its own 60-second Redis
+entry.** Baked into the five-minute per-tenant cache, the owner's toggle would appear dead across
+every shop at once — the exact moment they are watching. `cacheDel` on save makes it effectively
+instant; "off" is cached too, so a platform that never enables it pays nothing. Verified LIVE both
+directions: toggle on → bar on the next storefront request; toggle off → gone on the next request.
+
+**Two rendering defects were caught live and fixed, both of the classes this repo already names.**
+`--t-weight-strong` was a phantom token (the phase9-templates defect class — replaced with the
+template's real `--t-weight-display`), and the unclassed anchor was swallowed by the shell's
+`.sf-root a:not([class]) { color: inherit }` at (0,2,1), rendering the name muted instead of in
+`--t-link`. Classing it (`.sf-credit__link`) is that rule's own designed escape hatch. Verified
+live on two templates: ديوان renders the name `#e08a5f`, سوق نيون `rgb(235,101,130)` — the "matches
+each site's colours" requirement, demonstrated rather than asserted.
+
+**Security review findings (2026-08-21):** ONE real repo-hygiene hole — `.pgdata-dev/` (the
+Docker-free dev cluster, a complete database of every tenant) was not gitignored; closed with a
+`.pgdata*/` glob so the class is closed, not the instance. Everything else reviewed clean:
+`dangerouslySetInnerHTML` only on the two known gated paths (sanitised custom-html, JSON-LD
+serialiser), `eval` only as Redis Lua, secrets only via env with `.env*` ignored. Live probes:
+CSP + `nosniff` + `frame-ancestors 'none'` + referrer-policy present on the storefront response;
+unknown hostname answers a real 404 with the Arabic page; a signed-out visit to `/backups`
+redirects to the bare sign-in card with zero data; sign-in works after; impersonation admin→app
+hands off correctly.
+
+**The capability matrix was exercised live end to end**: flipping `sections_layout` to admin on the
+permissions tab locked the merchant's /sections into the read-only-with-«اطلب تعديل» state on the
+very next request (quota line rendered, note field present), and flipping back restored the
+editable form — the same round trip the unit suite asserts, now witnessed through the browser.
+A merchant product created through the dashboard («سماعات بلوتوث لاسلكية», ₪149) appeared on the
+storefront immediately with the cart button, proving the save → revalidate → render chain.
+
+**Hostinger:** `docs/DEPLOY-HOSTINGER.md`. The one decision that matters is VPS (KVM, root+Docker),
+never shared/cloud hosting; DNS moves to Cloudflare regardless of registrar (wildcard DNS-01 and
+invariant 9 both require it). The guide ends with the honest list of what only the first staging
+boot can prove.
+
+## Owner appearance control, sections-page clarity, and the addresses panel — 2026-08-21
+
+The owner asked for three things in one breath: pick any look for any site and see it land,
+make the merchant's sections page understandable, and see per-site addresses (subdomain vs custom
+domain) under his control. Each landed as a small addition to an existing surface rather than a
+new one.
+
+**The appearance panel (`setSiteAppearance`, content tab).** Until now `Site.templateKey` was
+written exactly once, in `createAccountFromAdmin`; a live site could only be restyled by the
+merchant within `templates_allowed`, or by impersonation. The new panel at the top of the account's
+content tab offers all five templates and, for colour, the five vetted presets — with two decisions
+worth recording:
+
+- **The owner is not bound by `templates_allowed`.** That entitlement is the merchant picker's
+  boundary — what the plan sells. The owner restyling a site is the seller, not the buyer, and B2's
+  loader already keeps the CURRENT template selectable when the entitlement no longer names it, so
+  the state this write can create was already a handled state.
+- **A sixth colour option, `template_default`, deletes the ThemeSettings row.** The five presets
+  deliberately do not mirror the five templates' design defaults (Phase 9 note in
+  `site-contract/templates.ts`), so without it one save would make a template's original look
+  unrecoverable from this panel. Row-absence is a first-class state — every fresh site renders
+  that way — and `deleteMany` rather than `delete` because the row not existing is the goal, not
+  an error.
+
+Audited as `site.appearance_changed` with full before/after, and the write ends with
+`requestStorefrontRevalidation` — a restyle the owner cannot see land reads as a restyle that
+failed. Proven live in the browser three ways on `bartaa-electrownics`: bayt `#E08A5F`/`#221913` →
+(raff + zaytoun) `#3F6212`/`#F7F7F0` → back to bayt `#E08A5F` via `template_default`, each hop
+confirmed on the storefront's `data-template` and computed `--t-*` tokens.
+
+**The sections page** kept every form name, action and the one-submit sorter (the e2e suite only
+asserts staff-404 on the URL) and gained the parts a first-time merchant was missing: a three-step
+numbered explanation (order = what shows first; the checkbox = visible, unchecking keeps settings;
+save applies immediately), a jump-pill nav — with 17 section types the settings panels are a long
+wall, and the pills anchor-link into it — and a ظاهر/مخفي status tag on every settings panel so
+"I edited it and nothing changed" self-answers when the section is simply hidden. All verified
+rendering live under impersonation (9 pills, 9 anchors, all targets resolve).
+
+**The addresses panel (`account.domains` on the overview page) is read-only by design.** The write
+paths already exist and stay single: the merchant's Phase 4 domain page does ownership checks,
+verification and Caddy activation; the owner's lever is the `custom_domain` feature switch in the
+matrix right below the new panel; and impersonation covers "attach it for them". A parallel
+admin add-domain form would be a second copy of the verification rules waiting to drift. The panel
+shows the always-present `{slug}.{DOMAIN}` address, every custom domain with live status, and spells
+out where the switch and the on-their-behalf path are. Proven live end to end: domain added under
+impersonation (`shop.example.com` → «بانتظار التحقق» with the verify button), immediately visible
+with status in the admin panel, then removed — list back to the empty state.
+
+**Gates:** lint exit 0 on the first run; typecheck surfaced four fixture errors — the branding
+bar's `credit` field added to `StorefrontContext` the day before was missing from four test-file
+context builders. Fixed as `credit: null` (the platform default: bar off). The full test suite
+still needs CI or a real PostgreSQL, unchanged from Phase 10's note.
+
+## Dark/light mode + accent choice for both private surfaces — 2026-08-21 night
+
+The owner asked for the panels to be "أكثر جمالية" with colour choice and a dark/light mode. Both
+surfaces got the same machinery; the storefronts got nothing, deliberately — templates own their
+colours per tenant and that system already exists.
+
+**A per-browser cookie, not a database column** (`src/shared/ui-theme.ts`). The preference is
+about the screen being looked at — an office monitor at noon, a phone in a dark stockroom — not
+about the account, and two people sharing one merchant login can want opposite answers. Cookies
+are host-only, so `sb-ui-theme` / `sb-ui-accent` keep admin.* and app.* independent with zero
+code; proven live with the admin dark-sea while the dashboard sat light-default.
+
+**SSR-stamped attributes, so there is no flash.** Each surface layout reads the cookies and
+stamps `data-theme` / `data-accent` on the same `data-surface` element the tokens are scoped to;
+the ThemeSwitch client component (one component, both surfaces — it styles itself against
+`--sbx-*` bridge variables each surface maps onto its own tokens) flips the attributes live and
+rewrites the cookies. `router.refresh()` is deliberately not called: nothing server-rendered
+depends on the theme except attributes the component just set by hand.
+
+**The accent family split.** One accent token could not survive dark mode: a fill dark enough to
+carry white button text is too dark to read AS text on a dark panel. So both surfaces now carry
+`--accent` (text-level), `--accent-strong` (solid fills), `--accent-hover` and `--accent-soft`,
+coinciding in light mode and diverging in dark — same for `danger` and the dashboard's `locked`
+(whose banner needed `-strong` the moment the text-level value lightened). Every stray hex that
+would have ignored the theme (`#fff` on primary buttons, the notice ink colours, the impersonation
+banner) moved into tokens in the same pass; `src/app/{admin,dashboard}` component files now
+contain zero hex outside the storefront-preview component, which is SUPPOSED to show storefront
+colours.
+
+**Dark palettes are hue-tinted, not grey**: the admin ledger darkens to warm browns
+(`#171310`→`#2a231b` ladder), the dashboard workbench to warm olive-browns, ink is off-white
+(`#ece4d8` / `#e9e7dd`), raised surfaces get lighter instead of casting shadows
+(`--shadow: none` in dark), and `color-scheme: dark` carries the form controls. Five vetted
+accents (clay, olive, sea, night, berry — طيني، زيتوني، بحري، كحلي، كرزي) each define
+light and dark values chosen against the AA thresholds for their role; nav hovers use
+`color-mix(... 8%, transparent)` so they follow the accent with no per-accent hover table.
+
+**Two live-found fixes worth recording**: the global `a { color: var(--sb-primary) }` is a
+light-paper value that goes near-invisible on the dark ledger — scoped
+`[data-surface] a:not([class])` now follows the surface accent (the `:not([class])` keeps every
+classed component out of reach); and the global olive focus ring vanished on dark for the same
+reason — `outline-color` now follows the accent inside both surfaces.
+
+**Polish in the same pass:** 150–220ms transitions on nav/buttons/inputs/cards (transform and
+colour only, behind the existing global `prefers-reduced-motion` kill switch), a whisper of
+ink-tinted shadow on panels in light mode, hover states on inputs and appearance cards, and a
+1px press on buttons. No class was renamed and no behaviour touched — the whole change is tokens,
+attributes, one new component, and additive CSS.
+
+Live proofs: admin toggled dark → `#171310` paper on the next paint; sea accent → links, buttons
+and chips all followed (`#6cc3ce` text-level / `#0e6e7a` fills); full reload and cross-page
+navigation kept both (SSR attributes from cookies); dashboard independently dark+berry; the
+storefront rendered bayt exactly as before with no theme attribute and no switch.
+
+## Phase 11 — Track 11.0: the template contract, the ornament layer, storefront dark mode
+
+Spec: `docs/PHASE-11.md`. Owner answers Q27–Q36 recorded there. **This session could not execute the
+toolchain** (`pnpm typecheck` / `pnpm test` unavailable), so every claim below is a claim about the
+source, not about a green run — `GATES.cmd` is the arbiter.
+
+**The structural code was exhausted, not merely crowded.** Three ternary axes at a minimum Hamming
+distance of two admit at most 3² = 9 codewords (Singleton bound). Five were spent, and the four that
+remained were *forced combinations* rather than free choices: the only free slot carrying a `split`
+hero came welded to a `spec` product card — a lookbook opening above a parts-catalogue body. The
+fourth axis `imageMask` (`square | arch | notch`) takes the space to 27, which is what made a sixth
+GOOD template expressible instead of merely permitted.
+
+**Ornaments became a contract (`TemplateSignature`) because the layer a merchant actually perceives
+had no home.** Before this, a template's identity was tokens plus three markup switches, so every
+template that wanted an arch or a mark grew one privately in its own sheet and the next one
+re-invented it. The four axes are deliberately NOT in the distance check — seven axes at distance two
+is unsatisfiable, and two templates may legitimately both press their buttons. What IS enforced: all
+quadruples distinct, and the pairs sitting at the structural minimum of 2 must differ on at least two
+ornaments. ديوان–دار is the case that motivated the second rule (both `split`, both `arch`).
+
+**`imageMask: 'arch'` implies `badge: 'bottom'`, as a test.** An arch narrows the top of the frame and
+clips a badge placed there — found by looking at a rendered card, not by reasoning about one, which is
+exactly why it is mechanical now. The next person to add an arch template will not have seen it.
+
+**Dark mode became `scheme` + optional `altGround`, NOT the `ground: { light, dark }` restructure the
+spec first called for.** Three of the five templates are designed DARK, so a required `ground.light`
+would have forced four hand-tuned palettes into a contract commit before anyone had designed them, and
+a `light` field holding بيت's `#221913` would have been false. `background`/`surface`/`text` already
+meant "the ground this was designed in"; `scheme` names what they were. That kept
+`src/app/site/_data/context.ts` and both `asResolvable` test helpers untouched — three of the four
+call sites the restructure would have broken. `deriveColorTokens` gained an OPTIONAL ground override,
+so all eight existing callers still pass one argument.
+
+**The tokens moved out of the inline `style` attribute, and that IS the mechanism.** An inline style
+attribute beats every stylesheet rule, so a `@media (prefers-color-scheme: dark)` override of `--t-bg`
+would have lost to the inline `--t-bg` it was overriding — silently, with no CSP error and no symptom
+except a storefront that never goes dark. `templateThemeCss()` now emits `.sf-root{…}` plus the media
+block into a `<style>` tag. `style-src` already carried `'unsafe-inline'` for the per-tenant token
+system, so the policy is unchanged.
+
+**`:root` carries the DESIGNED ground, and the media block only ever swaps a light template into
+dark.** `prefers-color-scheme: light` matches for the large majority of visitors, so treating the light
+ground as the base would have flipped سوق نيون, ورشة and بيت to a light page for most of the internet
+on deploy day. Phase 11 is therefore a **no-op** for those three and adds a dark mode to ديوان and رفّ
+only. A designed light mode for the dark three is 11.C's and needs the owner's word — it changes what
+live storefronts look like, which is not a token function's call to make.
+
+**A missing `altGround` is derived and guarded rather than refused.** `flipGround()` walks the ground
+across the luminance axis (mixing toward `#121212` rather than black, so a warm ground stays warm), and
+everything downstream still passes through the existing `guard()`. The worst it can produce is a
+compliant page a designer would want to improve — which is the right way round for a contract commit,
+and gives 11.C a working baseline instead of a blank one.
+
+**Q36: the blanket `transform` ban became specific.** `phase9-templates.test.ts` forbade `transform:`
+anywhere in any sheet; its stated intent was always the image case (an arch plus a zoom is chaos). The
+`printed` button's 3px press had no acceptable alternative — a `margin` shift moves every sibling and
+costs layout shift on the interaction a shopper performs most. The assertion now parses rule blocks and
+fails only when the selector touches media. Stated as a loss rather than hidden: a lifting card now
+passes, where the old comment argued against it. Every `transition` still has to sit inside
+`prefers-reduced-motion: no-preference`.
+
+**`src/server/tenancy/**` joined the FORBIDDEN list, and had been missing since Group A.** It owns
+`SURFACE_ROOT`, `UNPREFIXED_PATHS` and `surfacePath()`. A worktree adding one entry to
+`UNPREFIXED_PATHS` makes that path resolve on the storefront and the admin panel too — a merchant-only
+route reachable on every merchant's own domain. It was the one piece of shared routing the check could
+not see.
+
+**Two spec errors found by implementing it, both recorded in `docs/PHASE-11.md`:** the preview needs no
+routing change at all (`app.*/preview` already prefixes to `/dashboard/preview`, and touching
+`UNPREFIXED_PATHS` would have *created* the leak it was meant to avoid); and the iframe is blocked by
+`frame-ancestors 'none'` plus a global `X-Frame-Options: DENY` that Next's `headers()` appends rather
+than replaces — raised as **Q37**, an owner decision about clickjacking posture, not a track's.
+
+**Deferred out of 11.0 for want of a machine:** the four new template keys (`aldar`, `matbakh`,
+`mawid`, `jihaz`). Each definition must write out the guard's derived output, which
+`phase9-templates.test.ts` compares against `deriveColorTokens` — those values cannot be computed by
+hand for four palettes, and a scaffold copying an existing template's block would put four identical
+colour sets in the merchant's picker. The Rubik subset (Q32) is also a binary asset this session could
+not produce. Both are one short main-session pass on a machine that can run node.
+
+## Phase 11 — Tracks 11.A–11.H executed (main session, owner-directed, 2026-08-28)
+
+Owner decisions taken this session: **Q37 = option 1** (drop `X-Frame-Options`, `frame-ancestors`
+carries framing alone), and **the three dark templates get designed light counterparts** (the 11.C
+question the previous entry left open — approved with the explicit framing that the DESIGNED ground
+stays the `:root` default and the light palette answers only an explicit OS preference). This session
+had file tools and a real browser but **no local toolchain either**; the run-on-a-machine list is in
+`TODO.md` and `GATES.cmd` remains the arbiter.
+
+**The palettes were computed, not eyeballed — against a verified port of the real guard.** The exact
+algorithms of `site-contract/contrast.ts`, `colors.ts` and `templates/tokens.ts` were ported to a
+browser harness and validated by reproducing بيت's known-correct written values byte for byte
+(`#40342b` / `#a69e95` / `#71655b`, link and accent unchanged) before anything new was trusted to it.
+On that harness: the spec's aldar terracotta `#B0562F` measures **4.47:1** on the derived surface-alt
+— under the body-text bar, so `--t-link` would have silently shipped a colour not in the file — and
+was settled to `#AD532C` (4.65:1 worst-case); the sage settled from `#66765A` to `#637357` (4.57:1).
+All four new palettes now return `link === primary`, `accent === secondary`, text and surface
+unchanged, zero `resolveColors` adjustments — the bayt/raff property, held. The final machine check
+(all nine templates: written derived values vs the guard, all 36 structural distances, ornament
+distinctness, arch⇒bottom, and every counterpart ground at AA with its designed text unwalked)
+reported **zero problems**.
+
+**The nine counterpart grounds are hand-tuned and in-hue** (each definition's `altGround`): ديوان
+umber `#211A12`, رفّ shuttered green-black `#161A16`, دار clay `#241B15` (the brief's own values),
+مطبخ roasted brown `#221610`, موعد evening teal `#132320`; and the light counterparts — نيون
+rose-paper `#FAF3F5`, ورشة skylight `#F1F3F6`, بيت linen `#F7F0E7`, جهاز cool paper `#F2F5FA`.
+`templateThemeCss` now emits the media block for the OPPOSITE of the designed scheme in either
+direction; `counterpartGround` still refuses to override a tenant whose own chosen ground is already
+in the target scheme. `a2-templates.test.ts` was extended deliberately (shared suite, main session):
+nine templates × the counterpart mode through the guard at AA, plus a new hand-tuned bar — the
+designed `altGround.text` must ship UNWALKED, which a `flipGround` fallback cannot pass by accident.
+
+**Two new faces of the four verticals, and why each pairing:** مطبخ took Zain (a menu is warm or it
+is wrong; ديوان and رفّ are the least confusable neighbours), موعد took Plex (clinical; its light
+arched reception cannot be read as ورشة's dark square counter), and جهاز took **Rubik with دار** —
+Plex would have made it a second ورشة (both dark, both `spec`, both `index`), the one pairing the
+least-confusable rule exists to prevent. Rubik's `@font-face` lives in `aldar.css` alone
+(declared-once rule); جهاز borrows it the way بيت borrows Alexandria's.
+
+**The ornament layer shipped as ONE component plus CSS, not three components.** `<HeadingMark>`
+renders all three marks in identical markup everywhere and `storefront.css` displays the one
+`data-mark` names. `ArchFrame` / `TicketNotch` from the plan became pure CSS on `.sf-media`
+(`data-mask` + the `--t-media-*` tokens): both are shapes on a box that already exists, and a wrapper
+component would have added a render-tree difference exactly where the design demands none. Two
+refinements recorded: ديوان's private olive `::after` head ornament was DELETED in favour of the
+shared squiggle (the pattern the layer exists to end), while نيون and بيت SUPPRESS the shared glyph —
+their `rule` mark is the full-width sign/hem their heads already draw, and a third line inside it
+would be ornament on ornament. `data-badge='top'` repositions the card's status badge onto the
+photograph's corner via CSS only; the five `bottom` templates render byte-identically.
+
+**Q37 implemented one knob wide.** `buildCsp` gained `framable`; the proxy computes it from ONE
+predicate — the app surface's `/preview` segment (plus its single-tenant spelling) — and the same
+predicate stamps `x-souq-preview`, which the dashboard layout reads to render the preview BARE.
+`X-Frame-Options` is gone from `CONSTANT_SECURITY_HEADERS` and `next.config.ts` together;
+`phase6-security-headers.test.ts` pins all three properties: default stays `'none'`, `framable`
+relaxes to `'self'` and never a host list, and the proxy asks on exactly one path shape (source-
+asserted: one `buildCsp` call, `isPreviewSegment` defined once and called twice).
+
+**The `(shell)` route group became a header-keyed branch, deliberately.** Moving ~30 route folders
+into a group was pure churn this session could not verify (no typecheck, no way to delete the old
+paths), and the partition the plan wanted — chrome for every route, none for the preview — is exactly
+one branch in the one root layout, keyed off the proxy's own predicate so the framing exception and
+the bare render can never disagree about what "the preview" is. The header joined `TENANT_HEADERS`,
+so it is stripped from every incoming request like the rest of the context.
+
+**The preview is read-only, tenant-scoped, and bounded by the plan.** `resolvePreviewDraft` enforces
+`templates_allowed` (plus the currently-saved key) and `color_mode` with the save path's own rules,
+and anything invalid falls back to the saved appearance — a preview that 500s over a hand-edited URL
+teaches a merchant the feature is fragile. Data comes from `loadTenantData` (the UNCACHED read — a
+preview must show the product added ten seconds ago). The empty catalogue gets an in-memory Arabic
+sample (never the demo packs; never a database row), labelled from the appearance screen. A
+capture-phase click/submit guard keeps the framed document from navigating into dashboard routes or
+posting anything — the second half of read-only. `tests/unit/phase11-preview.test.ts` asserts the
+revalidation exports still exist under the names it greps for, then greps the folder for every write,
+queue, revalidation and server-action surface; it also pins the layout's header branch and the
+proxy's stamp to the same predicate.
+
+**11.D's contrast promise moved before the save.** The studio runs the real `resolveColors`
+client-side (site-contract is pure) and shows, per pair, the actual ratio against the requirement and
+exactly which token would be walked where — the message that used to arrive after saving. The mock
+preview block and its hardcoded `color:'#fff'` died with the change; `ColorEditor` became controlled,
+same submitted field names, and the two server actions are untouched.
+
+**11.H reads money through the billing folder, mechanically.** `merchantSubscriptionView` lives in
+`src/server/billing` and takes the MERCHANT'S OWN scoped client, so RLS holds even against a wrong
+argument; it contains finds and counts only. The Q18 export link renders only when `status =
+suspended` AND `exportGeneratedAt` is stamped — B1's "never promise a copy that does not exist" rule,
+kept on the screen. The renewal action is a `wa.me` link built from the new optional
+`PLATFORM_WHATSAPP_NUMBER` env (`.env.example` updated in the same change); unset renders the
+instruction without a dead link. `tests/unit/phase11-billing-screen.test.ts` points invariant 5 at
+the new folder by name and pins the route guard, the read path, and `billing ∉ STAFF_ALLOWED`.
+
+**The kit's extraction boundary is the CHROME, stated rather than fudged.** `src/app/kit.css` +
+`src/app/_components/kit/` own the shell, the grouped rail (icons inline-SVG, `aria-hidden`, labels
+the accessible names), the sub-48rem drawer (labelled toggle, `aria-expanded`/`aria-controls`, focus
+moved in, trapped, `Esc`, toggle refocused), the ≥48rem collapse (labels clipped for AT, the FOOT
+`display:none` — a clipped control is an invisible tab stop), the `⌘K` palette, the shared look-card
+grid, and the 90rem widening. The widget layers (buttons, tables, forms, notices) deliberately stay
+per-surface: the ledger's 4px density against the workbench's 8px calm is a designed difference, and
+a "shared" file that immediately forked per surface would be the old duplication with an extra hop.
+The old `.sbd/.sba` shell/rail/nav blocks were deleted WITH their consumers, and both surfaces map a
+full `--sbx-*` bridge (including `--sbx-radius` / `--sbx-rail-width`, which is how the ledger's
+temperature rides through a shared chrome).
+
+**The palette searches nothing it should not, and adds no route.** 11.F's gate ("no route and no
+server action may change") and its palette line ("server-backed search") conflict — the gate won,
+being the mechanical one. The palette filters the nav entries the server already granted and offers
+deep rows that land on the EXISTING screens' own search (`/orders?search=`, `/customers?search=`,
+admin `/accounts?q=`), derived from the granted items so a staff session is never offered a row its
+role would 404. No client-side index of the catalogue, no new endpoint. If a true cross-entity
+palette is ever wanted, it is a deliberate route with its own review, not chrome.
+
+**Grouping stayed a presentation of the server's list.** `navItems(ctx)` is untouched as the single
+gate; the nav arranges the granted keys into the plan's exact groups, renders no heading for an empty
+group, and appends unknown future keys ungrouped rather than losing them. The ONE added key is
+`billing` (11.H), pushed only when `merchantCan(ctx,'billing')` — the same call the route makes.
+
+**The `appearance` namespace registered in three of the plan's four lists.** The plan named
+`(public)/_components/messages.ts` too; that allow-list is `['common','demo']` BY DESIGN (it bounds
+what a crafted URL can make the public form say), and appearance keys can never legitimately surface
+there. Widening a deliberately narrow list to satisfy a checklist would have been the wrong kind of
+obedience.
+
+**Empty-states-with-actions shipped as capability plus first consumer.** `Empty` takes an optional
+action; `/products`' first-day empty state now carries «أضف أول منتج». The remaining screens are a
+mechanical sweep listed in TODO — most of their empties sit beside on-page create forms, where a
+link's value is lower and the right anchor needs per-screen judgement.
+
+**e2e:** `tests/e2e/phase11-design-dashboards.spec.ts` — the grouped rails, the drawer with its
+focus/Esc contract, the collapse cookie across a reload, the palette, the studio's draft-to-iframe
+loop, the full-page preview (bare, `frame-ancestors 'self'` on that response and `'none'` on its
+neighbour, no `X-Frame-Options`), the preview's three refusals (signed-out, storefront spelling,
+admin spelling), staff's missing entry AND 404 at `/billing`, and dark mode's first paint against the
+pinned hand-tuned grounds on the seeded demo. Written blind against the phase4/5/8 harness patterns;
+the first machine run is expected to season selectors, not the assertions.
+
+**Carried forward (needs a machine or the owner):** run `scripts/fetch-rubik.mjs` once (two
+arabic-subset woff2 into `public/fonts/rubik/` — the font tests are RED until then, by design);
+`pnpm db:seed` in every environment (nine `Template` rows; no seed edit, a required seed run);
+`GATES.cmd` then the full suite; axe ×9 templates ×2 modes ×dashboards; LCP per template; the
+screenshot pass (11.A/11.B gates); admin's two remaining pickers onto the shared look-card markup
+(the classes are in the kit and the admin allow-list already resolves `appearance:*`); the
+empty-state sweep; and the git-level diff assertion that 11.F/11.G changed no route and no action
+(this session's own inventory says they did not — the reviewer's diff is the proof that outlives it).
+
+## Phase 11 — pre-gate audit and the 11.G picker adoption (main session, 2026-08-29)
+
+This session had file tools and a browser and **no shell at all** — the sandboxed Linux workspace
+refused to start for the whole session, so `pnpm` never ran here either. Docker was not touched and
+will not be: the box bugchecks under WSL2 (`bsod-evidence.txt`), and `scripts/dev-native.ts` is the
+only supported path. `AGENT-RUN.cmd` was added at the root: one double-click runs `fetch-rubik`,
+opens `START-HERE.cmd` in a second window, then records git state, `prisma migrate status`,
+typecheck, lint and the full suite into `agent-report.log`, continuing past each failure so one red
+check cannot hide the other two. It is a convenience wrapper over the existing scripts, not a new
+path — `EMBEDDED_PG_PORT=5433` for the reason `QA-CHECK.cmd` already documents.
+
+**Everything below is still unproven.** Three sessions have now written Phase 11 without a
+toolchain, and the last verified full run in this checkout is `qa-report.log` of **2026-08-24** —
+truncated mid-typecheck, and older than every line of Phase 11. `GATES.cmd` remains the arbiter.
+
+---
+
+## «مرصد» implemented — the palette, the defaults, the three signatures (2026-08-30, part 2)
+
+Owner: "قم انت بعمل كل شيئ وخذ كامل الصلاحيات". Built the direction chosen above.
+
+**Only VALUES moved, never the structure.** The token architecture — the `--sba-*`/`--sbd-*`
+ladders, the four-way accent split, the `--sbx-*` bridge, the `data-surface`/`data-theme`/
+`data-accent` cookie stamping — was already right, and Phase 11 had paid for it. The ladders went
+from warm sand to a near-neutral cooled by a trace of green so the mint accent is the only colour
+competing on the screen. Both surfaces keep their density difference (ledger 4px / workbench 8px,
+62rem column), because that split is functional, not decorative.
+
+- **Dark is the default now**, via a single `UI_THEME_DEFAULT` in `ui-theme.ts` rather than a
+  literal defaulted separately in each layout — which is how the two surfaces could previously
+  have disagreed without anyone noticing. Light stays a complete peer.
+- **`sea` is the shipped accent and restates the base tokens**, taking the role `clay` (admin) and
+  `olive` (dashboard) used to hold: re-choosing it returns you to the default with no
+  cookie-clearing case. A test asserts it has not drifted.
+- **The accent dots are the DARK values now.** They were the light-mode interactive values; with
+  dark as the default, a swatch showing a colour you will not get is a picker that lies. A test
+  ties each dot to the resolved token — nothing else did.
+- **`themeColor` was still clay**, which would have painted a bright orange mobile browser bar
+  above a dark green app. Now a light/dark pair.
+
+**The contrast comments were replaced by a contrast TEST.** The first draft of this palette
+carried hand-computed ratios in the CSS comments. That is unverifiable, goes stale the first time
+a hex moves, and reads as authority it has not earned — so `tests/unit/chrome-contrast.test.ts`
+now resolves all 2 modes × 5 accents × 2 surfaces and asserts each pair. Writing it found two
+values genuinely short, both corrected: `ink-faint` at 2.8:1 on the paper (the 3:1 floor for the
+hints it exists for) and the dark `accent-hover` at 4.28:1 under a white button label.
+
+It deliberately does NOT assert `--sb*-rule*` against the paper. Those measure ~1.6:1 and always
+have; a hairline between table rows is decoration, and 1.4.11 governs boundaries required to
+identify a component. **The honest consequence is recorded rather than hidden:** form-control
+borders draw from those same tokens and are probably a real 1.4.11 failure inherited from Phase 1.
+That needs the rendered element, so it is on the axe-core e2e checklist in `DESIGN_BRIEF.md`.
+
+**The brief contradicted itself and was corrected, not left.** It put KPI values in Alexandria for
+weight while also making IBM Plex the numeric face. A column of money has to align digit-for-digit
+and IBM Plex is the face here with dependable tabular figures, so the display-face line lost.
+
+**Signature elements.** The sparkline is the first data visualisation in the product — before it,
+`insights` was three tables, `analytics` one, and the only graphical indicator anywhere was an 8px
+meter. It is one server-rendered `<svg>`, no library (there are no UI dependencies in
+`package.json` and a 26px line is not the reason to add one), and it normalises its own input so a
+flat week, a single point or an empty array cannot produce `NaN` in a `d` attribute — the same
+class of silent failure as a fallback font. **It is wired ONLY to «سلوك الزوار»'s `pageviews` and
+`visitors`**, because `analytics_daily` is the one real series in the codebase; the other four
+totals on that row have no series and inventing a shape for them would be a chart that lies.
+
+`TemplatePreview` imports from `@/templates/registry`, NOT the `@/templates` barrel, against that
+barrel's stated convention. The barrel re-exports `StorefrontShell`, `CheckoutForm`, `useCart` and
+two dozen storefront components, and the preview renders inside a `'use client'` component — the
+barrel would pull the storefront render tree into the dashboard's client bundle. Silent failure:
+the page still works, just megabytes heavier, on a product held to LCP < 2.5s over Fast 3G.
+
+### VERIFIED — the first green toolchain run in this checkout since 2026-08-24
+
+`mcp__workspace__bash` stayed dead all session ("RPC pipe closed"). `AGENT-RUN.cmd` was instead
+driven on the owner's own machine through computer-use, three times, fixing what each run found.
+**Four sessions of unverified Phase 11 work now have a real result.**
+
+Final, over six runs: **fetch-rubik 0 · prisma migrate status 0 · typecheck 0 · lint 0 ·
+1490 of 1498 tests passing, 3 files red.** `public/fonts/rubik/` is populated, so «دار» and «جهاز»
+render in Rubik for the first time.
+
+Failure count by run as the fixes landed: **40 → 38 → 37 → 36 → 8**, failing FILES 6 → 3. Every
+one that closed was closed by a fix, not by a retry — and the last drop was the largest because it
+removed a harness fault that had been hiding a whole file from the suite.
+
+The eight that remain are Phase 9 product logic (delivery, catalogue stock) plus one timeout.
+None of them touches the chrome, the palette, the templates or the fonts, and six of them are
+tests that had never executed at all before this session.
+
+What the runs actually caught, none of which hand-review had:
+
+- **A syntax error I introduced.** A `{/* … */}` comment placed as the first child of a
+  `return (` in `dashboard/page.tsx` — JSX has no expression slot there. Twelve `tsc` errors from
+  one comment, plus a corrupted `.next/dev/types/routes.d.ts` downstream.
+- **`bloom` added to the dashboard `Panel`'s type but not its destructuring.** Would have been a
+  ReferenceError on every merchant page, not a type nit.
+- **Four pre-existing lint errors in `kit/rail.tsx`**, from the Phase 11 kit extraction. Three were
+  React Compiler `preserve-manual-memoization`: hand-written dependency arrays that disagreed with
+  the compiler, which responded by skipping optimisation of the whole component — a manual memo
+  costing the memoisation it was written to guarantee. Removed; the compiler handles it. The fourth
+  was `set-state-in-effect`: closing the drawer on navigation inside `useEffect` rendered the new
+  page with the drawer still open, then re-rendered it closed. Moved to the documented
+  adjust-during-render pattern, which is a behaviour fix, not a lint silencer.
+- **My own `chrome-contrast.test.ts` passed 6/6 on the first run** — the palette clears AA in both
+  modes across all five accents on both surfaces, and `sea` restates the base.
+- **My own new font test caught me.** It matched `/@font-face/` raw, so the comments I left in the
+  four template sheets explaining where the face went — comments that necessarily say
+  "@font-face" — counted as declarations. Fixed with this file's own standing rule: strip comments
+  first, "prose may say `left`, CSS may not."
+- **Adding `src/app/fonts.css` to `a2-templates`'s `CSS_FILES` was wrong.** That list is also the
+  input to the storefront's LAYOUT rules, so a sheet of nothing but `@font-face` blocks was duly
+  failed for having no `.sf-media` aspect-ratio. Split into `FONT_SHEETS`: one list per contract.
+
+### Second pass — 36 → 8 failures, and three more root causes found
+
+Owner asked for the suite to be driven until it passed. Three more real causes, none cosmetic:
+
+- **`phase9-delivery.test.ts` (32 → 6).** Two stacked bugs, the second hidden by the first.
+  `const db = adminDb()` sat at MODULE scope — the only integration file that did this — so the
+  Prisma client was constructed at import time, before the harness had Postgres listening, and
+  every case in the file died on a connection error pointing at a line that was fine. Made lazy
+  (assigned in `beforeEach`, like `ctx` beside it), which revealed the actual fault:
+  `reset()` deleted `platform_audit_logs` as the super admin, and Postgres refused with 42501.
+  **Correctly** — the schema grants `app_web` only `SELECT, INSERT` there and reserves `DELETE`
+  for `app_system`, because a platform audit trail the web role can erase is not an audit trail.
+  Now goes through `systemClient()`, exactly as `resetTenants()` already does for `DemoRequest`.
+- **`language-gate.test.ts` (1 → 0).** The 8 stranded English words were the operator restore
+  runbook in `admin.json` — `restore.sh show <stamp>`, `pnpm purge:replay`, `docs/DEPLOY.md` —
+  plus the lowercase `http`/`https` a merchant is told to start a link with. Exempted by KEY, not
+  by word: adding `list`, `show`, `into`, `capture` and `stamp` to `ALLOWED_LATIN` would have let
+  the next «اضغط show» through the gate everywhere. Six named keys cost nothing elsewhere.
+- **`seed.test.ts` (3 → 0)**, as described below.
+
+### What still fails, and why none of it is this work
+
+Two of these are FLAKY rather than broken — `rls-coverage` and `phase8-checkout` each failed in
+one run out of four and passed in the others, both on 60s-class integration cases against the
+embedded Postgres. Recorded as flakes rather than counted as regressions, and worth a look by
+someone with a stable DB.
+
+- **`phase9-delivery.test.ts` (6) — SIX TESTS THAT HAVE NEVER EXECUTED, NOT SIX REGRESSIONS.**
+  `beforeEach` threw on every case in this file, so the whole suite has only ever reported setup
+  errors; these six ran for the first time on 2026-08-31 and are now reporting on the FEATURE.
+
+  All six share one symptom: `seedZonesFromCarrier` returns `carrier_not_assigned`, i.e.
+  `tx.tenantCarrier.findUnique({ where: { tenantId_carrierId } })` finds nothing where the test
+  believes it assigned a carrier. The three `expected false to be true`, the `no_rates` case
+  getting a different error, and `expected [] to have length 2` are all that one fact.
+
+  RULED OUT, so the next session does not re-walk it: the grants are right
+  (`GRANT SELECT ON carriers, carrier_rates TO app_web`) and the RLS policy on `tenant_carriers`
+  is the standard `tenant_id = current_setting('app.tenant_id') OR actor_role = 'super_admin'`,
+  which a `withTenantTxn(tenantId, …, { actor: verifiedActor('owner', null) })` satisfies. So it
+  is NOT a permissions gap. What is left is the assignment write itself — whether `assignCarrier`
+  commits under the actor the test uses, and whether it lands on the tenant the read then asks
+  for.
+
+  **Deliberately not guessed at here.** Delivery is Phase 9 product logic with no bearing on the
+  «مرصد» work, and the plausible fixes touch a tenant-scoped write path — invariant 1 territory,
+  where a wrong guess is a P0 rather than a failed test. It wants a session that owns delivery.
+- **`seed.test.ts` (3) — FIXED, and green in the final run.** Stale literals: `toBe(19)` features
+  (the matrix is 32 after Phases 9/11) and `['diwan','neon-souq','warsheh']` (there are nine).
+  Rewritten to count against `FEATURE_KEYS` / `CAPABILITY_KEYS` / `TEMPLATE_KEYS` so the next phase
+  cannot stale them again — a test that fails for being out of date is what teaches people to
+  ignore a red suite.
+- **`phase9-variants-stock.test.ts` (1)** — `tx.product.updateMany()` failing inside
+  `src/server/catalogue/stock.ts:221`. Present in every run; Phase 9 catalogue logic, same
+  category as the delivery six and equally unrelated to this work.
+- **`rls-coverage.test.ts` (1)** — «gives app_system no write grant on any table that belongs to a
+  live tenant» times out at 60s. It introspects every table's grants, and the schema has grown
+  through Phases 8–11; this looks like the assertion outrunning the default `testTimeout` rather
+  than a grant being wrong — the sibling case that checks the same surface from the other
+  direction («lets only app_system delete the records that outlive a tenant») passes in 208ms.
+  Worth timing before assuming either.
+
+---
+
+## The chrome redesign — direction «مرصد», and the four fixes before it (2026-08-30)
+
+Owner reported the platform as "غير جميل بتاتا" and "لا يوجد اي قوالب اراها عند انشاء المتجر".
+Both complaints were accurate and **neither was a design problem.** Audit findings, then decisions.
+
+### The invisible font — the single largest cause
+
+`globals.css` set `--sb-font: 'Zain', 'IBM Plex Sans Arabic', …`, and **every `@font-face` in the
+app lived inside a template stylesheet** (`diwan.css` → Zain, `neon-souq.css` → Alexandria,
+`warsheh.css` → IBM Plex, `aldar.css` → Rubik). Those sheets are imported by exactly one route
+group, `src/app/site/layout.tsx`. The admin and dashboard surfaces import none of them, so on
+every private page the stack fell through to **Segoe UI / Tahoma** — a Latin UI face rendering
+Arabic with the wrong joins and no vertical rhythm.
+
+- **Fonts are a platform asset, not a template asset.** All eight blocks moved to
+  `src/app/fonts.css`, imported by the ROOT layout so all three surfaces resolve the same faces.
+  The four template sheets now declare none.
+- **The declared-once test moved with them** rather than being deleted. It was passing throughout
+  — one declaration per family was true the whole time; it just was not true *where the private
+  surfaces could see it*. A new case, `declares the chrome faces where the private surfaces can
+  actually see them`, asserts the two halves the old test could not: no template sheet declares a
+  face, and the root layout imports the platform sheet.
+- **`a2-templates.test.ts` gained `src/app/fonts.css` at the head of `CSS_FILES`.** Without it the
+  swap/local-path check would have iterated a set with no declarations left in it and passed
+  vacuously — the faces moved, the guarantee would have quietly stopped applying.
+- **Two `--sb*-numeric` stacks led with `'Segoe UI'`.** That was never a typographic choice; it was
+  the only face that actually loaded. Both now lead with IBM Plex Sans Arabic.
+
+### "No templates" — two separate causes, neither of them a missing template
+
+There are nine templates and three working pickers. What was missing:
+
+- **No preview asset of any kind.** Each card showed three 16px colour dots. `Template.preview_path`
+  exists in the schema and in the init migration and is read and written by **nothing**.
+  Decision: **derive the thumbnail, do not photograph it.** `_components/kit/template-preview.tsx`
+  draws an RTL wireframe from `TEMPLATE_IMPLEMENTATIONS` at render time — hero variant, card body,
+  `gridColumns`, `imageMask`, the five ground colours, the radii. A PNG per template would go stale
+  silently (a stale PNG is still a valid PNG, so no test can catch it), would need a headless
+  browser in a pipeline that has none, and at 13rem would be illegible Arabic noise anyway. The
+  wireframe shows the axes the templates actually differ on. `preview_path` stays dead; deleting it
+  is a migration, and it is harmless.
+- **أساسي disables the entire picker.** `templates_allowed: ['diwan']` → `singleTemplate` →
+  `<fieldset disabled>` around one option, which reads as a broken screen rather than a plan
+  boundary. Decision: **`loadAppearance` now returns all nine flagged `available`, not the
+  permitted subset.** Locked templates render as dashed cards with full-contrast previews and an
+  upgrade tag. A locked card is a `<span>`, not a disabled radio — a disabled control is skipped by
+  the tab order and announces nothing, which would put a silent gap exactly where the explanation
+  is. The preview is *not* dimmed: dimming it defeats the only reason the card is rendered.
+  `saveTemplate` is untouched and remains the authority (invariant 2).
+
+### Direction
+
+Three directions were built as live mockups (`docs/design-directions.html`, published) rather than
+described in prose. Owner chose **«مرصد»** — dark techno softened to an instrument panel, hybridised
+with Swiss for grid discipline. Contract in `DESIGN_BRIEF.md`; it is the arbiter for the build, and
+implementation may not deviate without amending it first. Owner decisions recorded there:
+
+- **Dark default, light a full peer** — not dark-only. A merchant works in a lit shop by day.
+- **Both surfaces, keeping their density difference.** Admin stays the dense ledger (4px), the
+  dashboard stays the calmer workbench (7px, 62rem column). The split is load-bearing.
+- **Fixes before redesign.** Their visual payoff exceeds the redesign's and their cost is a day.
+
+The existing `data-surface`/`data-theme`/`data-accent` cookie mechanism, its flash-free server-side
+stamping, and the five user accents all survive — only token VALUES change. The four-way accent
+split (`accent` / `accent-strong` / `accent-hover` / `accent-soft`) is what makes a per-mode accent
+possible at all: `#5FD3A8` is 9.4:1 on the dark ground and 1.7:1 on white, so light mode resolves
+the same hue family against its own paper rather than reusing the value.
+
+### Still unverified, same as the three sessions before
+
+The shell was unavailable for this entire session — `mcp__workspace__bash` returned
+"RPC pipe closed" on every attempt, so `pnpm` never ran and `scripts/fetch-rubik.mjs` never ran.
+**`public/fonts/rubik/` is still absent**, so «دار» and «جهاز» still fall back, and
+`phase9-templates.test.ts` still fails on them by design. `AGENT-RUN.cmd` covers both: it fetches
+Rubik and then records typecheck, lint and the suite into `agent-report.log`.
+
+**Four defects that would have failed the first real run, found by reading:**
+
+- `tests/unit/site-contract.test.ts` still pinned **five** template keys and three font faces.
+  `TEMPLATE_KEYS` has had nine since 11.E and `rubik` is the fourth face — the 9-key equality was
+  updated in `phase9-templates.test.ts` and this file, the shared contract's OWN test, was missed.
+- `tests/unit/language-gate.test.ts` compares the `messages/ar/` listing with `toEqual` against a
+  hardcoded array that never learned `appearance`. 11.D added the file and updated the i18n index
+  and both `_components/messages.ts` allow-lists; the gate that counts the files was the fourth
+  list, and the one nobody thought of as a list.
+- `scripts/fetch-rubik.mjs` printed its progress with `console.log`, which `no-console` forbids:
+  the relaxation covered `scripts/**/*.ts` and `*.config.mjs` but not `scripts/**/*.mjs`, so the
+  one new script was the one file it did not reach. The relaxation was widened rather than the
+  script silenced — an operator running an asset fetcher by hand wants to see it work.
+- `phase9-templates.test.ts` asserted `values.length === templates.length` over a `map`, which is
+  true by construction whatever the values are. Its comment claimed to be pinning the type scale
+  "as a whole", and the composite it deferred to carried `base|display|space.xl` — so `lineBody`
+  was in fact pinned by nothing. The dead loop is gone and `lineBody` is now IN the composite.
+
+**`.env.example` shipped a boot failure.** `PLATFORM_WHATSAPP_NUMBER=` sets the key to `''`, which
+is PRESENT as far as zod is concerned, so `.optional()` never fired and the empty string was
+validated as a phone number and rejected — `next dev` and `dev-native.ts` both load `.env`, so
+copying the example file produced a hard start failure, not a warning. Fixed at both ends: the
+example follows its own commented-out convention now, and `src/env.ts` treats `''` as absent,
+because `KEY=` with nothing after it is how an operator spells "unset".
+
+**11.G's two pickers adopted the kit (the carried-forward item, now closed).** `/accounts/new` was
+a `<select>` of nine Arabic names — an operator on a sales call could not see what they were
+choosing — and the per-account «شكل الموقع» tab had its own `.sba-look-*` cards. Both now render the
+kit's `.sbk-look-*` grid, the same markup the merchant's studio shows, so operator and merchant are
+looking at the same thing while they talk. The admin-local card CSS was DELETED rather than aliased;
+`.sba-look-group` and `.sba-look-warning` stay, being this surface's chrome and not the card. The
+`<select>`'s implicit "first option wins" default is preserved explicitly as `TEMPLATE_KEYS[0]`.
+
+**The collapse toggle never moved the grid track.** `--sbk-rail-size` was set only by
+`.sbk-shell[data-collapsed]`, stamped SERVER-side from the cookie; `KitRail` flips its own attribute
+and writes the cookie but nothing re-renders the shell, so «صغّر القائمة» clipped the labels and
+centred the icons inside a still-15.5rem column until the next full page load. Two `:has()` rules
+now track the live state (the rail omits the attribute when expanded, hence `:not([data-collapsed])`
+rather than a `'false'` value), with the SSR rule kept for the flash-free first paint. The e2e
+asserted only `data-collapsed`, which is exactly why it passed — it now asserts the rail's WIDTH on
+both sides of the toggle, `.sbk-rail` having no width of its own.
+
+**Breakpoints moved to 47.99/48.** The kit's own contract says "< 48rem drawer, ≥ 48rem collapse",
+but `max-width: 48rem` INCLUDES 48rem, so at exactly 768px the drawer won and the collapse control
+was `display:none` at the one width where it is promised — and `(48rem, 48.01rem)` matched neither
+query, leaving `.sbk-backdrop` unstyled.
+
+**The subscription screen was showing the shop's own takings as platform payments.**
+`merchantSubscriptionView` read every `Payment` row for the tenant, and `kind: 'order'` is a
+storefront CUSTOMER paying the MERCHANT — the same rows `src/server/billing/index.ts` excludes from
+revenue. Worse, the table has no status column and dates each row `paidAt ?? createdAt`, so a
+`pending`, `failed` or `refunded` row read as money received. Filtered to non-order, `paid`.
+
+**And the same screen failed OPEN on the limits.** An absent or non-numeric `products_limit`
+resolved to null and rendered «بلا حد», while `catalogueLimits()` reads the SAME entitlement and
+fails closed to zero — a merchant would have read "unlimited" on one screen and been refused their
+first product on the next. Fail-closed is the house rule (Phase 4 settled it for `domains_limit` in
+these words), so the billing side was the one that was wrong; both limits are now `number`, the
+unreachable "unlimited" branches are gone and `billing.usageUnlimited` went with them.
+
+**The preview guard grew a middle button and a sandbox.** `auxclick` raises no `click`, so a
+middle-click on a product card opened the dashboard-framed route in a new tab. The iframe also
+carries `sandbox="allow-scripts allow-same-origin"` now: `PreviewClickGuard` installs its listeners
+in an effect, so the framed document was briefly operable between first paint and hydration, and the
+omitted `allow-forms`/`allow-top-navigation` close the two gestures that leave a mark from the first
+byte. Sandbox cannot stop a same-frame link navigation, so the guard is still the primary control —
+this is depth, not a replacement.
+
+**The preview's Arabic sample stays out of `messages/`, deliberately.** It looked like a CLAUDE.md
+violation (hardcoded Arabic, escaping the language gate only because the gate walks `.tsx`), but it
+is fixture CONTENT, the same species as `src/server/demo/packs/*.json`, which has held Arabic
+product names outside the i18n layer since B3. A sample shop name is not a label; translating it
+would mean inventing a different shop. The reasoning is now in the file so the next reader does not
+"fix" it. Everything AROUND the fixture — the «محتوى تجريبي للمعاينة» caption and every control on
+the screen — goes through `appearance.json`, which is where the rule bites.
+
+**Swept:** `admin.json`'s `shell.skipToNav` (the old `.sba-rail` had that link; `KitRail` renders no
+skip-to-nav — the only skip link is the root layout's), the dead `isSampleContext` export the
+appearance page recomputes inline, and a Playwright strict-mode failure waiting to happen — the
+palette assertion matched «الباقات» on substring, and a non-empty query also renders the deep-search
+row «دوّر بالحسابات عن الباقات», so two buttons matched the click.
+
+**Checked and found sound** (recorded so the next session does not re-derive them): all nine keys
+agree across `site-contract/templates.ts`, `registry.ts`, `TEMPLATE_SHEETS`, the `TEMPLATE_KEYS`
+equality and the nine imports in `site/layout.tsx`; every definition supplies all four signature
+axes, `imageMask`, `scheme` and an `altGround`; the TS2741 on `deriveColorTokens` is fixed with no
+sibling; no exhaustive `Record`/`switch` is missing a new key; `scripts/fetch-rubik.mjs`'s two
+filenames match `aldar.css`'s `@font-face` and both definitions byte for byte; and «جهاز» does get
+Rubik despite the face being declared only in `aldar.css`, because `site/layout.tsx` bundles all
+nine sheets — the declared-once rule holds. The rail's cookie writer and SSR reader agree on name
+and encoding; `billing ∉ STAFF_ALLOWED` and the guard 404s rather than 403s; `X-Frame-Options` is
+absent from both places and `framable` is asked on one predicate.

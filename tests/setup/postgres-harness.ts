@@ -40,12 +40,29 @@ interface Harness {
   stop: () => Promise<void>;
 }
 
-function urlFor(base: string, user: string, password: string, database: string): string {
+function urlFor(
+  base: string,
+  user: string,
+  password: string,
+  database: string,
+  options: { pooled?: boolean } = {},
+): string {
   const u = new URL(base);
   u.username = user;
   u.password = password;
   u.pathname = `/${database}`;
   u.search = 'schema=public';
+  if (options.pooled) {
+    // `app_web` and `app_system` are the two roles a long-lived PrismaClient pools connections
+    // for in this process (src/server/db/client.ts). The library default sizes that pool off
+    // `num_cpus`, which on a small sandbox lands at 5 — plenty for a single request, but a
+    // concurrency test that fires N interactive transactions with Promise.all needs N
+    // connections at once (each transaction holds its connection for its full duration, not
+    // per-statement). Raised here only, for the test cluster: production's pool size is
+    // whatever ops puts on the real `DATABASE_URL`, untouched by this file.
+    u.searchParams.set('connection_limit', '25');
+    u.searchParams.set('pool_timeout', '30');
+  }
   return u.toString();
 }
 
@@ -160,8 +177,8 @@ export async function startTestDatabase(): Promise<Harness> {
   const urls: TestDatabaseUrls = {
     adminUrl: urlFor(adminUrl, new URL(adminUrl).username, decodeURIComponent(new URL(adminUrl).password), TEST_DB_NAME),
     migrateUrl: urlFor(adminUrl, 'app_migrate', 'app_migrate', TEST_DB_NAME),
-    webUrl: urlFor(adminUrl, 'app_web', 'app_web', TEST_DB_NAME),
-    systemUrl: urlFor(adminUrl, 'app_system', 'app_system', TEST_DB_NAME),
+    webUrl: urlFor(adminUrl, 'app_web', 'app_web', TEST_DB_NAME, { pooled: true }),
+    systemUrl: urlFor(adminUrl, 'app_system', 'app_system', TEST_DB_NAME, { pooled: true }),
   };
 
   await resetSchema(urls.migrateUrl);

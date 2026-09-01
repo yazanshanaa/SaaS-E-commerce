@@ -36,17 +36,38 @@ export default async function AdminOverviewPage() {
       <h2 className="sba-visually-hidden">{t('admin', 'overview.accountsByStatus')}</h2>
       <div className="sba-stats">
         <Stat label={t('admin', 'overview.total')} value={formatNumber(accounts.total)} />
-        <Stat label={t('admin', 'overview.active')} value={formatNumber(accounts.active)} />
-        <Stat label={t('admin', 'overview.suspended')} value={formatNumber(accounts.suspended)} />
+        <Stat
+          label={t('admin', 'overview.active')}
+          value={formatNumber(accounts.active)}
+          state={accounts.active > 0 ? 'ok' : undefined}
+        />
+        {/*
+          The two tiles that are NOT just counts.
+
+          `suspended` is a live failure — shops are closed right now — and `expiringSoon` is the
+          week of warning before more of them join it. Both carried the same neutral tile as
+          «total» and «demo», so a ledger with four suspended accounts looked exactly like a
+          healthy one until you read the digits. The hairline makes the difference scannable; the
+          label still says which is which, because the hue never says it alone.
+
+          Zero is not a state. A `0` beside an amber rule trains the operator to ignore the rule.
+        */}
+        <Stat
+          label={t('admin', 'overview.suspended')}
+          value={formatNumber(accounts.suspended)}
+          state={accounts.suspended > 0 ? 'danger' : undefined}
+        />
         <Stat label={t('admin', 'overview.demo')} value={formatNumber(accounts.demo)} />
         <Stat
           label={t('admin', 'overview.expiringSoon')}
           value={formatNumber(accounts.expiringWithinWeek)}
           accent
+          state={accounts.expiringWithinWeek > 0 ? 'warn' : undefined}
         />
       </div>
 
-      <Panel title={t('admin', 'overview.revenue')}>
+      {/* The one card on this screen the operator is meant to land on. Bloom marks it, once. */}
+      <Panel title={t('admin', 'overview.revenue')} bloom>
         <div className="sba-stats">
           <Stat
             label={t('admin', 'overview.recurringMonthly')}
@@ -132,14 +153,27 @@ function Stat({
   value,
   note,
   accent,
+  state,
 }: {
   label: string;
   value: string;
   note?: string;
   accent?: boolean;
+  /**
+   * «مرصد» signature element #3 — the state hairline (`kit.css`, `[data-state]`).
+   *
+   * A 2px rule on the inline-start edge in the state's hue, ALWAYS beside a label that says the
+   * same thing in words. Never hue alone: `admin.css` already records that a control differing
+   * from another only by colour is unusable, and a tile whose only warning is that it went amber
+   * warns nobody on a sunlit phone.
+   *
+   * `warn` is the "look at this, nothing is broken yet" step the ledger had no colour for —
+   * expiring subscriptions used to borrow danger's red, which overstates them.
+   */
+  state?: 'ok' | 'warn' | 'danger';
 }) {
   return (
-    <div className={accent ? 'sba-stat sba-stat--accent' : 'sba-stat'}>
+    <div className={accent ? 'sba-stat sba-stat--accent' : 'sba-stat'} data-state={state}>
       <span className="sba-stat-label">{label}</span>
       <span className="sba-stat-value">{value}</span>
       {note ? <span className="sba-stat-note">{note}</span> : null}

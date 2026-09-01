@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { AnalyticsScript } from './components/analytics';
 import { AnnouncementBar } from './components/announcement-bar';
+import { Beacon } from './components/beacon';
+import { CartBadge } from './components/cart-badge';
 import { ConsentBanner } from './components/consent-banner';
 import { DemoWatermark } from './components/demo-watermark';
 import { ServiceWorkerRegistrar } from './components/service-worker';
@@ -9,7 +11,7 @@ import { SiteHeader } from './components/site-header';
 import { st } from './i18n';
 import type { AnalyticsDecision } from './lib/analytics';
 import { legalHref } from './lib/legal';
-import { fontUrl, templateCssVars } from './tokens';
+import { fontUrl, templateThemeCss } from './tokens';
 import type { StorefrontContext } from './view-model';
 
 /**
@@ -18,9 +20,15 @@ import type { StorefrontContext } from './view-model';
  * Four things happen here that happen nowhere else:
  *
  *   1. THE TOKENS ARE APPLIED. The template's token set plus the tenant's five guarded colours
- *      become CSS custom properties in an inline `style` on the root element. Tenant colour
- *      customisation therefore writes TOKENS ONLY — there is no per-tenant stylesheet to
- *      generate, cache or invalidate, and no path by which a colour picker can produce a rule.
+ *      become CSS custom properties on `.sf-root`, in a `<style>` block this component renders.
+ *      Tenant colour customisation therefore writes TOKENS ONLY — there is no per-tenant stylesheet
+ *      to generate, cache or invalidate, and no path by which a colour picker can produce a rule.
+ *
+ *      IT WAS AN INLINE `style` ATTRIBUTE UNTIL PHASE 11, and the move is the whole of dark mode.
+ *      An inline attribute beats every stylesheet rule, so a `@media (prefers-color-scheme: dark)`
+ *      override of `--t-bg` would have lost to the inline `--t-bg` it was overriding — silently,
+ *      with no CSP error and no symptom except a storefront that never went dark. In a rule of
+ *      ordinary specificity the media query can reach them. `templateThemeCss()` emits both.
  *
  *   2. THE ACTIVE FONT IS PRELOADED — and only the active one. All three families' `@font-face`
  *      rules are in the stylesheet (a browser fetches a font only when text actually matches
@@ -67,6 +75,19 @@ export interface StorefrontShellProps {
   /** null = the visitor has not answered yet, so the banner is shown. */
   consentAnswered: boolean;
   current?: 'home' | 'products';
+  /**
+   * Phase 9. The first-party beacon, or absent to render none.
+   *
+   * `enabled` is `beaconDecision({ featureEnabled: flags.visitorAnalytics, consentGranted })` and is
+   * resolved by the PAGE, because only the page holds the consent cookie — the same division of
+   * labour `analytics` above already uses, and for the same reason: this shell renders a decision,
+   * it never makes one.
+   *
+   * `path` is the route shape the page knows itself to be. `location.pathname` would report the
+   * proxy's internal `/site/…` rewrite, which is not a URL any visitor typed and not a row any
+   * merchant would recognise in their report.
+   */
+  beacon?: { enabled: boolean; path: string; productSlug?: string | null };
 }
 
 export function StorefrontShell({
@@ -75,6 +96,7 @@ export function StorefrontShell({
   analytics,
   consentAnswered,
   current,
+  beacon,
 }: StorefrontShellProps) {
   const { template, colors, isDemo } = context;
 
@@ -110,8 +132,32 @@ export function StorefrontShell({
       className="sf-root"
       data-template={template.key}
       data-demo={isDemo ? 'true' : undefined}
-      style={templateCssVars(template, colors)}
+      /*
+        THE SIGNATURE LAYER'S SELECTORS (Phase 11). `storefront.css` implements each ornament once and
+        picks a treatment from these four attributes, so the MARKUP stays identical across all nine
+        templates and a template swap is a class swap rather than a different render tree — the rule
+        Phase 9 established for the `overlay` card body, applied to the ornaments.
+      */
+      data-mask={template.layout.imageMask}
+      data-mark={template.signature.headingMark}
+      data-button={template.signature.button}
+      data-panel={template.signature.panel}
+      data-badge={template.signature.badge}
     >
+      {/*
+        THE TOKENS MOVED OUT OF THE `style` ATTRIBUTE, AND THAT IS THE WHOLE OF DARK MODE.
+
+        An inline style attribute beats every stylesheet rule, so a `@media (prefers-color-scheme:
+        dark)` override of `--t-bg` would have lost to the inline `--t-bg` it was overriding —
+        silently, with no CSP error and no symptom except a storefront that never goes dark. In a rule
+        of ordinary specificity the media query can reach them.
+
+        `style-src` carries `'unsafe-inline'` already, and for exactly this reason: the token system is
+        per tenant, so it can be neither hashed nor nonced (`security-headers.ts`, second concession).
+        This block changes where the tokens live, not whether the policy allows them.
+      */}
+      <style>{templateThemeCss(template, colors)}</style>
+
       <link
         rel="preload"
         as="font"
@@ -173,6 +219,7 @@ export function StorefrontShell({
           text={context.announcementBar.text}
           link={context.announcementBar.link}
           signature={context.announcementBar.signature}
+          style={context.announcementBar.style}
           dismissLabel={st('bar.dismiss')}
           regionLabel={st('bar.label')}
         />
@@ -217,7 +264,27 @@ export function StorefrontShell({
 
       <AnalyticsScript decision={analytics} />
 
+      {/*
+        The first-party beacon, beside the Umami tag because they answer the same question about
+        the same visitor and neither may be on the page before consent. `Beacon` renders nothing at
+        all when `enabled` is false — not a disabled script, no script.
+      */}
+      {beacon ? (
+        <Beacon
+          enabled={beacon.enabled}
+          path={beacon.path}
+          productSlug={beacon.productSlug ?? null}
+        />
+      ) : null}
+
       {wantsWorker ? <ServiceWorkerRegistrar /> : null}
+
+      {context.flags.cart ? (
+        <CartBadge
+          tenantId={context.tenantId}
+          labels={{ label: st('cart.fabLabel'), labelWithCount: st('cart.fabLabelWithCount') }}
+        />
+      ) : null}
     </div>
   );
 }

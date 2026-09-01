@@ -38,12 +38,9 @@ import { demoPack, type DemoPackKey } from './demo-packs';
  * builder in `./demo-content.ts`.
  */
 
-export class NotImplementedInPhaseError extends Error {
-  constructor(operation: string, owner: string) {
-    super(`billing.${operation}() is implemented by ${owner}. Phase 1 ships the contract.`);
-    this.name = 'NotImplementedInPhaseError';
-  }
-}
+// `NotImplementedInPhaseError` lived here from Phase 1 until B1 filled the last contract in;
+// nothing has thrown it since, and the pre-launch cleanup (2026-08-20) removed it with its two
+// catch sites rather than leave a branch no input can reach.
 
 // -----------------------------------------------------------------------------
 // Account creation (A1 — and ONLY A1: no route anywhere creates an account, Q1)
@@ -1270,6 +1267,11 @@ export async function createDemo(input: CreateDemoInput): Promise<CreateDemoResu
         name: pack.tenant.name,
         slug,
         isDemo: true,
+        // WHICH pack built this demo — durable on the tenant (pre-launch fix, 2026-08-20).
+        // Before this column, the pack was only recoverable through the originating DemoRequest,
+        // which the nightly sweep deletes on day 30 and which never existed for an admin-created
+        // demo — so the list reported the TEMPLATE and called it the pack.
+        demoPackKey: input.packKey,
         createdById: input.actor.userId,
         subscription: {
           create: {
@@ -1803,3 +1805,6 @@ export {
   type NeverExpiringAccount,
   type PendingPurgeAccount,
 } from './reporting';
+
+/** Phase 11 (Track 11.H / Q35): the merchant subscription screen's read-only view. */
+export { merchantSubscriptionView, type MerchantSubscriptionView } from './merchant-view';

@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import { formatNumber, t } from '@/shared/i18n';
-import { catalogueLimits, listCategories } from '../../_lib/products';
+import { catalogueFeatureFlags, catalogueLimits, listCategories } from '../../_lib/products';
 import { requireMerchantPage } from '../../_components/guard';
 import { PageHead, Panel } from '../../_components/ui';
 import { ProductForm } from '../_form';
@@ -17,7 +17,11 @@ export const dynamic = 'force-dynamic';
 export default async function NewProductPage() {
   const ctx = await requireMerchantPage('products');
 
-  const [limits, categories] = await Promise.all([catalogueLimits(ctx), listCategories(ctx)]);
+  const [limits, categories, flags] = await Promise.all([
+    catalogueLimits(ctx),
+    listCategories(ctx),
+    catalogueFeatureFlags(ctx),
+  ]);
   if (limits.reached) notFound();
 
   return (
@@ -30,8 +34,18 @@ export default async function NewProductPage() {
         })}
       />
 
+      {/*
+        No variant matrix here, and that is deliberate rather than an omission: a `ProductVariant`
+        needs a `productId`, so the matrix cannot exist before the row does. `saveProductAction`
+        already sends a newly created product straight to its own page — the same reason images are
+        attached there and not here.
+      */}
       <Panel>
-        <ProductForm categories={categories} submitLabel={t('common', 'actions.save')} />
+        <ProductForm
+          categories={categories}
+          flags={flags}
+          submitLabel={t('common', 'actions.save')}
+        />
       </Panel>
     </>
   );

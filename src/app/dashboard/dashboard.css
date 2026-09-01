@@ -21,107 +21,166 @@
  * library. RTL is the starting point: every offset is a logical property.
  */
 
+/*
+ * «مرصد» — the 2026-08-30 palette, shared with the ledger. See `DESIGN_BRIEF.md`.
+ *
+ * The two surfaces now share a hue and keep their DENSITY difference, which was always the real
+ * distinction: 8px radius against the ledger's 4px, a 15.5rem rail, a 62rem centred column, and
+ * more air between rows. A merchant editing their own shop should not feel like they are filing a
+ * form at an office — that is a matter of rhythm, not of temperature, and it survives the swap.
+ *
+ * The workbench paper sits ONE step lighter than the ledger's so the two are distinguishable on a
+ * second monitor without being different products.
+ */
 [data-surface='app'] {
-  --sbd-ink: #1f1a15;
-  --sbd-ink-soft: #6a5f52;
-  --sbd-ink-faint: #9a8e7f;
-  --sbd-paper: #f7f4ee;
+  --sbd-ink: #101815;
+  --sbd-ink-soft: #55645e;
+  /* See the note on `--sba-ink-faint`: #86948d fell under the 3:1 floor on this paper too. */
+  --sbd-ink-faint: #7d8b84;
+  --sbd-paper: #f1f5f3;
   --sbd-panel: #ffffff;
-  --sbd-panel-alt: #f1ece2;
-  --sbd-rule: #e2dacb;
-  --sbd-rule-strong: #c9bda6;
-  --sbd-accent: #4f6338;
-  --sbd-accent-soft: #e9efdf;
-  --sbd-locked: #9a5b1f;
-  --sbd-locked-soft: #f7ebdd;
+  --sbd-panel-alt: #f5f9f7;
+  --sbd-rule: #dfe7e3;
+  --sbd-rule-strong: #bccac5;
+
+  /* Same accent split as A1's ledger and for the same reason (see admin.css): text-level and
+     solid-fill values coincide in light mode and cannot in dark. */
+  --sbd-accent: #0b6a55;
+  --sbd-accent-strong: #0b6a55;
+  --sbd-accent-hover: #095745;
+  --sbd-accent-soft: #ddefe8;
+  --sbd-on-solid: #ffffff;
+
+  /*
+   * THE LOCKED AXIS STAYS AMBER, AND STAYS LOUD.
+   *
+   * Access axis (b) being visible at a glance is load-bearing on this surface — a locked field
+   * must look materially different from an open one, not merely disabled. Amber against a green
+   * accent is the widest separation available without reaching for red, which means "wrong".
+   * Now doing double duty: it is also the tag on a plan-locked template card in the picker.
+   */
+  --sbd-locked: #8a5a08;
+  --sbd-locked-strong: #8a5a08;
+  --sbd-locked-soft: #f7edda;
+  --sbd-locked-ink: #4a3005;
   --sbd-danger: #97202f;
+  --sbd-danger-strong: #97202f;
   --sbd-danger-soft: #f9e4e6;
-  --sbd-ok: #2f6b4f;
-  --sbd-ok-soft: #e2f0e8;
+  --sbd-danger-ink: #5d1019;
+  /* Shifted off the accent: an OK badge and a primary button must not be one colour doing two
+     jobs, which is what happens when "success" and "brand" are both the same green. */
+  --sbd-ok: #3f6b3a;
+  --sbd-ok-soft: #e4efe2;
+  --sbd-ok-ink: #24401f;
 
   --sbd-rail: 15.5rem;
   --sbd-radius: 8px;
-  --sbd-numeric: 'Segoe UI', 'Zain', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  /* Was 'Segoe UI'-first — see the note on `--sba-numeric`: a fallback that had become the default
+     because nothing else loaded on this surface. IBM Plex Sans Arabic leads now. */
+  --sbd-numeric: 'IBM Plex Sans Arabic', 'Segoe UI', system-ui, sans-serif;
+
+  --sbd-shadow: 0 1px 2px rgb(31 26 21 / 0.04), 0 6px 18px rgb(31 26 21 / 0.05);
+
+  /*
+   * The `--sbx-*` bridge. Two consumers now: the shared theme switch (globals.css) and, since
+   * Phase 11, the whole shared chrome kit (`src/app/kit.css` — shell, grouped rail, drawer,
+   * palette). Mapped ONCE: every alias points at a `--sbd-*` variable that itself flips with
+   * `[data-theme]` and `[data-accent]`, so dark mode and the five accents reach the kit with no
+   * second block to keep in step.
+   */
+  --sbx-panel: var(--sbd-panel);
+  --sbx-rule: var(--sbd-rule-strong);
+  --sbx-ink-soft: var(--sbd-ink-soft);
+  --sbx-accent: var(--sbd-accent);
+  --sbx-ink: var(--sbd-ink);
+  --sbx-ink-faint: var(--sbd-ink-faint);
+  --sbx-paper: var(--sbd-paper);
+  --sbx-panel-alt: var(--sbd-panel-alt);
+  --sbx-hairline: var(--sbd-rule);
+  --sbx-accent-soft: var(--sbd-accent-soft);
+  --sbx-on-solid: var(--sbd-on-solid);
+  --sbx-radius: var(--sbd-radius);
+  --sbx-rail-width: var(--sbd-rail);
+  --sbx-shadow: var(--sbd-shadow);
+  /* «مرصد»: the kit's `[data-state]` hairline. `warn` maps onto the LOCKED amber this surface
+     already carries rather than introducing a sixth hue — "needs attention" and "not yours to
+     change" are the same signal to a merchant, and one amber is easier to recognise than two. */
+  --sbx-warn: var(--sbd-locked);
+  --sbx-danger: var(--sbd-danger);
 
   color: var(--sbd-ink);
   background: var(--sbd-paper);
   min-height: 100dvh;
 }
 
+/*
+ * THE DARK WORKBENCH — «مرصد»'s home ground, and this surface's DEFAULT too.
+ *
+ * Same rules as the dark ledger: surfaces that get LIGHTER as they rise rather than casting
+ * shadows, cool off-white ink, and an accent stepped up in lightness for text duty while the
+ * solid fills keep a colour deep enough to carry white.
+ *
+ * The workbench paper is one step lighter than the ledger's here as well, so the density
+ * difference the two surfaces keep is legible even at a glance across two windows.
+ *
+ * The locked/amber axis stays loud in both modes because axis (b) being visible at a glance is
+ * load-bearing on this surface — that is the one thing that could not be allowed to soften when
+ * the ladder went cool.
+ */
+[data-surface='app'][data-theme='dark'] {
+  color-scheme: dark;
+
+  --sbd-ink: #e6efea;
+  --sbd-ink-soft: #8fa098;
+  --sbd-ink-faint: #6b7a73;
+  --sbd-paper: #121917;
+  --sbd-panel: #1a2320;
+  --sbd-panel-alt: #202b27;
+  --sbd-rule: #26322e;
+  --sbd-rule-strong: #3d4e48;
+
+  --sbd-accent: #5fd3a8;
+  --sbd-accent-strong: #12735d;
+  /* See `--sba-accent-hover`: #178a70 left a white button label at 4.28:1. */
+  --sbd-accent-hover: #158066;
+  --sbd-accent-soft: #16281f;
+
+  --sbd-locked: #e8a33d;
+  --sbd-locked-strong: #7a4e06;
+  --sbd-locked-soft: #2a2110;
+  --sbd-locked-ink: #f2c684;
+  --sbd-danger: #e8757f;
+  --sbd-danger-strong: #8e1b28;
+  --sbd-danger-soft: #2c1a1d;
+  --sbd-danger-ink: #f2a8af;
+  --sbd-ok: #9fc98c;
+  --sbd-ok-soft: #1a2618;
+  --sbd-ok-ink: #bfe0ae;
+
+  --sbd-shadow: none;
+}
+
+/* Same link/focus scoping as admin.css, for the same dark-mode reason. */
+[data-surface='app'] a:not([class]) {
+  color: var(--sbd-accent);
+}
+
+[data-surface='app'] a:focus-visible,
+[data-surface='app'] button:focus-visible {
+  outline-color: var(--sbd-accent);
+}
+
 /* --- Shell ---------------------------------------------------------------- */
 
-.sbd-shell {
-  display: grid;
-  grid-template-columns: var(--sbd-rail) minmax(0, 1fr);
-  min-height: 100dvh;
-}
-
-.sbd-rail {
-  border-inline-end: 1px solid var(--sbd-rule);
-  background: var(--sbd-panel-alt);
-  padding: var(--sb-space-6) var(--sb-space-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sb-space-6);
-  position: sticky;
-  inset-block-start: 0;
-  block-size: 100dvh;
-  overflow-y: auto;
-}
-
-.sbd-brand {
-  display: block;
-  font-size: var(--sb-text-lg);
-  font-weight: 700;
-  color: var(--sbd-ink);
-  text-decoration: none;
-  line-height: 1.3;
-  padding-inline-start: var(--sb-space-3);
-  border-inline-start: 3px solid var(--sbd-accent);
-}
-
-.sbd-brand small {
-  display: block;
-  font-size: var(--sb-text-sm);
-  font-weight: 400;
-  color: var(--sbd-ink-soft);
-}
-
-.sbd-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.sbd-nav-link {
-  display: block;
-  padding: var(--sb-space-2) var(--sb-space-3);
-  color: var(--sbd-ink-soft);
-  text-decoration: none;
-  border-radius: var(--sbd-radius);
-  border-inline-start: 3px solid transparent;
-}
-
-.sbd-nav-link:hover {
-  background: var(--sbd-panel);
-  color: var(--sbd-ink);
-}
-
-.sbd-nav-link[aria-current='page'] {
-  background: var(--sbd-panel);
-  color: var(--sbd-ink);
-  font-weight: 600;
-  border-inline-start-color: var(--sbd-accent);
-}
-
-.sbd-rail-foot {
-  margin-block-start: auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sb-space-2);
-  font-size: var(--sb-text-sm);
-  color: var(--sbd-ink-soft);
-}
+/*
+ * THE SHELL AND THE RAIL MOVED TO THE KIT (Phase 11, Track 11.F): `.sbk-shell`, the grouped
+ * `.sbk-rail`, the mobile drawer and the command palette live once in `src/app/kit.css`, on the
+ * `--sbx-*` bridge mapped above. What was here — `.sbd-shell`, `.sbd-rail`, `.sbd-brand`,
+ * `.sbd-nav*`, `.sbd-rail-foot` and the 60rem wrapping-band fallback (sixteen links stacked
+ * ABOVE the content on every phone) — was deleted WITH its consumers, not left as dead rules:
+ * the layout renders `.sbk-shell` and the nav renders kit classes now. This file keeps the
+ * surface's content column and everything below it.
+ */
 
 .sbd-main {
   padding: var(--sb-space-8) var(--sb-space-8) var(--sb-space-12);
@@ -136,24 +195,8 @@
   gap: var(--sb-space-6);
 }
 
-/* One column on a phone: a merchant edits prices standing in their own shop. */
+/* One column of padding on a phone: a merchant edits prices standing in their own shop. */
 @media (max-width: 60rem) {
-  .sbd-shell {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .sbd-rail {
-    position: static;
-    block-size: auto;
-    border-inline-end: 0;
-    border-block-end: 1px solid var(--sbd-rule);
-  }
-
-  .sbd-nav {
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
-
   .sbd-main {
     padding: var(--sb-space-6) var(--sb-space-4) var(--sb-space-12);
   }
@@ -187,6 +230,7 @@
   border: 1px solid var(--sbd-rule);
   border-radius: var(--sbd-radius);
   padding: var(--sb-space-6);
+  box-shadow: var(--sbd-shadow);
 }
 
 .sbd-panel--locked {
@@ -244,13 +288,13 @@
 .sbd-notice--ok {
   background: var(--sbd-ok-soft);
   border-color: var(--sbd-ok);
-  color: #17402f;
+  color: var(--sbd-ok-ink);
 }
 
 .sbd-notice--error {
   background: var(--sbd-danger-soft);
   border-color: var(--sbd-danger);
-  color: #5d1019;
+  color: var(--sbd-danger-ink);
 }
 
 .sbd-notice--info {
@@ -259,8 +303,8 @@
 }
 
 .sbd-banner {
-  background: var(--sbd-locked);
-  color: #fff;
+  background: var(--sbd-locked-strong);
+  color: var(--sbd-on-solid);
   padding: var(--sb-space-3) var(--sb-space-6);
   display: flex;
   flex-wrap: wrap;
@@ -274,9 +318,9 @@
 }
 
 .sbd-banner .sbd-btn {
-  background: #fff;
-  color: var(--sbd-locked);
-  border-color: #fff;
+  background: var(--sbd-on-solid);
+  color: var(--sbd-locked-strong);
+  border-color: var(--sbd-on-solid);
 }
 
 /* --- Forms ----------------------------------------------------------------- */
@@ -322,6 +366,13 @@
   padding: var(--sb-space-2) var(--sb-space-3);
   width: 100%;
   min-width: 0;
+  transition: border-color 150ms ease-out;
+}
+
+.sbd-input:hover:not([readonly]),
+.sbd-select:hover,
+.sbd-textarea:hover:not([readonly]) {
+  border-color: var(--sbd-ink-soft);
 }
 
 .sbd-textarea {
@@ -376,10 +427,16 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sb-space-2);
+  transition: background-color 150ms ease-out, border-color 150ms ease-out,
+    color 150ms ease-out, transform 100ms ease-out;
 }
 
 .sbd-btn:hover:not(:disabled) {
   border-color: var(--sbd-ink-soft);
+}
+
+.sbd-btn:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .sbd-btn:disabled {
@@ -388,15 +445,20 @@
 }
 
 .sbd-btn--primary {
-  background: var(--sbd-accent);
-  border-color: var(--sbd-accent);
-  color: #fff;
+  background: var(--sbd-accent-strong);
+  border-color: var(--sbd-accent-strong);
+  color: var(--sbd-on-solid);
+}
+
+.sbd-btn--primary:hover:not(:disabled) {
+  background: var(--sbd-accent-hover);
+  border-color: var(--sbd-accent-hover);
 }
 
 .sbd-btn--danger {
-  background: var(--sbd-danger);
-  border-color: var(--sbd-danger);
-  color: #fff;
+  background: var(--sbd-danger-strong);
+  border-color: var(--sbd-danger-strong);
+  color: var(--sbd-on-solid);
 }
 
 .sbd-btn--quiet {
@@ -453,9 +515,42 @@
   border: 1px solid var(--sbd-rule);
 }
 
+/* --- Sections page: the three-step hint, jump pills, anchor targets -------- */
+
+.sbd-steps {
+  margin: 0 0 var(--sb-space-4);
+  padding-inline-start: var(--sb-space-6);
+  display: grid;
+  gap: var(--sb-space-2);
+  font-size: var(--sb-text-sm);
+  color: var(--sbd-ink-soft);
+  line-height: 1.7;
+}
+
+.sbd-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sb-space-2);
+  margin: 0;
+}
+
+a.sbd-tag {
+  text-decoration: none;
+}
+
+a.sbd-tag:hover,
+a.sbd-tag:focus-visible {
+  border-color: var(--sbd-accent);
+  color: var(--sbd-accent);
+}
+
+.sbd-anchor {
+  scroll-margin-block-start: var(--sb-space-6);
+}
+
 .sbd-tag--ok {
   background: var(--sbd-ok-soft);
-  color: #17402f;
+  color: var(--sbd-ok-ink);
   border-color: var(--sbd-ok);
 }
 
@@ -784,7 +879,7 @@
 .sbd-notice--warn {
   background: var(--sbd-locked-soft);
   border-color: var(--sbd-locked);
-  color: #4a2a08;
+  color: var(--sbd-locked-ink);
 }
 
 .sbd-notice--warn p {
@@ -802,4 +897,166 @@
 
 .sbd-sortable li form {
   margin: 0;
+}
+
+/*
+ * Phase 9 — the media picker.
+ *
+ * Three of these are the difference between a usable control and an unusable one, and the third is
+ * the one no automated check can see:
+ *
+ *   `__grid`   — unstyled, a `<ul>` of forty photos is a forty-item vertical list.
+ *   `:has(:checked)` — the radio itself is otherwise the only indication of which photo is chosen,
+ *                and at thumbnail size it is easy to miss entirely.
+ *   `:has(:focus-visible)` — the ring has to be on the LABEL, not only on the 8px radio, or
+ *                keyboard selection is invisible. axe cannot see this; a manual keyboard pass can.
+ *
+ * The rest of the picker's look — spacing, the empty state, the panel — is Track F's.
+ */
+.sbd-picker__grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: var(--sb-space-3);
+}
+
+.sbd-picker__option {
+  border: 1px solid var(--sbd-rule);
+  border-radius: var(--sbd-radius);
+  padding: var(--sb-space-2);
+}
+
+.sbd-picker__option:has(:checked) {
+  border-color: var(--sbd-accent, currentColor);
+  box-shadow: inset 0 0 0 1px var(--sbd-accent, currentColor);
+}
+
+.sbd-picker__option:has(:focus-visible) {
+  outline: 2px solid var(--sbd-accent, currentColor);
+  outline-offset: 2px;
+}
+
+.sbd-picker__label {
+  display: block;
+  cursor: pointer;
+}
+
+/*
+ * Phase 9 — `details > summary` on this surface had no affordance at all. Once, for both the size
+ * guide (Track A) and the picker panel (Track B).
+ */
+.sbd-panel details > summary,
+.sbd-picker__summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.sbd-panel details > summary:focus-visible,
+.sbd-picker__summary:focus-visible {
+  outline: 2px solid var(--sbd-accent, currentColor);
+  outline-offset: 2px;
+}
+
+/*
+ * Phase 9 — a variant row is a form plus a sibling delete form, and sixty of them stacked read as
+ * one wall of controls. `.sbd-checklist li` is a centred flex row, which is right for a checklist
+ * item and wrong for a row that holds two forms.
+ */
+.sbd-checklist li:has(.sbd-form) {
+  display: grid;
+  gap: var(--sb-space-2);
+  align-items: stretch;
+}
+
+/*
+ * The order-history cell on the customer screen lists one item per line («فستان صيفي · M · وردي × 2»).
+ * Without this, three items read as one run-on string.
+ */
+.sbd-table td > div + div {
+  margin-block-start: var(--sb-space-1);
+}
+
+/* --- The five accents (src/shared/ui-theme.ts picks; the layout stamps) ----- */
+
+/*
+ * Identical contract to admin.css's blocks, and retuned for «مرصد» in the same two ways: the
+ * `-soft` tints are cool now (they were mixed toward the old sand paper and read as mud on a
+ * green-neutral panel), and `sea` restates the base so re-choosing it returns the merchant to the
+ * shipped look with no cookie-clearing special case — the role `olive` used to hold here.
+ *
+ * The amber locked axis is NOT in these blocks and never was: it is information, not preference,
+ * so an accent change must not be able to weaken it.
+ */
+
+[data-surface='app'][data-accent='sea'] {
+  --sbd-accent: #0b6a55;
+  --sbd-accent-strong: #0b6a55;
+  --sbd-accent-hover: #095745;
+  --sbd-accent-soft: #ddefe8;
+}
+
+[data-surface='app'][data-accent='sea'][data-theme='dark'] {
+  --sbd-accent: #5fd3a8;
+  --sbd-accent-strong: #12735d;
+  /* See `--sba-accent-hover`: #178a70 left a white button label at 4.28:1. */
+  --sbd-accent-hover: #158066;
+  --sbd-accent-soft: #16281f;
+}
+
+[data-surface='app'][data-accent='clay'] {
+  --sbd-accent: #a63d0b;
+  --sbd-accent-strong: #a63d0b;
+  --sbd-accent-hover: #8c3309;
+  --sbd-accent-soft: #f6e6de;
+}
+
+[data-surface='app'][data-accent='clay'][data-theme='dark'] {
+  --sbd-accent: #e0854e;
+  --sbd-accent-strong: #93370a;
+  --sbd-accent-hover: #b5460f;
+  --sbd-accent-soft: #2c221b;
+}
+
+[data-surface='app'][data-accent='olive'] {
+  --sbd-accent: #4a6234;
+  --sbd-accent-strong: #4a6234;
+  --sbd-accent-hover: #3b4f28;
+  --sbd-accent-soft: #e6eede;
+}
+
+[data-surface='app'][data-accent='olive'][data-theme='dark'] {
+  --sbd-accent: #a7c283;
+  --sbd-accent-strong: #465d31;
+  --sbd-accent-hover: #56713d;
+  --sbd-accent-soft: #1f271c;
+}
+
+[data-surface='app'][data-accent='night'] {
+  --sbd-accent: #2a4d7e;
+  --sbd-accent-strong: #2a4d7e;
+  --sbd-accent-hover: #213e66;
+  --sbd-accent-soft: #e2eaf4;
+}
+
+[data-surface='app'][data-accent='night'][data-theme='dark'] {
+  --sbd-accent: #8fb2dd;
+  --sbd-accent-strong: #27466f;
+  --sbd-accent-hover: #315789;
+  --sbd-accent-soft: #1a242b;
+}
+
+[data-surface='app'][data-accent='berry'] {
+  --sbd-accent: #97203f;
+  --sbd-accent-strong: #97203f;
+  --sbd-accent-hover: #7c1a34;
+  --sbd-accent-soft: #f6e1e7;
+}
+
+[data-surface='app'][data-accent='berry'][data-theme='dark'] {
+  --sbd-accent: #e389a4;
+  --sbd-accent-strong: #8a1d39;
+  --sbd-accent-hover: #a92546;
+  --sbd-accent-soft: #2b1c22;
 }

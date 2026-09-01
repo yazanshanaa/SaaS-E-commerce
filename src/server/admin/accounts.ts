@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import * as billing from '@/server/billing';
-import { InvalidTransitionError, NotImplementedInPhaseError } from '@/server/billing';
+import { InvalidTransitionError } from '@/server/billing';
 import { authDb } from '@/server/db';
 import { resolveFeatures } from '@/server/entitlements';
 import { isReservedSlug } from '@/server/tenancy';
@@ -199,6 +199,21 @@ export interface AccountDetail {
     umamiWebsiteId: string | null;
   } | null;
   owner: { userId: string; name: string; email: string; loginDisabled: boolean } | null;
+  /**
+   * The site's addresses, read-only. The default `{slug}.{DOMAIN}` always exists; custom domains
+   * are whatever the merchant (or the owner, impersonating) attached via Phase 4's flow. The
+   * OWNER's control over the whole feature is the `custom_domain` toggle on the permissions tab —
+   * `customDomainOn` is that resolved value, so this panel can say where the switch lives instead
+   * of duplicating Phase 4's verification machinery in a parallel admin path.
+   */
+  domains: Array<{
+    id: string;
+    hostname: string;
+    status: string;
+    verifiedAt: Date | null;
+    failureReason: string | null;
+  }>;
+  customDomainOn: boolean;
   usage: AccountUsage;
   prioritySupport: boolean;
   /** Phase 5. Axis (a) for checkout — read from the resolved features, never from a plan name. */
@@ -244,7 +259,7 @@ export async function getAccount(
 
   const month = jerusalemMonthWindow();
 
-  const [features, products, media, ownerMember, orders, ordersThisMonth] = await Promise.all([
+  const [features, products, media, ownerMember, orders, ordersThisMonth, domains] = await Promise.all([
     resolveFeatures(tenantId),
     ctx.db.product.count({ where: { tenantId } }),
     ctx.db.media.count({ where: { tenantId } }),
@@ -258,6 +273,11 @@ export async function getAccount(
     ctx.db.order.count({ where: { tenantId } }),
     ctx.db.order.count({
       where: { tenantId, placedAt: { gte: month.start, lt: month.end } },
+    }),
+    ctx.db.domain.findMany({
+      where: { tenantId, kind: 'custom' },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, hostname: true, status: true, verifiedAt: true, failureReason: true },
     }),
   ]);
 
@@ -316,6 +336,8 @@ export async function getAccount(
           loginDisabled: ownerMember.user.loginDisabled,
         }
       : null,
+    domains,
+    customDomainOn: features.custom_domain === true,
     usage: {
       products,
       productsLimit: features.products_limit as number | undefined,
@@ -813,9 +835,6 @@ export async function purgeAccount(
       purgedById: ctx.userId,
     });
   } catch (error) {
-    if (error instanceof NotImplementedInPhaseError) {
-      return failure('admin:subscription.purgeUnavailable');
-    }
     if (error instanceof InvalidTransitionError) {
       return failure('admin:subscription.notAllowedFromStatus');
     }

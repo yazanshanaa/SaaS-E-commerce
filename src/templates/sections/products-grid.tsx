@@ -74,6 +74,7 @@ export function ProductsGridSection({ context, config, anchor }: ProductsGridSec
                 product={product}
                 template={template}
                 showPrice={config.showPrices !== false}
+                cart={{ tenantId: context.tenantId, enabled: context.flags.cart }}
               />
             ))}
           </div>

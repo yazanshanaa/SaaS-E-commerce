@@ -47,7 +47,7 @@ export default async function SectionsPage() {
       />
 
       <Panel
-        title={t('dashboard', 'sections.title')}
+        title={t('dashboard', 'sections.arrange')}
         tone={locked ? 'locked' : undefined}
         actions={<CapabilityTag capability={capability} />}
       >
@@ -56,46 +56,79 @@ export default async function SectionsPage() {
         {visible.length === 0 ? (
           <Empty>{t('dashboard', 'sections.empty')}</Empty>
         ) : (
-          <ActionForm
-            action={saveLayoutAction}
-            submitLabel={locked ? t('dashboard', 'lockedField.cta') : t('common', 'actions.save')}
-            disabled={locked && exhausted}
-          >
-            <SectionSorter
-              items={visible.map((section) => ({
-                id: section.id,
-                label: t('dashboard', `sections.types.${section.type}`),
-                enabled: section.enabled,
-              }))}
-              showLabel={t('dashboard', 'sections.shown')}
-              hideLabel={t('dashboard', 'sections.hidden')}
-            />
+          <>
+            <ol className="sbd-steps">
+              <li>{t('dashboard', 'sections.step1')}</li>
+              <li>{t('dashboard', 'sections.step2')}</li>
+              <li>{t('dashboard', 'sections.step3')}</li>
+            </ol>
 
-            {locked ? (
-              <Field
-                label={t('dashboard', 'lockedField.note')}
-                name="note"
-                hint={t('dashboard', 'lockedField.noteHint')}
-              >
-                <TextArea name="note" rows={3} />
-              </Field>
-            ) : null}
-          </ActionForm>
+            <ActionForm
+              action={saveLayoutAction}
+              submitLabel={locked ? t('dashboard', 'lockedField.cta') : t('common', 'actions.save')}
+              disabled={locked && exhausted}
+            >
+              <SectionSorter
+                items={visible.map((section) => ({
+                  id: section.id,
+                  label: t('dashboard', `sections.types.${section.type}`),
+                  enabled: section.enabled,
+                }))}
+                showLabel={t('dashboard', 'sections.shown')}
+                hideLabel={t('dashboard', 'sections.hidden')}
+              />
+
+              {locked ? (
+                <Field
+                  label={t('dashboard', 'lockedField.note')}
+                  name="note"
+                  hint={t('dashboard', 'lockedField.noteHint')}
+                >
+                  <TextArea name="note" rows={3} />
+                </Field>
+              ) : null}
+            </ActionForm>
+          </>
         )}
       </Panel>
 
-      {visible.map((section) => (
+      {visible.length > 0 ? (
         <Panel
-          key={section.id}
-          title={`${t('dashboard', `sections.types.${section.type}`)} — ${t('dashboard', 'sections.settings')}`}
+          title={t('dashboard', 'sections.jumpTitle')}
+          note={t('dashboard', 'sections.jumpHint')}
         >
-          <SectionConfigForm
-            sectionId={section.id}
-            type={section.type}
-            config={section.config}
-            disabled={locked}
-          />
+          <p className="sbd-jump">
+            {visible.map((section) => (
+              <a className="sbd-tag" key={section.id} href={`#section-${section.id}`}>
+                {t('dashboard', `sections.types.${section.type}`)}
+              </a>
+            ))}
+          </p>
         </Panel>
+      ) : null}
+
+      {visible.map((section) => (
+        <div id={`section-${section.id}`} className="sbd-anchor" key={section.id}>
+          <Panel
+            title={t('dashboard', 'sections.settingsFor', {
+              name: t('dashboard', `sections.types.${section.type}`),
+            })}
+            actions={
+              <span className={section.enabled ? 'sbd-tag sbd-tag--ok' : 'sbd-tag sbd-tag--muted'}>
+                {section.enabled
+                  ? t('dashboard', 'sections.shown')
+                  : t('dashboard', 'sections.hidden')}
+              </span>
+            }
+          >
+            <SectionConfigForm
+              sectionId={section.id}
+              type={section.type}
+              config={section.config}
+              disabled={locked}
+            />
+          </Panel>
+        </div>
       ))}
     </>
   );

@@ -390,6 +390,9 @@ services:
     restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }
+      # Phase 10 (Q23): the run-now channel. Not `service_healthy` on purpose — the backup loop
+      # works perfectly without Redis and must never wait on it to take a dump.
+      redis: { condition: service_started }
     environment:
       PGHOST: postgres
       PGPORT: '5432'
@@ -410,6 +413,18 @@ services:
       R2_BACKUP_ENDPOINT: ${R2_BACKUP_ENDPOINT:-${R2_ENDPOINT}}
       AWS_ACCESS_KEY_ID: ${R2_BACKUP_ACCESS_KEY_ID:?R2_BACKUP_ACCESS_KEY_ID is required}
       AWS_SECRET_ACCESS_KEY: ${R2_BACKUP_SECRET_ACCESS_KEY:?R2_BACKUP_SECRET_ACCESS_KEY is required}
+      # Phase 10 (Q23) — the owner's "run now" button and the status the screen reads back. The
+      # WRITE credentials above stay here and never reach the web container; what crosses is a
+      # Redis key.
+      #
+      # THE CACHE DB, matching `cacheRedis()` — which is the connection the web side uses, and it
+      # uses it because that one FAILS FAST. `queueRedis()` retries forever by design (BullMQ
+      # blocks on BRPOPLPUSH), so a screen reading through it against a dead Redis would hang the
+      # request rather than render "unavailable". The cost of living in a flushable database is
+      # bounded and self-healing: a flush loses at most one pending run-request (the button simply
+      # re-enables) and one status card (the next round rewrites it).
+      REDIS_URL: redis://redis:6379/${REDIS_CACHE_DB:-0}
+      BACKUP_CONTROL_PREFIX: ${BACKUP_CONTROL_PREFIX:-backup:}
     volumes:
       - backup_workdir:/var/tmp/backup
     networks: [internal]

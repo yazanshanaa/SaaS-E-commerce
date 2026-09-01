@@ -2,6 +2,7 @@ import { st } from '../i18n';
 import { hasContactSection } from '../lib/arrangement';
 import type { StorefrontContext } from '../view-model';
 import { SECTION_ANCHORS } from '../section-anchors';
+import { CategoryNav } from './category-nav';
 
 /**
  * The storefront header.
@@ -60,6 +61,15 @@ export function SiteHeader({ context, current }: SiteHeaderProps) {
             <a href={`/#${SECTION_ANCHORS.contact_whatsapp}`}>{st('nav.contact')}</a>
           ) : null}
         </nav>
+
+        {/*
+          Departments, flat. See `category-nav.tsx`: this is a link list, not the mega-menu the
+          comment above refuses — capped at six with the tail collapsed into one catalogue link,
+          no dropdown, no JavaScript, and nothing at all for a shop with fewer than two stocked
+          departments. The header's own decision therefore still holds for the shops it was written
+          about; only a shop that actually has departments gets a second row.
+        */}
+        <CategoryNav categories={context.categories} />
       </div>
     </header>
   );

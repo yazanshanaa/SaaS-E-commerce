@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { t } from '@/shared/i18n';
-import { templateCssVars } from '@/templates';
+import { templateThemeCss } from '@/templates';
 import { loadStorefrontContext } from '../_data/context';
 import { requireStorefront } from '../_data/surface';
 import { RetryButton } from './retry-button';
@@ -38,8 +38,22 @@ export default async function OfflinePage() {
     <div
       className="sf-root"
       data-template={context.template.key}
-      style={templateCssVars(context.template, context.colors)}
+      data-mask={context.template.layout.imageMask}
+      data-mark={context.template.signature.headingMark}
+      data-button={context.template.signature.button}
+      data-panel={context.template.signature.panel}
+      data-badge={context.template.signature.badge}
     >
+      {/*
+        Same `<style>` block as the shell, and for the same reason (Phase 11): an inline `style`
+        attribute beats every stylesheet rule, so tokens delivered that way cannot be overridden by
+        `@media (prefers-color-scheme: dark)`. This page is not part of the shell — it is the PWA's
+        cached fallback and builds its own root — so it would otherwise have been the one storefront
+        document that stayed light on a dark-mode phone, which is exactly the screen a visitor sees
+        at their worst moment.
+      */}
+      <style>{templateThemeCss(context.template, context.colors)}</style>
+
       <main id="main" className="sf-offline">
         <p className="sf-offline__shop">{context.site.name}</p>
         <h1 className="sf-offline__title">{t('storefront', 'offline.title')}</h1>
