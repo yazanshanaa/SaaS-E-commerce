@@ -1,0 +1,19 @@
+Ask the storefront through the browser, not through a Node HTTP client
+
+`playwright.config.ts` maps the e2e hostnames with Chromium's
+`--host-resolver-rules`, and its own comment says why: so the tests exercise
+admin.*, app.* and {slug}.* exactly as production does, with no /etc/hosts
+editing on a developer machine.
+
+That flag is a BROWSER flag. Playwright's APIRequestContext is a Node-side HTTP
+client that never sees it, so the one `page.request.get()` in this suite did a
+real DNS lookup and died with `getaddrinfo ENOTFOUND app.souqbartaa.test`. It
+passes on a machine with a hosts entry and cannot pass on a CI runner - which is
+why it only surfaced now, on the first e2e run this code has ever had.
+
+The assertion was also weaker than the sentence above it claimed. It fetched
+`/appearance` - the studio page the test had just been driving - and checked for
+a 200, which proves the studio renders and says nothing about what was saved.
+It now asks the storefront whether the draft leaked into it.
+
+One of ten e2e failures on the first run; the other nine are still open.

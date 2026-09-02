@@ -31,7 +31,7 @@ if exist ".git\index.lock" del /f /q ".git\index.lock"
 echo   [1/2] commit ...
 echo =============== ADD + COMMIT =============== >> %LOG%
 call git add -A >> %LOG% 2>&1
-call git commit -m "Close GHSA-ggr8-5vv4-36mx by pinning deepmerge-ts, not by upgrading Prisma" -m "prisma and @prisma/client are pinned to an exact 6.19.3, so `pnpm up` moves nothing and `--latest` jumps to Prisma 7 - which removes the package.json#prisma block this repo still uses. That is a migration, not a security patch. The transitive dependency is pinned instead." -m "Forcing a major on a dependency Prisma pinned itself could break its config loader, so it was verified rather than assumed: audit clean, db:generate green, typecheck green. See deploy/CI-FINDINGS.md section 4." >> %LOG% 2>&1
+call git commit -F COMMIT-MSG.txt >> %LOG% 2>&1
 echo COMMIT_EXIT=%ERRORLEVEL% >> %LOG%
 echo. >> %LOG%
 

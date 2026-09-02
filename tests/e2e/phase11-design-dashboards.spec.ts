@@ -228,9 +228,23 @@ test.describe('the merchant surface (11.D / 11.F / 11.H)', () => {
     // The live contrast panel speaks before the save.
     await expect(page.getByText('فحص وضوح الألوان')).toBeVisible();
 
-    // The saved template is untouched: the storefront still renders the default.
-    const response = await page.request.get(`${APP}/appearance`);
-    expect(response.ok()).toBe(true);
+    // The saved template is untouched: the storefront still renders its own template, not the
+    // draft the studio is showing.
+    //
+    // THROUGH THE BROWSER, not `page.request`. `playwright.config.ts` maps these hostnames with
+    // Chromium's `--host-resolver-rules`, and its comment says why: so the tests exercise
+    // `admin.*`, `app.*` and `{slug}.*` exactly as production does, with no /etc/hosts editing on
+    // a developer machine. That flag is a BROWSER flag. Playwright's `APIRequestContext` is a
+    // Node-side HTTP client that never sees it, so `page.request.get()` did a real DNS lookup and
+    // died with `getaddrinfo ENOTFOUND app.souqbartaa.test` — on a developer machine with a hosts
+    // entry it passes, and on every CI runner it cannot.
+    //
+    // The old assertion also fetched `/appearance`, the studio page it had just been driving, and
+    // checked for a 200. That proves the studio still renders; it says nothing about what was
+    // saved, which is the sentence above it. This asks the storefront instead.
+    const shop = await page.goto(origin(MERCHANT.slug));
+    expect(shop?.ok()).toBe(true);
+    await expect(page.locator('.sf-root[data-template="aldar"]')).toHaveCount(0);
   });
 
   test('the full-page preview renders the draft bare, framable on exactly one path', async ({
