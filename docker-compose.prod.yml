@@ -293,6 +293,10 @@ services:
       N8N_PROXY_AUTH_HASH: ${N8N_PROXY_AUTH_HASH:?N8N_PROXY_AUTH_HASH is required}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Site blocks that belong to this BOX and not to the platform — see the `import` near the
+      # top of the Caddyfile. Git-ignored except for a placeholder, so a deployment can serve
+      # something alongside the platform without that hostname entering platform code.
+      - ./caddy-local:/etc/caddy/local:ro
       # caddy_data holds the ISSUED CERTIFICATES and the ACME account key. Losing it means
       # re-issuing every certificate on the box at once, against a weekly Let's Encrypt quota
       # shared by every merchant. It is the one volume here whose loss is measured in days.

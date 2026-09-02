@@ -1,27 +1,23 @@
-Read the visible brand, and make a refused account creation say so
+Give a deployment a door for its own site blocks, without opening the Caddyfile
 
-Two things, both about tests reading the wrong thing.
+The launch server already serves a static company site from an nginx that holds
+ports 80 and 443. Caddy has to own those two: on-demand TLS for merchant custom
+domains and the wildcard certificate can only be obtained by the process that
+answers the ACME challenge, so leaving nginx in front and putting Caddy behind
+it would quietly delete the feature the whole `on_demand_tls` block exists for.
 
-1. b2-dashboard asserted the shop name with `.first()`. Phase 11's kit renders
-   the brand TWICE by design - a top bar below 48rem and the sticky rail above
-   it, with CSS hiding whichever does not apply; `rail.tsx`'s own comment on the
-   top bar says "Hidden by the kit above 48rem". `.first()` takes DOM ORDER,
-   which is the top bar, and at every viewport this suite runs at that is the
-   hidden copy. The dashboard was working and the test was reading a copy the
-   merchant cannot see. Now filtered to the visible one.
+The migration itself is small - nginx moves to an internal port and Caddy
+reverse-proxies it, its own configuration untouched byte for byte. The part that
+needed a decision was WHERE that site block lives.
 
-2. `phase11:181` and `phase7:313` both assert a heading straight after clicking
-   «افتح الحساب», and both fail with "element not found" - while `a1-admin.spec.ts`
-   does the identical thing and passes. Reading the code did not find the
-   discriminator: same form, same plan (`basic` in phase7), same
-   `sendPasswordLink`, and the heading is `PageHead title={account.name}` in the
-   account layout either way.
+Not in the Caddyfile. That file is platform code, shipped to every deployment,
+and one machine's company hostname welded into it is a coupling that outlives
+whoever added it. So the Caddyfile gains one `import` of a directory the compose
+mounts, git-ignored except for a placeholder - Caddy refuses to start on an
+import glob matching no files, and a stack that will not boot on a fresh
+checkout because a directory is empty is a bad trade for two lines of comment.
 
-   So rather than guess a fix, the assertion now names the page it landed on. A
-   refused creation re-renders `/accounts/new`; a successful one redirects to
-   `/accounts/{id}`, the shape a1-admin already pins. Asserting the heading
-   alone spends the timeout waiting for something that was never going to
-   render and then reports nothing useful. The next run answers the question
-   instead of repeating it.
+The placeholder carries the itqantech.io block as a worked example and the
+reasoning above, so the next person to stand a box up does not rediscover it.
 
-Fifth of the ten first-run e2e failures fixed; the sixth is now instrumented.
+Nothing here changes behaviour on a deployment that has no local blocks.

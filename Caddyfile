@@ -45,6 +45,22 @@
 	}
 }
 
+# --- deployment-local site blocks ---------------------------------------------
+#
+# Sites that belong to the BOX rather than to the platform. The first real one is the company
+# marketing site already living on the launch server: `itqantech.io`, static, served by an nginx
+# that holds ports 80 and 443 — the two Caddy must own here, because on-demand TLS for merchant
+# domains and the wildcard certificate cannot be issued by anything else.
+#
+# Moving that site's nginx to an internal port and reverse-proxying it from Caddy keeps its own
+# configuration untouched, byte for byte. What must NOT happen is its hostname landing in this
+# file: this Caddyfile is platform code, shipped to every deployment, and a company site welded
+# into it is a coupling that outlives whoever added it.
+#
+# So the block lives in `caddy-local/` on the box, which is git-ignored except for the placeholder
+# that keeps this glob matching. Nothing here needs to know it exists.
+import /etc/caddy/local/*.caddy
+
 # --- platform hostnames: one wildcard cert via DNS challenge -------------------
 *.{$DOMAIN}, {$DOMAIN} {
 	tls {

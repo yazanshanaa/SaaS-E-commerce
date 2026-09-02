@@ -52,6 +52,17 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 
+# Deployment-local Caddy site blocks: they name hostnames that belong to one machine, and this
+# repository is deployed to more than one. The placeholder is tracked because Caddy refuses to
+# start on an import glob that matches nothing.
+/caddy-local/*
+!/caddy-local/00-placeholder.caddy
+
+# The deployment handover note. It carries the seeded super-admin password and the n8n basic-auth
+# password, so it is ignored BEFORE it is written rather than after — a secret that reaches a
+# commit stays in the history even once the file is deleted, and this repository is pushed.
+/souq48-SECRETS-deployment.md
+
 # Local machine debris that shares this directory and is not part of the platform.
 # `*.log` above already covers agent-report.log and the gate logs; these are the rest, named
 # because the first `git add -A` after eighteen uncommitted days would otherwise have swept a

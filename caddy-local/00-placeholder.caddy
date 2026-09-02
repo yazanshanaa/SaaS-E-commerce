@@ -1,0 +1,25 @@
+# Deployment-local Caddy site blocks.
+#
+# This file exists so the `import /etc/caddy/local/*.caddy` at the top of the Caddyfile always
+# matches something. Caddy refuses to start on an import glob that matches no files, and a stack
+# that will not boot on a fresh checkout because a directory happens to be empty is a bad trade for
+# the two lines this comment costs.
+#
+# Everything else in this directory is git-ignored. Put site blocks here that belong to the machine
+# rather than to the platform — the company site that already lives on the launch server is the
+# first one:
+#
+#   itqantech.io, www.itqantech.io {
+#       encode gzip
+#       reverse_proxy 172.17.0.1:8080
+#   }
+#
+# `172.17.0.1` is the docker bridge gateway — the host as seen from inside the container — and 8080
+# is where that site's nginx moves to when Caddy takes 80 and 443. The nginx configuration itself
+# does not change: only its `listen` directives, and only so that the one process on this box that
+# must own the public ports can.
+#
+# WHY NOT LEAVE NGINX ON 80/443 AND PUT CADDY BEHIND IT: because then nginx terminates TLS, and
+# on-demand TLS for merchant custom domains — the whole point of Caddy here — becomes impossible.
+# The certificate for `{slug}.souq48.shop` and for every merchant domain has to be obtained by the
+# process that answers the ACME challenge.
