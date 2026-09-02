@@ -310,6 +310,10 @@ test('two shops open side by side, and neither hostname serves the other one', a
   await page.locator('#billingPeriod').selectOption('monthly');
   await page.locator('#sendPasswordLink-on').check();
   await page.getByRole('button', { name: 'افتح الحساب' }).click();
+  // The redirect before the heading — see the note on the same pair in
+  // `phase11-design-dashboards.spec.ts`. A refused creation stays on `/accounts/new`, and this
+  // says so instead of timing out on a heading that was never going to render.
+  await expect(page).toHaveURL(/\/accounts\/[a-z0-9]+$/);
   await expect(page.getByRole('heading', { name: MERCHANT.name })).toBeVisible();
 
   const tenantId = await tenantIdBySlug(MERCHANT.slug);

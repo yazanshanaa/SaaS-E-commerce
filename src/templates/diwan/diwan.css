@@ -1,74 +1,99 @@
 /*
  * ديوان — warm general retail.
  *
- * Personality: the front room of a family shop. Arched frames, an ornamental double rule under
- * every section title, warm plates behind prices, and a lot of air. Zain is set large because
- * the reader is usually a parent holding a phone in a market with one hand.
+ * Personality: the front room of a family shop. Arched frames, an ornamental double rule under every
+ * section title, warm plates behind prices, and a lot of air. Zain is set large because the reader is
+ * usually a parent holding a phone in a market with one hand.
+ *
+ * PHASE 9 REWORK. The three things that changed and why:
+ *
+ *   1. THE ARCH IS PROPORTIONAL NOW. It used to be `border-start-*-radius: 14rem`, one absolute
+ *      value shared by a 40vw hero portrait and a 3-column card. On the hero that is a gentle
+ *      round-over; on a 15rem card it is a half-circle that eats a third of the photograph. A
+ *      percentage pair — half the width by a fifth of the height — is the same DOORWAY at every
+ *      size, which is what the device was always trying to be.
+ *   2. THE ORNAMENT MOVED TO THE INLINE START. The short olive rule sat at `inset-inline-start: 0`
+ *      of a full-width bar, which in RTL is the right edge — correct — but it was drawn by the
+ *      `::before` of a `::after`-filled bar, so the two overlapped at 1px offsets and the olive
+ *      segment rendered a hair below the border. Both rules are now one `border-block-end` plus a
+ *      single pseudo-element sitting exactly on it.
+ *   3. THE EIGHT PHASE 9 BLOCKS ARE FURNISHED. A banner board with the arch on it, a trust row of
+ *      olive discs, an hours plate, stats on warm plates, and «الأكثر مبيعاً» on a full-bleed band
+ *      so a long homepage has a rhythm rather than eight identical stripes of cream.
  */
 
-@font-face {
-  font-family: 'Zain';
-  font-style: normal;
-  font-weight: 400;
-  /* Arabic subset only — a full family would be five times the bytes for glyphs nobody sees. */
-  src: url('/fonts/zain/zain-v4-arabic-regular.woff2') format('woff2');
-  font-display: swap;
-  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF,
-    U+0020-007E, U+2000-206F, U+20AA, U+2190-21BB;
-}
+/*
+ * Zain's `@font-face` pair moved to `src/app/fonts.css` (imported by the root layout).
+ * It lived here only because this was the first sheet to need it — which meant the admin and
+ * dashboard surfaces, which import no template sheet, never loaded it at all.
+ */
 
-@font-face {
-  font-family: 'Zain';
-  font-style: normal;
-  font-weight: 700;
-  src: url('/fonts/zain/zain-v4-arabic-700.woff2') format('woff2');
-  font-display: swap;
-  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF,
-    U+0020-007E, U+2000-206F, U+20AA, U+2190-21BB;
+/* ------------------------------------------------------- chrome + heads -- */
+
+[data-template='diwan'] .sf-header {
+  border-block-end: 2px solid var(--t-border);
 }
 
 [data-template='diwan'] .sf-block__head {
   position: relative;
   padding-block-end: var(--t-space-md);
-}
-
-/* The ornament: two rules of different lengths, the shorter one in the olive second colour. */
-[data-template='diwan'] .sf-block__head::after,
-[data-template='diwan'] .sf-block__head::before {
-  content: '';
-  position: absolute;
-  inset-block-end: 0;
-  inset-inline-start: 0;
-  block-size: 2px;
-  background: var(--t-border);
-  inline-size: 100%;
-}
-
-[data-template='diwan'] .sf-block__head::before {
-  inline-size: 4.5rem;
-  block-size: 4px;
-  background: var(--t-secondary);
-  inset-block-end: -1px;
-  z-index: 1;
-}
-
-[data-template='diwan'] .sf-header {
   border-block-end: 2px solid var(--t-border);
+}
+
+/*
+ * The ornament is the SHARED squiggle now (Phase 11, Track 11.A): `data-mark='squiggle'` displays
+ * `.sf-mark`'s hand-drawn wave under every section title, in the guarded accent, sized by
+ * `--t-mark-stroke`. The olive `::after` segment this replaced was the same idea implemented
+ * privately — exactly the pattern the ornament layer exists to end. The head keeps its own 2px
+ * rule below; the squiggle sits between the title and that rule, which reads as a stitched hem.
+ */
+
+[data-template='diwan'] .sf-block__title {
+  font-size: var(--t-text-2xl);
+}
+
+/* ---------------------------------------------------------------- arches -- */
+
+/*
+ * THE DOORWAY. 50% of the width per top corner means the two corners meet in the middle and form a
+ * single arch; 22% of the height keeps it a shallow dome rather than a semicircle, at any size.
+ * Elliptical radii (`h v`) are what make it proportional in both axes at once — a single percentage
+ * would follow the box's aspect ratio and go pointed on a 4:5 portrait.
+ */
+/*
+ * Phase 11 (Track 11.A) widened this to EVERY image: the category tiles and the gallery joined the
+ * hero, the cards and the board, which is what `imageMask: 'arch'` in the definition promises. The
+ * shared `[data-mask='arch']` rule in `storefront.css` would have covered them with the token's
+ * plain half-circle; this template's own doorway — proportional, elliptical — wins at (0,3,0) and
+ * stays the one arch a ديوان customer ever sees.
+ */
+[data-template='diwan'] .sf-hero__media .sf-media,
+[data-template='diwan'] .sf-card__media .sf-media,
+[data-template='diwan'] .sf-cat .sf-media,
+[data-template='diwan'] .sf-gallery .sf-media,
+[data-template='diwan'] .sf-banner .sf-media {
+  border-start-start-radius: 50% 22%;
+  border-start-end-radius: 50% 22%;
+  border-end-start-radius: var(--t-radius-md);
+  border-end-end-radius: var(--t-radius-md);
+  border: 2px solid var(--t-border);
 }
 
 [data-template='diwan'] .sf-hero__inner {
   padding-block: var(--t-space-xl);
 }
 
-/* The arch: a tall radius on the leading top corner only, so it reads as a doorway in RTL. */
-[data-template='diwan'] .sf-hero__media .sf-media,
-[data-template='diwan'] .sf-card__media .sf-media {
-  border-start-start-radius: 14rem;
-  border-start-end-radius: 14rem;
-  border-end-start-radius: var(--t-radius-md);
-  border-end-end-radius: var(--t-radius-md);
-  border: 2px solid var(--t-border);
+/*
+ * The hero portrait is narrower than its column. A 4:5 image at 45% of a 70rem page is 31rem wide
+ * and 39rem tall, which pushes the copy's own baseline off a laptop fold; capping it keeps the pair
+ * balanced and costs nothing on a phone, where the grid is one column and the cap never binds.
+ */
+[data-template='diwan'] .sf-hero__media {
+  max-inline-size: 26rem;
+  margin-inline-start: auto;
 }
+
+/* ------------------------------------------------------------------ card -- */
 
 [data-template='diwan'] .sf-card {
   border: 2px solid var(--t-border);
@@ -80,7 +105,23 @@
   padding: var(--t-space-md) var(--t-space-md) 0;
 }
 
-[data-template='diwan'] .sf-price {
+/* Olive, not the accent: the hover is a warmer version of the frame the card already has, and the
+   olive is this template's structural second colour. `--t-secondary` is a BORDER here — non-text,
+   3:1 — which is the bar the raw brand token is actually checked at. */
+[data-template='diwan'] .sf-card:hover,
+[data-template='diwan'] .sf-cat:hover {
+  border-color: var(--t-secondary);
+}
+
+/*
+ * The price sits on a warm plate — the template's signature, and the reason `--t-surface-alt` exists
+ * in the token set.
+ *
+ * `:not(.sf-price--muted)` because `PriceWithDiscount` renders TWO of these: the price, and the
+ * struck-through former price beside it. Two identical plates side by side is exactly the ambiguity
+ * the strike-through and the `aria-hidden` on that element exist to remove.
+ */
+[data-template='diwan'] .sf-price:not(.sf-price--muted) {
   background: var(--t-surface-alt);
   border-radius: var(--t-radius-pill);
   padding-inline: var(--t-space-md);
@@ -110,6 +151,131 @@
   background: var(--t-surface-alt);
 }
 
+/* --------------------------------------------------- Phase 9: the board -- */
+
+/*
+ * The banner board keeps the arch, and its caption is a warm plate pulled UP into the bottom of the
+ * picture rather than laid over it. The overlap is 1.5rem — enough to read as one object, not enough
+ * to cover any part of the photograph a merchant framed deliberately — and the plate is opaque, so
+ * the contrast of the text on it is the contrast of text on `--t-surface-alt`, which the guard has
+ * already checked. Nothing here depends on what is in the image.
+ */
+[data-template='diwan'] .sf-banner__copy {
+  background: var(--t-surface-alt);
+  border: 2px solid var(--t-border);
+  border-radius: var(--t-radius-lg);
+  margin-inline: var(--t-space-lg);
+  margin-block-start: -1.5rem;
+  padding: var(--t-space-lg);
+  position: relative;
+}
+
+[data-template='diwan'] .sf-banner__title {
+  font-size: var(--t-text-xl);
+}
+
+/* Centred, because this template is symmetrical everywhere else — the arch, the plate, the pills. */
+[data-template='diwan'] .sf-carousel__controls {
+  justify-content: center;
+}
+
+/* --------------------------------------------- Phase 9: trust and hours -- */
+
+/*
+ * The trust row as three warm plates. The glyph goes in an olive DISC, which is the same
+ * round-and-warm vocabulary as the price plate and the pill buttons — and it is the reason the icon
+ * colour is inverted here (`--t-on-secondary`) rather than left as the accent: a 24px glyph on a
+ * filled disc is the only place in this template where the second colour is a fill behind a shape.
+ */
+[data-template='diwan'] .sf-trust__item {
+  background: var(--t-surface);
+  border: 2px solid var(--t-border);
+  border-radius: var(--t-radius-lg);
+  padding: var(--t-space-lg);
+  align-items: center;
+}
+
+[data-template='diwan'] .sf-trust__icon {
+  background: var(--t-secondary);
+  color: var(--t-on-secondary);
+  border-radius: var(--t-radius-pill);
+  /* The SVG is 24px; the disc is 44px with the glyph centred by the box's own padding. */
+  box-sizing: content-box;
+  padding: 10px;
+  margin-block-start: 0;
+}
+
+[data-template='diwan'] .sf-trust__title {
+  font-size: var(--t-text-lg);
+}
+
+[data-template='diwan'] .sf-hours {
+  background: var(--t-surface);
+  border: 2px solid var(--t-border);
+  border-radius: var(--t-radius-lg);
+  padding: var(--t-space-sm) var(--t-space-lg);
+  max-inline-size: 32rem;
+}
+
+[data-template='diwan'] .sf-hours dt {
+  color: var(--t-text);
+  font-weight: var(--t-weight-display);
+}
+
+/* --------------------------------------------------- Phase 9: the stats -- */
+
+[data-template='diwan'] .sf-stat {
+  background: var(--t-surface-alt);
+  border-radius: var(--t-radius-lg);
+  padding: var(--t-space-lg);
+  text-align: center;
+  align-items: center;
+}
+
+/* Olive at body-text strength. `--t-accent` rather than `--t-secondary` because this is a NUMBER
+   read as text, not a fill — the distinction `tokens.ts` documents on the token itself. */
+[data-template='diwan'] .sf-stat__value {
+  color: var(--t-accent);
+  font-size: var(--t-text-2xl);
+}
+
+/* ------------------------------------------- Phase 9: the ranked grids --- */
+
+/*
+ * «الأكثر مبيعاً» gets a full-bleed warm band.
+ *
+ * The hook is the section's stable anchor, because `best_sellers` is one of the four Phase 9 types
+ * `SectionBlock` gives no modifier class. That is safe rather than clever: `SECTION_ANCHORS` is a
+ * closed record (`src/templates/section-anchors.ts`) and `anchorFor()` only ever appends `-2` to a
+ * repeat, so a prefix match cannot collide with another section type — `bestsellers` is spelled
+ * nowhere else in the document.
+ *
+ * The band exists because eight sections of cream in a row is not calm, it is undifferentiated. One
+ * tinted band two thirds of the way down gives the page a middle. `.sf-block + .sf-block` removes
+ * the top padding of a consecutive block, which would put the band's edge hard against the previous
+ * grid, so it is restored here.
+ */
+[data-template='diwan'] .sf-block[id^='bestsellers'] {
+  background: var(--t-surface-alt);
+  padding-block: var(--t-block);
+  border-block: 2px solid var(--t-border);
+}
+
+/* -------------------------------------------------- Phase 9: the search -- */
+
+/*
+ * Pills, to match the buttons. `.sf-input` is shared with the checkout, so this is scoped to the
+ * search row only — a pill-shaped textarea in an order form would be a different decision, and a
+ * worse one.
+ */
+[data-template='diwan'] .sf-search__input {
+  border-radius: var(--t-radius-pill);
+  background: var(--t-surface);
+  padding-inline: var(--t-space-lg);
+}
+
+/* -------------------------------------------------------------- the form -- */
+
 /*
  * diwan is the warm, rounded one: the checkout takes the same generous radius its cards and
  * offers do, and sits on the tinted surface rather than on the page background.
@@ -121,7 +287,19 @@
 }
 
 [data-template='diwan'] .sf-input,
-[data-template='diwan'] .sf-textarea {
+[data-template='diwan'] .sf-textarea,
+[data-template='diwan'] .sf-select {
   border-radius: var(--t-radius-md);
   background: var(--t-surface);
+}
+
+/* ---------------------------------------------------------- responsive --- */
+
+@media (max-width: 60rem) {
+  /* The cap above is `margin-inline-start: auto` in a two-column grid; in one column that pushes a
+     26rem portrait to the inline end of a full-width row and leaves a hole beside it. */
+  [data-template='diwan'] .sf-hero__media {
+    max-inline-size: none;
+    margin-inline-start: 0;
+  }
 }

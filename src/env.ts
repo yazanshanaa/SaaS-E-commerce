@@ -34,6 +34,24 @@ const schema = z.object({
   PUBLIC_SCHEME: z.enum(['http', 'https']).default('https'),
   ADMIN_HOST_PREFIX: z.string().default('admin'),
   APP_HOST_PREFIX: z.string().default('app'),
+  /**
+   * Phase 11 (Track 11.H / Q35). The platform's own WhatsApp number, digits only with country
+   * code — the channel Q3's support model already runs on. The merchant subscription screen
+   * builds its «جدّد الاشتراك» link from it; unset, the screen shows the instruction without a
+   * link rather than a dead one. Never a payment mechanism: the actual extension stays an
+   * audited super-admin action (invariant 5).
+   */
+  PLATFORM_WHATSAPP_NUMBER: z
+    .string()
+    .optional()
+    // `PLATFORM_WHATSAPP_NUMBER=` with nothing after it is how an operator spells "unset" in a
+    // .env file. dotenv hands that over as '', which is PRESENT as far as zod is concerned, so
+    // `.optional()` alone never fires and the empty string gets validated as a phone number —
+    // turning a deliberately blank optional into a hard boot failure. Empty means absent here.
+    .transform((value) => (value === '' ? undefined : value))
+    .refine((value) => value === undefined || /^\d{6,15}$/.test(value), {
+      message: 'digits only, with country code',
+    }),
 
   // --- Database -------------------------------------------------------------
   DATABASE_URL: nonEmpty,
@@ -171,6 +189,54 @@ const schema = z.object({
   BACKUP_INTERVAL_HOURS: z.coerce.number().int().positive().max(168).default(6),
   BACKUP_RETENTION_DAYS: z.coerce.number().int().positive().max(365).default(14),
 
+  /**
+   * Phase 10 (Q23) — what the OWNER'S BACKUPS SCREEN needs, and nothing more.
+   *
+   * The screen lists the sidecar's rounds and streams one encrypted dump on request. It therefore
+   * needs READ access to the backup bucket, and it gets its OWN credentials: the sidecar's keys can
+   * write and delete, and the web container — the one process reachable from the internet — has no
+   * business holding those. Absent, the screen renders an honest "not configured" panel rather than
+   * throwing, because a platform with no R2 zone yet is the state this repository actually ships in.
+   *
+   * `BACKUP_PREFIX` must equal the sidecar's (docker/backup/backup.sh); it is the key prefix every
+   * round is written under, so a mismatch shows an empty list rather than an error.
+   */
+  R2_BACKUP_BUCKET: z.string().optional(),
+  R2_BACKUP_ENDPOINT: z.string().optional(),
+  R2_BACKUP_READ_ACCESS_KEY_ID: z.string().optional(),
+  R2_BACKUP_READ_SECRET_ACCESS_KEY: z.string().optional(),
+  BACKUP_PREFIX: z.string().default('souq-bartaa'),
+
+  /**
+   * The Redis key prefix the run-now control channel uses. The web container SETs
+   * `{prefix}run-request`; the sidecar polls it, DELs it and runs a round, then writes
+   * `{prefix}status` back. A prefix rather than two hardcoded names so a staging stack pointed at
+   * the same Redis cannot trigger production's backup — the one cross-environment action that
+   * would be both silent and expensive.
+   */
+  BACKUP_CONTROL_PREFIX: z.string().default('backup:'),
+
+  // --- Phase 10: the standalone bundle (Q25) --------------------------------
+  /**
+   * Where the worker image keeps the platform SOURCE tarball it packs into a standalone bundle.
+   * Produced by the `standalone-source` Dockerfile stage from the same build context that produced
+   * the running image, so a bundle ships exactly the code that built it. Absent (a dev checkout,
+   * where the stage never ran), the export refuses with a clear Arabic message instead of shipping
+   * a bundle with no application in it.
+   */
+  STANDALONE_SOURCE_ARCHIVE: z.string().default('/opt/standalone/source.tar.gz'),
+
+  /**
+   * SINGLE-TENANT MODE (Q25) — set only inside an exported bundle, never on the platform.
+   *
+   * With it on, `proxy.ts` serves ONE tenant's storefront at the root host and its dashboard at
+   * `/dashboard`, the admin surface and every demo route 404, entitlements come from a bundled
+   * snapshot instead of plans, and the billing sweeps no-op. `SINGLE_TENANT_ID` is required when
+   * the mode is on — a mode with no tenant would resolve every hostname to nothing.
+   */
+  SINGLE_TENANT_MODE: booleanish.default(false),
+  SINGLE_TENANT_ID: z.string().optional(),
+
   // --- Retention for the records that OUTLIVE a tenant (Phase 6) -------------
   /**
    * The deletion record's own lifetime, in days — `TenantTombstone` and `platform_audit_logs`.
@@ -249,6 +315,25 @@ const schema = z.object({
    * signature, on every hostname the platform answers.
    */
   RATE_LIMIT_GATEWAY_CALLBACK_PER_HOUR: z.coerce.number().int().positive().default(120),
+
+  // --- Phase 8: cart, checkout settings and coupons ---------------------------
+  /**
+   * Cart checkout, per tenant per IP per hour — the OUTER, degradable bound (item 4: "rate
+   * limited by IP + phone"), the same shape `RATE_LIMIT_CHECKOUT_PER_HOUR` already uses for
+   * buy_now. Higher than that one on purpose: a real cart has several items and a customer who
+   * mistypes a delivery address legitimately retries more than once, where buy_now is a single
+   * "buy now" click. The bound that must NOT degrade is `MAX_CART_ORDERS_PER_TENANT_PER_HOUR`,
+   * counted off `Order` rows inside the checkout transaction.
+   */
+  RATE_LIMIT_CART_CHECKOUT_PER_HOUR: z.coerce.number().int().positive().default(20),
+  /** The second conjunct of item 4's "IP + phone": per tenant per PHONE per hour. */
+  RATE_LIMIT_CART_CHECKOUT_PER_PHONE_PER_HOUR: z.coerce.number().int().positive().default(10),
+  /**
+   * The public tracking page — lookup, self-edit and self-cancel share this one, per tenant per
+   * IP per hour. It is the route a phone-last-4 guess is tried against, so it is bounded
+   * separately from (and lower than) checkout itself.
+   */
+  RATE_LIMIT_ORDER_TRACKING_PER_HOUR: z.coerce.number().int().positive().default(30),
   /**
    * Failed sign-ins per identifier before the account is locked, and for how long.
    *
@@ -259,7 +344,17 @@ const schema = z.object({
    */
   AUTH_LOCKOUT_THRESHOLD: z.coerce.number().int().positive().default(10),
   AUTH_LOCKOUT_MINUTES: z.coerce.number().int().positive().default(15),
-});
+})
+  /**
+   * Phase 10. A mode with no tenant would resolve every hostname to nothing — an unreachable
+   * storefront and an unreachable dashboard, on a server whose whole purpose is to serve one shop.
+   * Refused at boot, where the operator is still reading the bootstrap's output, rather than at the
+   * first request.
+   */
+  .refine((env) => !env.SINGLE_TENANT_MODE || Boolean(env.SINGLE_TENANT_ID), {
+    message: 'SINGLE_TENANT_MODE=1 requires SINGLE_TENANT_ID',
+    path: ['SINGLE_TENANT_ID'],
+  });
 
 export type Env = z.infer<typeof schema>;
 

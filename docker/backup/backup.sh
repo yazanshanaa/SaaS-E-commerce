@@ -58,9 +58,57 @@ require AWS_SECRET_ACCESS_KEY 'R2 credentials for the backup bucket.'
 : "${BACKUP_WORKDIR:=/var/tmp/backup}"
 : "${BACKUP_HEARTBEAT_URL:=}"
 : "${AWS_DEFAULT_REGION:=auto}"
+# Phase 10 (Q23). Optional: without REDIS_URL the loop behaves exactly as it did before — the
+# control channel is an ADDITION to the schedule, never a replacement for it.
+: "${REDIS_URL:=}"
+: "${BACKUP_CONTROL_PREFIX:=backup:}"
+: "${BACKUP_POLL_SECONDS:=60}"
 export AWS_DEFAULT_REGION
 
 s3() { aws --endpoint-url "$R2_BACKUP_ENDPOINT" "$@"; }
+
+# --- the owner's run-now channel (Q23) ---------------------------------------------------------
+#
+# The admin screen at admin.{DOMAIN}/backups cannot run pg_dump: the web container deliberately has
+# no client tools, no age, and no write credentials for this bucket — putting them there would give
+# the one process reachable from the internet the ability to dump every tenant's database. So the
+# screen SETs a Redis key and this container, which has all three, notices.
+#
+#   {prefix}run-request  — set by the web container with NX and a 1h TTL. Read, DELETED, then acted
+#                          on. Deleting BEFORE the round means a crash mid-round loses the request
+#                          rather than repeating it forever, and the interval is the backstop.
+#   {prefix}status       — written after every round, success or failure, for the screen's header
+#                          card and its lifecycle warning. The manifests remain the source of
+#                          truth; this is the sidecar volunteering its own view.
+#
+# Every redis call is best-effort. A backup system that stops taking backups because a cache is
+# down would be a spectacular own goal.
+redis_cli() {
+  [ -n "$REDIS_URL" ] || return 1
+  redis-cli -u "$REDIS_URL" "$@" 2>/dev/null
+}
+
+run_requested() {
+  [ -n "$REDIS_URL" ] || return 1
+  requested=$(redis_cli GET "${BACKUP_CONTROL_PREFIX}run-request" || true)
+  [ -n "$requested" ] || return 1
+  redis_cli DEL "${BACKUP_CONTROL_PREFIX}run-request" >/dev/null || true
+  log "run requested by the admin screen: ${requested}"
+  return 0
+}
+
+# `lifecycle_ok` / `lifecycle_days` are set by check_lifecycle so the screen can render the same
+# answer the container log carries.
+publish_status() {
+  [ -n "$REDIS_URL" ] || return 0
+  ok="$1"
+  failures="$2"
+  stamp="$3"
+  printf '{"finishedAt":"%s","ok":%s,"failures":%s,"stamp":"%s","lifecycleOk":%s,"lifecycleDays":%s}' \
+    "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$ok" "$failures" "$stamp" \
+    "${lifecycle_ok:-false}" "${lifecycle_days:-null}" \
+    | redis_cli -x SET "${BACKUP_CONTROL_PREFIX}status" >/dev/null || true
+}
 
 # The age recipient is a public key by construction. Refusing an identity here is not pedantry:
 # an operator who pastes `AGE-SECRET-KEY-...` into this variable has put the decryption key on the
@@ -76,6 +124,12 @@ esac
 
 # --- retention: verify the ceiling exists, every run ------------------------------------------
 check_lifecycle() {
+  # Phase 10: the answer is also PUBLISHED (publish_status), because "retained N days" is a legal
+  # claim in every tenant's privacy policy and a warning only this container's log ever saw was a
+  # warning nobody read.
+  lifecycle_ok=false
+  lifecycle_days=null
+
   configuration=$(s3 s3api get-bucket-lifecycle-configuration --bucket "$R2_BACKUP_BUCKET" 2>/dev/null || true)
 
   if [ -z "$configuration" ]; then
@@ -93,7 +147,16 @@ check_lifecycle() {
     fail "the bucket lifecycle rule does not expire objects at ${BACKUP_RETENTION_DAYS} days,"
     fail "which is the number BACKUP_RETENTION_DAYS publishes in every tenant's privacy policy."
     fail "Current configuration: $(echo "$configuration" | tr -d '\n')"
+    # A rule EXISTS but disagrees. Reported as its own state rather than folded into "missing":
+    # the fix is different (edit the rule, not create one) and so is the risk (objects expire at
+    # the wrong time, rather than never).
+    lifecycle_days=$(echo "$configuration" | grep -Eo '"Days"[[:space:]]*:[[:space:]]*[0-9]+' | grep -Eo '[0-9]+' | head -1)
+    : "${lifecycle_days:=null}"
+    return 0
   fi
+
+  lifecycle_ok=true
+  lifecycle_days="$BACKUP_RETENTION_DAYS"
 }
 
 # --- one database ------------------------------------------------------------------------------
@@ -231,10 +294,12 @@ run_once() {
 
   if [ "$failures" -ne 0 ]; then
     fail "${failures} database(s) failed this round"
+    publish_status false "$failures" "$stamp"
     return 1
   fi
 
   log "round complete: ${stamp}"
+  publish_status true 0 "$stamp"
   return 0
 }
 
@@ -258,6 +323,8 @@ case "${1:-once}" in
   loop)
     interval=$((BACKUP_INTERVAL_HOURS * 3600))
     log "starting: every ${BACKUP_INTERVAL_HOURS}h, databases=${BACKUP_DATABASES}, bucket=${R2_BACKUP_BUCKET}"
+    [ -n "$REDIS_URL" ] && log "run-now channel: ${BACKUP_CONTROL_PREFIX}run-request"
+
     while true; do
       # A failed round must not kill the loop — the next one may well succeed, and a container
       # that exits on the first transient S3 error is a backup system that stops after its first
@@ -267,7 +334,22 @@ case "${1:-once}" in
       else
         fail 'round failed; continuing to the next interval'
       fi
-      sleep "$interval"
+
+      # THE INTERVAL IS STILL THE INTERVAL. It is slept in short slices only so an operator's
+      # "run now" is picked up in under a minute instead of in up to six hours — the elapsed time
+      # is counted, not reset, so a run-now cannot become a way to drift the published schedule.
+      waited=0
+      while [ "$waited" -lt "$interval" ]; do
+        if run_requested; then
+          if run_once; then heartbeat; else fail 'requested round failed'; fi
+          # An on-demand round resets the clock deliberately: the next scheduled dump would
+          # otherwise land minutes after one that just succeeded, for no gain.
+          waited=0
+          continue
+        fi
+        sleep "$BACKUP_POLL_SECONDS"
+        waited=$((waited + BACKUP_POLL_SECONDS))
+      done
     done
     ;;
   *)

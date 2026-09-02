@@ -38,14 +38,11 @@ export function ageInDays(createdAt: Date, now: Date = new Date()): number {
 }
 
 /**
- * The pack a demo was built from is NOT stored on the tenant.
- *
- * `createDemo` takes a `packKey` and writes what the pack SAYS — a template, colours, a catalogue —
- * without recording which pack said it. Today each of the three packs names a different template,
- * so a demo built from the public form can be matched through its originating `DemoRequest`, and
- * everything else is reported by its template instead of by a guess. A `Tenant.demoPackKey` column
- * would be the honest fix; it is a migration, and migrations happen only in the main session
- * (CLAUDE.md), so it is raised in `docs/decisions/b3.md` rather than invented here.
+ * The pack a demo was built from IS stored on the tenant since the 2026-08-20 pre-launch
+ * migration — `Tenant.demoPackKey`, the honest fix `docs/decisions/b3.md` asked for, written by
+ * `createDemo` in the main session. Demos created BEFORE the column existed have it null, so the
+ * list still falls back to the originating `DemoRequest` while one survives (they are deleted on
+ * day 30) and reports the template beside it either way.
  */
 function templateName(templateKey: string): string {
   return isTemplateKey(templateKey) ? TEMPLATES[templateKey].name : templateKey;
@@ -62,6 +59,7 @@ export async function listDemos(actor: Actor, now: Date = new Date()): Promise<D
       name: true,
       slug: true,
       createdAt: true,
+      demoPackKey: true,
       site: { select: { templateKey: true } },
       _count: { select: { products: true } },
       demoLinks: {
@@ -94,7 +92,11 @@ export async function listDemos(actor: Actor, now: Date = new Date()): Promise<D
       createdAt: tenant.createdAt,
       ageDays: ageInDays(tenant.createdAt, now),
       templateName: templateName(tenant.site?.templateKey ?? ''),
-      packKey: (request?.packKey as PackKey | undefined) ?? null,
+      // The durable column first; the request only covers pre-column demos until day 30.
+      packKey:
+        (tenant.demoPackKey as PackKey | null) ??
+        (request?.packKey as PackKey | undefined) ??
+        null,
       productCount: tenant._count.products,
       demoUrl: live ? demoStorefrontUrl(tenant.slug, live.token) : null,
       tokenExpiresAt: live?.expiresAt ?? null,

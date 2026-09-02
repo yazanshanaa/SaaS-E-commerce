@@ -12,6 +12,7 @@ import {
   saveSocialLinks,
   seedDefaultSections,
   setSectionEnabled,
+  setSiteAppearance,
   text,
   type ActionState,
 } from '@/server/admin';
@@ -42,6 +43,20 @@ function done(tenantId: string, state: ActionState | null, okKey: string): Actio
   if (state) return state;
   revalidatePath(`/accounts/${tenantId}/content`);
   return { status: 'ok', messageKey: okKey };
+}
+
+export async function saveAppearanceAction(
+  _state: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const ctx = await requireAdminPage();
+  const tenantId = text(form, 'tenantId');
+
+  const state = await setSiteAppearance(ctx, tenantId, {
+    templateKey: text(form, 'templateKey'),
+    presetKey: text(form, 'presetKey'),
+  });
+  return done(tenantId, state, 'admin:content.appearance.saved');
 }
 
 export async function saveSocialLinksAction(

@@ -65,6 +65,12 @@ therefore cannot erase its own audit trail — which is why `tenant_tombstones` 
 a `tenant_id` column that `app_system` may write, and why `rls-coverage.test.ts` now defines
 "tenant-owned" by the presence of a foreign key to `tenants` rather than by the column name.
 
+## Platform-wide constants — added in Phase 8
+
+| Table | Why it is global | Policy |
+|---|---|---|
+| `platform_settings` | A SINGLETON (the `platform_settings_is_singleton` CHECK makes any id other than `'singleton'` unrepresentable): one platform-wide constant — currently `order_edit_window_max_minutes`, the cap on what any tenant's `OrderSettings.editWindowMinutes` may be set to — that applies uniformly to every tenant and has no `tenant_id` at all. It is deliberately NOT a `PlanFeature` even though it is "one number the super admin sets": axis (a) is plan-default-then-per-tenant-override, and this value has no plan dimension and no override dimension — bending it to fit the axis would let a per-tenant `Entitlement` quietly defeat the word "cap" in its own name. Adding the next platform-wide constant is a nullable column here, never a new table. | Same as `plans`: readable by every `app_web` request, writable by `app_web` — the super-admin-only route is the actual enforcement (`src/server/platform-settings.ts`), not a DB-level restriction, matching how `plans` itself is policed. No RLS: there is exactly one row and it names nobody. |
+
 ## Tables that exist BEFORE any tenant does
 
 | Table | Why it is global |
@@ -105,3 +111,65 @@ What survives instead is an **aggregate** on the existing `platform_audit_logs` 
 numbers, so the platform can answer "how much trade went through this account" in a dispute. No
 customer name, no phone number, no per-order row — and `tenant_tombstones` is untouched, because
 it records facts about the deletion, not about the business.
+
+### What Phase 8 added here, and what it deliberately did not
+
+Phase 8 writes `order_settings`, `coupons`, `coupon_redemptions` and `order_history_entries` for
+the first time, plus new columns on `orders` itself (`tracking_code`, `delivery_address`,
+`delivery_area`, …). **All four new tables are tenant-owned**, carry `tenant_id`, and are policed
+by the exact generic RLS template — added in migration `20260812010000_phase8_cart_coupons_orders`
+rather than migration 0001, because they did not exist yet, but the template and the roles are the
+same ones. None of them holds anything migration 0001's threat model did not already cover: a
+tracking code is a bearer-style credential to ONE order (guarded by the phone-last-4 check and rate
+limiting, not by RLS, since the storefront route runs unauthenticated by design — see
+`src/server/orders/self-service.ts`), and a delivery address is customer PII exactly like
+`Order.customerName`/`customerPhone` already were from Phase 5, inheriting the same purge and
+suspension-export treatment (decision (a) still applies unchanged: `readOrdersForExport` was never
+extended to select the new columns, so neither export channel gains an address it did not already
+lack a name and phone for).
+
+The one GLOBAL addition is `platform_settings` (above) — a single-row platform constant with no
+tenant dimension, not a shadow ledger of anything tenant-owned.
+
+---
+
+## What Phase 9 added here
+
+Phase 9 adds **fifteen tenant-owned tables and exactly two global ones.**
+
+### The two global additions
+
+| Table | Why it is global | Policy |
+|---|---|---|
+| `carriers` | A delivery company is the **platform's** asset, not a merchant's row. The same «شركة التوصيل» serves forty shops, and its price list changes once, centrally. Giving each tenant its own copy of "Yazan Express exists" would mean forty rows to update and thirty-nine chances to miss one. Exactly the reasoning that makes `plans` global. | No RLS — there is no `tenant_id` to key the generic template on, and unlike `users` or `sessions` there is nothing personal here: a delivery company's price list is not a secret. `SELECT` to `app_web` (a merchant must be able to see the carrier they were assigned) and `app_system`; writes to `app_web`, with the super-admin-only route as the actual enforcement, matching `plans`. |
+| `carrier_rates` | The rate card belongs to the carrier, one row per (carrier, zone name). | As `carriers`. |
+
+**`tenant_carriers` is deliberately NOT here.** Which carriers a given merchant may use *is*
+tenant-owned, carries `tenant_id`, and is policed by the generic template. The split is the point:
+the catalogue is global, the assignment is not. Its foreign key to `carriers` is `ON DELETE
+RESTRICT` rather than `CASCADE`, so deleting a carrier that live merchants depend on fails loudly
+instead of silently un-assigning them — `Carrier.hidden` is the correct way to retire one, the same
+shape `Plan.hidden` already uses for the demo plan.
+
+### Why the merchant's zones are tenant-owned even though they are copied from a global table
+
+`DeliveryZone` / `DeliveryZoneTown` hold what a shop charges *its own customer*. They are seeded
+from a carrier's rate card by **copy**, and `seededFromCarrierId` is a plain nullable column rather
+than a foreign key precisely so the copy survives the carrier being retired. A live link would mean
+a platform-side rate change silently repricing forty checkouts overnight, which is an outage, not
+a feature.
+
+### The one that needed thinking about, and stayed tenant-owned anyway
+
+`analytics_events` and its three daily rollups are tenant-owned and fully policed, even though the
+nightly job that reads them is a cross-tenant sweep. The sweep follows invariant 8 — it runs as
+`app_system` only to enumerate tenant ids, then fans out into per-tenant jobs that each write
+through `withTenantTxn` as `app_web` with `app.tenant_id` set. `app_system` keeps `SELECT` only.
+The temptation is to let `app_system` write the rollups directly ("they're only counters"); that
+would hand a cross-tenant **write** path to the one role whose read policy is `USING (true)`, so
+the Phase 9 migration says so in a comment next to the GRANTs.
+
+`customers` is tenant-owned and holds PII — but no PII the tenant did not already hold. It is an
+index over `orders`, keyed on the phone number an order already stores, and it dies in the same
+purge cascade. It introduces no new class of personal data and therefore no new obligation beyond
+the ones Phase 5 and Phase 6 already discharge.

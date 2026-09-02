@@ -29,7 +29,9 @@
     "db:seed:scenario": "tsx prisma/seed-scenario.ts",
     "purge:replay": "tsx scripts/purge-replay.ts",
     "db:studio": "prisma studio",
-    "cf:refresh-ranges": "tsx scripts/refresh-cloudflare-ranges.ts"
+    "cf:refresh-ranges": "tsx scripts/refresh-cloudflare-ranges.ts",
+    "standalone:import": "tsx scripts/standalone-import.ts",
+    "standalone:owner": "tsx scripts/standalone-owner.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -48,7 +50,10 @@
       "prisma",
       "sharp",
       "unrs-resolver"
-    ]
+    ],
+    "overrides": {
+      "deepmerge-ts": ">=8.0.0"
+    }
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1106.0",

@@ -13,6 +13,12 @@ import {
   type Surface,
 } from '@/server/tenancy';
 import { CSP_REQUEST_HEADERS, buildCsp } from '@/server/http/security-headers';
+import {
+  isSingleTenant,
+  isStandaloneDashboardPath,
+  singleTenantId,
+  stripDashboardPrefix,
+} from '@/server/single-tenant';
 
 /**
  * proxy.ts — Next 16's rename of middleware.ts.
@@ -79,6 +85,16 @@ function isAppPublicPath(pathname: string): boolean {
   return APP_PUBLIC_PREFIXES.some(
     (prefix) => pathname === prefix.replace(/\/$/, '') || pathname.startsWith(prefix),
   );
+}
+
+/**
+ * The live preview segment (Track 11.D) — the only framable path (Q37, see below). The whole
+ * segment rather than the bare path, deliberately and on the record: a future route added under
+ * `/preview/*` INHERITS the framing exception, and the named-limitations list in
+ * `docs/PHASE-11.md` says exactly that so it is a known property rather than a discovery.
+ */
+function isPreviewSegment(pathname: string): boolean {
+  return pathname === '/preview' || pathname.startsWith('/preview/');
 }
 
 /**
@@ -205,13 +221,84 @@ export default async function proxy(request: NextRequest): Promise<NextResponse>
    * bootstrap scripts on every page.
    */
   const surfaceForCsp: Surface = parsed.surface;
-  const csp = buildCsp({ surface: surfaceForCsp });
+  /**
+   * Q37 / Track 11.D: the ONE path on the ONE surface whose response may be framed — by our own
+   * origin only. The public path is `/preview` on app.* (the surface rewrite makes it
+   * `/dashboard/preview`); in single-tenant mode the dashboard is reached under `/dashboard`, so
+   * the same segment is matched after the prefix is stripped. Everything else on every surface
+   * keeps `frame-ancestors 'none'`, and `tests/unit/phase6-security-headers.test.ts` asserts this
+   * exception is exactly one path wide.
+   */
+  const framable =
+    (parsed.surface === 'app' && isPreviewSegment(pathname)) ||
+    (isSingleTenant() &&
+      isStandaloneDashboardPath(pathname) &&
+      isPreviewSegment(stripDashboardPrefix(pathname)));
+  const csp = buildCsp({ surface: surfaceForCsp, framable });
+  // The dashboard layout renders the preview bare (no rail, no chrome) off this header — the
+  // same predicate as the framing exception, resolved once. Stripped from incoming requests via
+  // TENANT_HEADER_NAMES like every other context header.
+  if (framable) headers.set(TENANT_HEADERS.preview, '1');
 
   // Internal endpoints are hostname-agnostic by design: Caddy's on-demand-TLS ask (Phase 4)
   // arrives for a hostname we may not know yet, and a health check must not depend on DNS
   // being right. Both are reachable only inside the docker network.
   if (pathname.startsWith('/internal/')) {
     return secure(NextResponse.next({ request: { headers } }), csp);
+  }
+
+  /**
+   * SINGLE-TENANT MODE (Q25) — before every hostname branch below, and returning from all of them.
+   *
+   * A standalone bundle serves ONE shop on ONE name that this platform has never heard of, so
+   * `parseHostname` would classify it as an unknown host and 404 the whole deployment. The mode
+   * short-circuits that: the root host is the storefront, `/dashboard` is the merchant dashboard,
+   * and the admin surface simply does not exist — there is no platform owner on a server the
+   * merchant owns.
+   *
+   * It sits AFTER the internal-endpoint branch so a health check still answers, and after the CSP
+   * is built so no exit can ship without one — the same two invariants every other branch keeps.
+   */
+  if (isSingleTenant()) {
+    const tenantId = singleTenantId();
+    if (!tenantId) return secure(unknownHost(request, headers), csp);
+
+    // The platform's own surfaces have no meaning here. 404 rather than redirect: a redirect would
+    // tell a prober that the admin panel exists somewhere, and it does not.
+    if (pathname.startsWith('/admin') || pathname.startsWith('/demo-request')) {
+      return secure(unknownHost(request, headers), csp);
+    }
+
+    const dashboard = isStandaloneDashboardPath(pathname);
+
+    headers.set(TENANT_HEADERS.surface, dashboard ? 'app' : 'storefront');
+    headers.set(TENANT_HEADERS.tenantId, tenantId);
+    /**
+     * The slug is the hostname's first label on the platform, and a standalone deployment has no
+     * such label — its host IS the shop. Set to the tenant id rather than left absent: both
+     * current readers already fall back to `''`, but an empty slug is a trap for whatever is
+     * written next, and a stable non-empty value costs nothing.
+     */
+    headers.set(TENANT_HEADERS.slug, tenantId);
+    if (!dashboard) {
+      // Never a demo and never suspended: there is no platform to suspend it, and the demo
+      // machinery is one of the things the bundle deliberately leaves behind.
+      headers.set(TENANT_HEADERS.isDemo, '0');
+      headers.set(TENANT_HEADERS.isSuspended, '0');
+    }
+
+    // `surfacePath` leaves the unprefixed paths (`/api/**`) alone, and rewriting a path to itself
+    // is a no-op Next would have to undo — so the same "same target means next()" shape every
+    // other branch uses through `intoSurface`.
+    const target = surfacePath(
+      dashboard ? 'app' : 'storefront',
+      dashboard ? stripDashboardPrefix(pathname) : pathname,
+    );
+    if (target === pathname) return secure(NextResponse.next({ request: { headers } }), csp);
+
+    const url = request.nextUrl.clone();
+    url.pathname = target;
+    return secure(NextResponse.rewrite(url, { request: { headers } }), csp);
   }
 
   // --- admin.{DOMAIN} -------------------------------------------------------

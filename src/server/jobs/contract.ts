@@ -24,6 +24,11 @@ export const QUEUE_NAMES = [
   'webhooks',
   'push',
   'demo',
+  // Phase 10. Its own queue rather than a corner of `export`: a tenant backup streams the whole
+  // catalogue AND every media variant, so one running job would otherwise sit in front of the
+  // suspension export a merchant is waiting on — and those two must never queue behind each other,
+  // because one is an operator's convenience and the other is a thirty-day promise.
+  'backup',
 ] as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[number];
@@ -49,6 +54,28 @@ export const EXPORT_JOBS = {
 } as const;
 
 /**
+ * Phase 10 (Q24, Q25). Two TENANT jobs and one SYSTEM job, and the split is the same one B1 was
+ * forced into for `suspend-tenant` / `purge-tenant`.
+ *
+ * `build` and `standalone` are TenantJobs: they READ one tenant's tables, so running inside the
+ * transaction `createWorker` opens for them is exactly right — it is what puts RLS in force over
+ * the generic `SELECT`s in `tenant-backup/build.ts`, which is the property that makes a generic
+ * dump safe at all.
+ *
+ * `restore` is a SystemJob carrying `tenantId` in its PAYLOAD, because it must open and close its
+ * own transaction: it takes the platform-wide purge lock and drains the tenant's queue FIRST, then
+ * does the delete-and-reload in one transaction of its own. Nested inside the worker's transaction
+ * it would either deadlock against the lock or blow the outer budget. `removeTenantJobs` matches on
+ * the payload's `tenantId` rather than on scope — the Group B correction — so a purge still drains
+ * a queued restore.
+ */
+export const BACKUP_JOBS = {
+  build: 'build-tenant-backup',
+  restore: 'restore-tenant-backup',
+  standalone: 'build-standalone-export',
+} as const;
+
+/**
  * Phase 6. The two jobs compliance needs, and they are deliberately different kinds.
  *
  * `sync` is a TENANT job: it rewrites one tenant's legal pages after something changed what they
@@ -60,6 +87,26 @@ export const EXPORT_JOBS = {
  * run as `app_system` at all (invariant 8), and it is the only role the Phase 6 migration granted
  * DELETE on them to.
  */
+/**
+ * Phase 9 — the analytics trio, and the three roles they run as are the point.
+ *
+ * `sweep` is a SystemJob: as `app_system` it may SELECT the tenant ids with events for the day and
+ * nothing else, so all it can do is fan out. `rollup` and `prune` are TenantJobs, carry `tenantId`
+ * in their payload and run as `app_web` inside `withTenantTxn` — which is what lets them write and
+ * delete tenant-owned rows. `app_system` deliberately never gains either grant on
+ * `analytics_events`; the Phase 9 migration says so in as many words.
+ *
+ * Declared HERE rather than only in `src/server/analytics/types.ts`, which re-exports this table:
+ * `tests/unit/guardrails.test.ts` reads the `*JOBS` tables out of this file to prove that every name
+ * the registry can run has a producer somewhere, and a vocabulary it cannot see reads to it as a job
+ * with no producer at all.
+ */
+export const ANALYTICS_JOBS = {
+  sweep: 'sweep-analytics',
+  rollup: 'rollup-analytics',
+  prune: 'prune-analytics',
+} as const;
+
 export const COMPLIANCE_JOBS = {
   sync: 'sync-compliance',
   prune: 'prune-records',

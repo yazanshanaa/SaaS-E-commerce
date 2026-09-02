@@ -27,6 +27,37 @@ export const MERCHANT_SCOPES = [
   'analytics',
   /** Phase 4 — the Web Push compose screen and its history. احترافي only. */
   'notifications',
+  /**
+   * Phase 8 — coupon CRUD. NOT in `STAFF_ALLOWED`: Q13's exhaustive staff list is products +
+   * orders + media, and a discount code is a pricing decision in the same family as `appearance`
+   * and `settings`, not shop-floor fulfilment work. `order_settings` (delivery fee, payment
+   * methods, the pause switch) deliberately has NO scope of its own — it lives as a tab inside
+   * `orders`, gated the same unconditional way orders itself is, because `canEdit(tenantId, role,
+   * 'order_settings')` already locks the FORM for staff (entitlements/index.ts: "staff never
+   * may"); a second, redundant scope gate here would just be the same rule stated twice.
+   */
+  'coupons',
+  /**
+   * Phase 9 — four screens, and each one earns a scope for the same reason: it is a role question
+   * AND a plan question, which is precisely the pair `FEATURE_GATED` below exists to bind. Written
+   * once here, the nav and the route guard cannot answer differently.
+   *
+   * None of the four is in `STAFF_ALLOWED`. Q13's staff list is products + orders + media
+   * exhaustively, and none of these is shop-floor fulfilment work: `delivery` and `tax` price and
+   * invoice an order, `insights` is the shop's traffic, and `customers` is the whole list sorted by
+   * lifetime spend with marketing consent beside it — a marketing asset in the same family as
+   * `coupons`, and the thing a departing employee is most likely to leave with a copy of.
+   *
+   * Tracks B and C each proposed one more (`content`, and `insights` as optional). `insights` is
+   * here because `visitor_analytics` gates it. `content` is NOT: it would carry no feature gate, so
+   * for every role it resolves identically to `settings` — which is the scope Track B's own
+   * `/content` routes already guard on. A second name for one rule is how a nav and a route start
+   * disagreeing, so the hub is gated on `settings` (src/app/dashboard/layout.tsx).
+   */
+  'delivery',
+  'tax',
+  'customers',
+  'insights',
 ] as const;
 
 export type MerchantScope = (typeof MERCHANT_SCOPES)[number];
@@ -66,6 +97,23 @@ const FEATURE_GATED: Partial<Record<MerchantScope, Parameters<typeof canBool>[1]
    * checks `push_notifications` again for itself.
    */
   notifications: 'push_notifications',
+  coupons: 'coupons',
+  /**
+   * Phase 9. `delivery` gates the zone table, `tax` the invoicing panel, `customers` the derived
+   * index and `insights` the first-party visitor report.
+   *
+   * `insights` is `visitor_analytics` and NOT `analytics`: the two are separate feature keys because
+   * they are separate products — Umami is a third-party script, this is our own beacon and rollup —
+   * and an admin can switch either on without the other.
+   *
+   * Note that `customers_crm` gates the SCREEN and never the write: the index is maintained on every
+   * checkout regardless, because gating the write would make the feature a switch that silently
+   * destroys history (docs/PHASE-9-track-e-handoff.md §5.4).
+   */
+  delivery: 'delivery_zones',
+  tax: 'tax_invoicing',
+  customers: 'customers_crm',
+  insights: 'visitor_analytics',
 };
 
 export async function checkMerchantAccess(

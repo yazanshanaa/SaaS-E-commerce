@@ -1,33 +1,38 @@
 /*
  * ورشة — strict industrial.
  *
- * Personality: a builders' merchant counter. Nothing is rounded, everything sits on a visible
- * 1px grid, and a product card is a specification sheet — image, then a two-column table of
- * price, availability and SKU. Amber is reserved for things you can act on; steel does all the
- * structure. Four dense columns, tight block rhythm: the customer is comparing forty items,
- * not browsing.
+ * Personality: a builders' merchant counter. Nothing is rounded, everything sits on a visible 1px
+ * grid, and a product card is a specification sheet — image, then a two-column table of price,
+ * availability and SKU. Amber is reserved for things you can act on; steel does all the structure.
+ * Four dense columns, tight block rhythm: the customer is comparing forty items, not browsing.
+ *
+ * PHASE 9 REWORK. The template had one idea it was not using consistently, and Phase 9 gave it four
+ * more places to use it:
+ *
+ *   1. THE 1PX GRID IS THE DEVICE. `.sf-hero__facts` already builds it — a `gap: 1px` grid with the
+ *      BORDER colour as the container's background, so every cell is separated by exactly one pixel
+ *      that no rounding, no shadow and no sub-pixel layout can thicken. The trust row, the hours
+ *      table and the stats row are all now built the same way, which is why those three blocks look
+ *      native here instead of looking like three separate components.
+ *   2. FIGURES ARE TABULAR. IBM Plex Sans Arabic carries `tnum`, and this is the one template whose
+ *      whole premise is a column of prices being compared down the page. Proportional digits make
+ *      «1,290 ₪» and «990 ₪» start at different offsets in a grid, which is exactly the comparison
+ *      the card was designed to make easy.
+ *   3. THE AMBER RULE IS NOW STRUCTURAL. `--t-rule-frame` was `1px solid var(--t-secondary)`, which
+ *      is the same weight and nearly the same colour as `--t-rule-hair` — two tokens with one
+ *      appearance. It is 2px of steel now, and amber is used only where an action is.
+ *   4. THE CARD IMAGE IS OPTIONAL-LOOKING ON PURPOSE. A builders' merchant has no photograph for
+ *      most of the catalogue, so the placeholder hatch and the 1:1 box are part of the design rather
+ *      than a defect state.
  */
 
-@font-face {
-  font-family: 'IBM Plex Sans Arabic';
-  font-style: normal;
-  font-weight: 400;
-  src: url('/fonts/ibm-plex-sans-arabic/ibm-plex-sans-arabic-v15-arabic-regular.woff2')
-    format('woff2');
-  font-display: swap;
-  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF,
-    U+0020-007E, U+2000-206F, U+20AA, U+2190-21BB;
-}
+/*
+ * IBM Plex Sans Arabic's `@font-face` pair moved to `src/app/fonts.css` (imported by the root
+ * layout). It is now also the body and numeric face of the admin and dashboard chrome, which
+ * import no template sheet and so never loaded it from here.
+ */
 
-@font-face {
-  font-family: 'IBM Plex Sans Arabic';
-  font-style: normal;
-  font-weight: 700;
-  src: url('/fonts/ibm-plex-sans-arabic/ibm-plex-sans-arabic-v15-arabic-700.woff2') format('woff2');
-  font-display: swap;
-  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF,
-    U+0020-007E, U+2000-206F, U+20AA, U+2190-21BB;
-}
+/* ------------------------------------------------------- chrome + heads -- */
 
 [data-template='warsheh'] .sf-header {
   border-block-end: 1px solid var(--t-border);
@@ -44,6 +49,25 @@
   font-size: var(--t-text-xl);
 }
 
+/*
+ * Every figure in the template, in one rule.
+ *
+ * `tnum` — not `lining-nums`, and not `font-variant-numeric: tabular-nums` alone on `.sf-price`,
+ * which is where it belongs least: a price is compared against the price two cards away, an SKU
+ * against the SKU under it, and a stock count against the one beside it. All of them are in this
+ * scope, and the feature is a no-op on the Arabic glyphs, so applying it at the root costs nothing.
+ */
+[data-template='warsheh'] .sf-price,
+[data-template='warsheh'] .sf-card__spec dd,
+[data-template='warsheh'] .sf-hours dd,
+[data-template='warsheh'] .sf-stat__value,
+[data-template='warsheh'] .sf-cart__totals,
+[data-template='warsheh'] .sf-cat__count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------- ledger hero --- */
+
 /* The ledger hero: a banner strip with a specification list and no decorative image at all. */
 [data-template='warsheh'] .sf-hero--ledger {
   background: var(--t-surface);
@@ -55,11 +79,21 @@
   font-size: var(--t-text-base);
 }
 
+/* --------------------------------------------------------- the spec card -- */
+
 [data-template='warsheh'] .sf-card {
   border: 1px solid var(--t-border);
   border-radius: 0;
   background: var(--t-surface);
   box-shadow: none;
+}
+
+/* Amber on hover, because the whole card is a link — this is the one place in the template where a
+   hover means "you can act on this", and amber is the colour reserved for exactly that. */
+[data-template='warsheh'] .sf-card:hover,
+[data-template='warsheh'] .sf-cat:hover,
+[data-template='warsheh'] .sf-index a:hover {
+  border-color: var(--t-primary);
 }
 
 [data-template='warsheh'] .sf-card__media .sf-media {
@@ -104,6 +138,19 @@
   color: var(--t-accent);
 }
 
+/*
+  «خلص» stays MUTED, and it needs saying explicitly.
+
+  `.sf-badge--off` is (0,1,0) in `storefront.css` and the rule above is (0,2,0), so the modifier lost:
+  an out-of-stock marker rendered in the same steel as an offer badge. This restates the two
+  declarations the modifier owns at a specificity that holds, and it must stay AFTER the rule above —
+  they tie at (0,2,0) and source order is the only tie-break.
+*/
+[data-template='warsheh'] .sf-badge--off {
+  border-color: var(--t-border);
+  color: var(--t-text-muted);
+}
+
 [data-template='warsheh'] .sf-btn {
   border-radius: 0;
 }
@@ -131,6 +178,107 @@
   border-radius: 0;
 }
 
+/* --------------------------------------------- Phase 9: the 1px grid x3 --- */
+
+/*
+ * THE DEVICE, stated once and used three times.
+ *
+ * `gap: 1px` over a container painted in the BORDER colour, with every cell painted in the surface
+ * colour: the gap shows through as a rule that is exactly one device pixel, cannot double up where
+ * two cells meet, and needs no `:last-child` exception to avoid a trailing line. It is what
+ * `.sf-hero__facts` has always done here, and it is why these three blocks belong to this template
+ * rather than looking like three imported widgets.
+ */
+[data-template='warsheh'] .sf-trust,
+[data-template='warsheh'] .sf-stats,
+[data-template='warsheh'] .sf-hours {
+  gap: 1px;
+  background: var(--t-border);
+  border: 1px solid var(--t-border);
+}
+
+[data-template='warsheh'] .sf-trust__item,
+[data-template='warsheh'] .sf-stat,
+[data-template='warsheh'] .sf-hours > div {
+  background: var(--t-surface);
+  padding: var(--t-space-md);
+  /* The base rules the 1px grid replaces: a per-row border would be a second line beside the gap. */
+  border-block-end: 0;
+}
+
+[data-template='warsheh'] .sf-trust__icon {
+  color: var(--t-link);
+}
+
+[data-template='warsheh'] .sf-hours dt {
+  color: var(--t-text-muted);
+}
+
+[data-template='warsheh'] .sf-hours dd {
+  font-weight: var(--t-weight-display);
+}
+
+/*
+ * Stats stay in TEXT, not in amber.
+ *
+ * «7+ سنوات» is a fact, not an action, and this template spends its one accent on the things a
+ * customer can press. Weight and size carry the emphasis instead — which is the only mechanism
+ * available in Arabic anyway, since there is no case to shift.
+ */
+[data-template='warsheh'] .sf-stat__value {
+  font-size: var(--t-text-xl);
+}
+
+[data-template='warsheh'] .sf-stat__label {
+  font-size: var(--t-text-xs);
+}
+
+/* --------------------------------------------- Phase 9: the banner strip -- */
+
+/*
+ * A 16:9 strip with the caption in a ledger row beneath it, framed to match the card. No overlay:
+ * this template has no scrim anywhere, and a caption over a photograph would be the one soft-edged
+ * thing on the page.
+ */
+[data-template='warsheh'] .sf-banner .sf-media {
+  border: 1px solid var(--t-border);
+  border-block-end: 0;
+}
+
+[data-template='warsheh'] .sf-banner__copy {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  padding: var(--t-space-md) var(--t-space-lg);
+  padding-block-start: var(--t-space-md);
+}
+
+[data-template='warsheh'] .sf-banner__title {
+  font-size: var(--t-text-lg);
+}
+
+/* -------------------------------------- Phase 9: search and dense grids --- */
+
+/*
+ * The search row is the widest control in the template and it is square, like everything else. The
+ * submit is filled amber: it is an action.
+ */
+[data-template='warsheh'] .sf-search__input {
+  background: var(--t-surface);
+}
+
+/*
+ * «وصل حديثاً» / «الأكثر مبيعاً» / «منتجات إلها علاقة» tighten to the card gap rather than the
+ * section gap. Forty items compared on price want the rows close enough to scan in one pass; the
+ * anchor prefix is the hook, for the reason `diwan.css` records.
+ */
+[data-template='warsheh'] .sf-block[id^='new'] .sf-grid,
+[data-template='warsheh'] .sf-block[id^='bestsellers'] .sf-grid,
+[data-template='warsheh'] .sf-block[id^='related'] .sf-grid {
+  gap: var(--t-space-md);
+}
+
+/* ------------------------------------------------------------- the form -- */
+
 /*
  * Phase 5's checkout, in warsheh's own language: nothing is rounded in this template, and a form
  * that arrived with soft corners would read as a widget bolted onto a workshop's site.
@@ -138,10 +286,29 @@
 [data-template='warsheh'] .sf-checkout,
 [data-template='warsheh'] .sf-input,
 [data-template='warsheh'] .sf-textarea,
+[data-template='warsheh'] .sf-select,
 [data-template='warsheh'] .sf-checkout__error {
   border-radius: 0;
 }
 
 [data-template='warsheh'] .sf-checkout {
   border-block-start: 3px solid var(--t-secondary);
+}
+
+/* ---------------------------------------------------------- responsive --- */
+
+@media (max-width: 40rem) {
+  /*
+   * The 1px grid stays a 1px grid on a phone, but the cells lose half their padding.
+   *
+   * `--t-space-md` is 12px in this template, which on a 328px content width leaves a trust claim's
+   * subtitle about 22 characters — one Arabic word and a half. The row is a single column at this
+   * width anyway, so horizontal padding is the only thing being spent, and the rule that draws the
+   * structure is a gap rather than a border: nothing about the device depends on the padding.
+   */
+  [data-template='warsheh'] .sf-trust__item,
+  [data-template='warsheh'] .sf-stat,
+  [data-template='warsheh'] .sf-hours > div {
+    padding: var(--t-space-sm);
+  }
 }

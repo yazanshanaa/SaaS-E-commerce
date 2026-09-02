@@ -1,0 +1,223 @@
+/*
+ * جهاز — electronics, appliances, phone shops (Phase 11, Track 11.E).
+ *
+ * Personality: a lit shelf in a dark showroom. Midnight navy, signal cyan for anything actionable,
+ * mint saying «موجود», and every photograph cut like a spec tag by the shared `notch` mask. The
+ * `rule` mark under a section title is the LED edge — the one template that keeps the shared glyph
+ * and paints it in the guarded PRIMARY (`--t-link`), because a cyan line on midnight IS the
+ * template. Buttons are `outline` (a printed shadow on midnight is invisible), panels are `framed`,
+ * figures are tabular everywhere: this customer is comparing forty numbers.
+ *
+ * Against its neighbours: ورشة is the other dark spec counter — جهاز glows where ورشة is matte:
+ * stage hero against ledger, notched film against square, drawn cyan frames against a 1px steel
+ * grid, Rubik against Plex. رفّ shares the spec card — on pale stone, four hairline rows apart.
+ */
+
+/* ------------------------------------------------------- chrome + heads -- */
+
+[data-template='jihaz'] .sf-header {
+  border-block-end: 1px solid var(--t-border);
+  background: var(--t-bg);
+}
+
+[data-template='jihaz'] .sf-block__head {
+  margin-block-end: var(--t-space-lg);
+}
+
+[data-template='jihaz'] .sf-block__title {
+  font-size: var(--t-text-xl);
+}
+
+/* The LED edge: the shared rule glyph, in the guarded cyan, thicker than the token default. */
+[data-template='jihaz'] .sf-mark {
+  color: var(--t-link);
+}
+
+/*
+ * Every figure in the template lines up — the ورشة discipline, because the premise is the same:
+ * a column of prices being compared down the page.
+ */
+[data-template='jihaz'] .sf-price,
+[data-template='jihaz'] .sf-card__spec dd,
+[data-template='jihaz'] .sf-hours dd,
+[data-template='jihaz'] .sf-stat__value,
+[data-template='jihaz'] .sf-cart__totals,
+[data-template='jihaz'] .sf-cat__count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----------------------------------------------------------- stage hero -- */
+
+/* The launch item of the week: the stage is one lit object on the midnight floor. */
+[data-template='jihaz'] .sf-hero--stage .sf-hero__inner {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-lg);
+  overflow: hidden;
+  padding: 0;
+  gap: 0;
+}
+
+[data-template='jihaz'] .sf-hero--stage .sf-hero__media .sf-media {
+  border-radius: 0;
+  /* The stage escapes the notch: a 16:9 launch render is a poster, not a shelf tag. */
+  clip-path: none;
+  aspect-ratio: 16 / 9;
+  border-block-end: 2px solid var(--t-primary);
+}
+
+[data-template='jihaz'] .sf-hero--stage .sf-hero__copy {
+  padding: var(--t-space-2xl);
+}
+
+/* ----------------------------------------------------------- spec cards -- */
+
+[data-template='jihaz'] .sf-card {
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+  background: var(--t-surface);
+  box-shadow: none;
+}
+
+/* Cyan on hover — the row lights up. The whole card is a link, so the light means "act here". */
+[data-template='jihaz'] .sf-card:hover,
+[data-template='jihaz'] .sf-cat:hover,
+[data-template='jihaz'] .sf-index a:hover {
+  border-color: var(--t-primary);
+}
+
+[data-template='jihaz'] .sf-card__media .sf-media {
+  --sf-ratio: 1 / 1;
+  border-block-end: 1px solid var(--t-border);
+}
+
+/* The spec list: labels muted, values lit. The price row is the headline of the table. */
+[data-template='jihaz'] .sf-card__spec dd {
+  color: var(--t-text);
+}
+
+[data-template='jihaz'] .sf-card__spec .sf-price {
+  color: var(--t-link);
+}
+
+/* «موجود» in mint — the second voice's one job in this template. */
+[data-template='jihaz'] .sf-badge {
+  border-radius: var(--t-radius-sm);
+  background: transparent;
+  border: 1px solid var(--t-accent);
+  color: var(--t-accent);
+}
+
+[data-template='jihaz'] .sf-badge--off {
+  border-color: var(--t-border);
+  color: var(--t-text-muted);
+  background: transparent;
+}
+
+/* ------------------------------------------------------ categories list -- */
+
+[data-template='jihaz'] .sf-index {
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+  overflow: hidden;
+}
+
+[data-template='jihaz'] .sf-cat__count {
+  color: var(--t-accent);
+}
+
+/* -------------------------------------------------------------- buttons -- */
+
+/*
+ * The shared `outline` treatment already draws the default button in cyan; the solid modifier
+ * stays the filled emphatic one. Machined corners — the pill token is a 6px chip here.
+ */
+[data-template='jihaz'] .sf-btn {
+  border-radius: var(--t-radius-md);
+}
+
+[data-template='jihaz'] .sf-btn--ghost {
+  border-color: var(--t-border);
+  color: var(--t-accent);
+}
+
+/* -------------------------------------------------- panels, hours, stats -- */
+
+[data-template='jihaz'] .sf-trust__icon {
+  color: var(--t-link);
+}
+
+[data-template='jihaz'] .sf-hours {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+  padding: var(--t-space-sm) var(--t-space-lg);
+  max-inline-size: 32rem;
+}
+
+[data-template='jihaz'] .sf-hours dd {
+  color: var(--t-link);
+}
+
+[data-template='jihaz'] .sf-stat {
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+  background: var(--t-surface);
+  padding: var(--t-space-lg);
+  text-align: center;
+  align-items: center;
+}
+
+[data-template='jihaz'] .sf-stat__value {
+  color: var(--t-link);
+}
+
+[data-template='jihaz'] .sf-quote {
+  border-radius: var(--t-radius-md);
+  border: 1px solid var(--t-border);
+  border-block-start: 2px solid var(--t-primary);
+}
+
+[data-template='jihaz'] .sf-offer {
+  border-radius: var(--t-radius-md);
+  border: 1px solid var(--t-border);
+  border-inline-start: 3px solid var(--t-primary);
+}
+
+/* ------------------------------------------------------- Phase 9 boards -- */
+
+/* The board caption: a lit strip on the film's lower edge — solid surface, cyan hairline, never
+   a translucent panel (the neon-souq guarantee, kept for the same reason). */
+[data-template='jihaz'] .sf-banner__copy {
+  background: var(--t-surface);
+  border-block-start: 2px solid var(--t-primary);
+  padding: var(--t-space-md) var(--t-space-lg);
+}
+
+/* ------------------------------------------------------------ the form -- */
+
+[data-template='jihaz'] .sf-checkout {
+  border-radius: var(--t-radius-md);
+  border: 1px solid var(--t-border);
+  border-block-start: 2px solid var(--t-primary);
+}
+
+[data-template='jihaz'] .sf-input,
+[data-template='jihaz'] .sf-textarea,
+[data-template='jihaz'] .sf-select {
+  border-radius: var(--t-radius-md);
+  background: var(--t-bg);
+  border-color: var(--t-border);
+}
+
+/* -------------------------------------------------------------- footer -- */
+
+[data-template='jihaz'] .sf-footer {
+  background: var(--t-bg);
+  border-block-start: 1px solid var(--t-border);
+}
+
+[data-template='jihaz'] .sf-social a {
+  border-radius: var(--t-radius-md);
+  border-color: var(--t-border);
+}

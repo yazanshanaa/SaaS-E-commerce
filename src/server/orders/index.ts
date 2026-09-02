@@ -1,5 +1,14 @@
 import { recordPaymentInTx } from '@/server/billing';
-import { PUBLIC_ACTOR, withTenantTxn, type Actor, type ScopedDb, type TenantTx } from '@/server/db';
+import { decrementStockInTx } from '@/server/catalogue';
+import { recomputeCustomerTotals, upsertCustomerFromOrder } from '@/server/customers';
+import {
+  PUBLIC_ACTOR,
+  tenantDb,
+  withTenantTxn,
+  type Actor,
+  type ScopedDb,
+  type TenantTx,
+} from '@/server/db';
 import { emitEvent } from '@/server/events';
 import { notifyMerchant } from '@/server/jobs/notify';
 import { logger } from '@/server/logger';
@@ -8,8 +17,10 @@ import { allocateOrderNumber } from './numbering';
 import {
   canTransitionOrder,
   isOrderStatus,
+  type OrderChannelValue,
   type OrderStatusValue,
 } from './status';
+import { restoreOrderStock } from './stock-restore';
 
 /**
  * The order service — where `Order`, `OrderItem` and `TenantCounter` are finally written (Q5 kept
@@ -156,8 +167,22 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
       });
       if (recent >= MAX_ORDERS_PER_TENANT_PER_HOUR) return { ok: false, reason: 'flooded' };
 
-      const number = await allocateOrderNumber(tx, input.tenantId);
       const subtotalAgorot = product.priceAgorot * input.quantity;
+
+      /**
+       * Phase 9. The same reservation `checkoutCart` makes, in the same place in the same order:
+       * before the number is allocated, so a refusal never takes the per-tenant counter lock, and
+       * inside this transaction, so an oversell rolls the order back rather than selling twice.
+       *
+       * `unavailable` rather than a new reason — Phase 5's union already has it, the storefront
+       * already renders it, and a customer reads "sold out" and "unavailable" identically.
+       */
+      const stock = await decrementStockInTx(tx, input.tenantId, [
+        { productId: product.id, variantId: null, quantity: input.quantity },
+      ]);
+      if (!stock.ok) return { ok: false, reason: 'unavailable' };
+
+      const number = await allocateOrderNumber(tx, input.tenantId);
 
       const order = await tx.order.create({
         data: {
@@ -170,7 +195,8 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
           totalAgorot: subtotalAgorot,
           currency: product.currency,
         },
-        select: { id: true },
+        // `placedAt` for the customers index — the value the database wrote, not a second clock.
+        select: { id: true, placedAt: true },
       });
 
       await tx.orderItem.create({
@@ -183,6 +209,23 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
           quantity: input.quantity,
           subtotalAgorot,
         },
+      });
+
+      /**
+       * Phase 9. The buy_now channel feeds the same derived index, with `status: 'pending'` and no
+       * delivery area — this channel has no delivery step at all, so there is nothing to record as
+       * the customer's area and inventing one from the note would be a guess.
+       *
+       * Result unchecked for the same reason as in `checkoutCart`: an order must never fail because
+       * a phone number could not be normalised.
+       */
+      await upsertCustomerFromOrder(tx, input.tenantId, {
+        customerPhone: input.customerPhone,
+        customerName: input.customerName,
+        deliveryArea: null,
+        status: 'pending',
+        totalAgorot: subtotalAgorot,
+        placedAt: order.placedAt,
       });
 
       await emitEvent(tx, {
@@ -251,7 +294,15 @@ export async function listOrders(
   options: ListOrdersOptions = {},
 ): Promise<OrderListPage> {
   const take = Math.min(100, Math.max(5, options.take ?? DEFAULT_PAGE));
-  const where = { tenantId, ...(options.status ? { status: options.status } : {}) };
+  // Phase 8 added `channel` to this table. Filtered to `buy_now` explicitly — every row this
+  // screen ever showed before Phase 8 already had that value, so a tenant WITHOUT cart sees the
+  // exact same list it always did; a tenant WITH cart on does not get its cart orders leaking
+  // into a screen built for a different status vocabulary (see src/server/orders/merchant-cart.ts).
+  const where = {
+    tenantId,
+    channel: 'buy_now' as const,
+    ...(options.status ? { status: options.status } : {}),
+  };
 
   const [rows, total, pending] = await Promise.all([
     db.order.findMany({
@@ -271,8 +322,8 @@ export async function listOrders(
     }),
     // The counts are of the WHOLE catalogue of orders, never of the page — a merchant reading
     // "3 orders" off page one of two hundred would plan their day around it.
-    db.order.count({ where: { tenantId } }),
-    db.order.count({ where: { tenantId, status: 'pending' } }),
+    db.order.count({ where: { tenantId, channel: 'buy_now' } }),
+    db.order.count({ where: { tenantId, channel: 'buy_now', status: 'pending' } }),
   ]);
 
   const page = rows.slice(0, take);
@@ -299,7 +350,8 @@ export async function getOrder(
   orderId: string,
 ): Promise<OrderView | null> {
   const order = await db.order.findFirst({
-    where: { id: orderId, tenantId },
+    // channel: 'buy_now' — see the comment on `listOrders` above.
+    where: { id: orderId, tenantId, channel: 'buy_now' },
     select: {
       id: true,
       number: true,
@@ -391,12 +443,25 @@ export type ChangeOrderStatusResult =
 export async function changeOrderStatus(
   input: ChangeOrderStatusInput,
 ): Promise<ChangeOrderStatusResult> {
-  return withTenantTxn(
+  /**
+   * Phase 9. Captured out of the transaction so the customers-index rebuild can run AFTER it
+   * commits — see the call at the bottom of this function for why it must not run inside.
+   */
+  let customerPhone: string | null = null;
+
+  const result = await withTenantTxn(
     input.tenantId,
     async (tx): Promise<ChangeOrderStatusResult> => {
       const order = await tx.order.findFirst({
         where: { id: input.orderId, tenantId: input.tenantId },
-        select: { id: true, number: true, status: true, totalAgorot: true, currency: true },
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          totalAgorot: true,
+          currency: true,
+          customerPhone: true,
+        },
       });
 
       if (!order) return { ok: false, reason: 'not_found' };
@@ -417,6 +482,23 @@ export async function changeOrderStatus(
       });
 
       if (claimed.count === 0) return { ok: false, reason: 'illegal_transition' };
+
+      customerPhone = order.customerPhone;
+
+      /**
+       * Phase 9. A CANCELLATION PUTS THE STOCK BACK.
+       *
+       * `placeOrder` now spends stock at checkout, so without this a cancelled order permanently
+       * removes units the merchant still has on the shelf — and the merchant has no way to see why
+       * their count drifted. Inside the transaction with the status claim: the conditional
+       * `updateMany` above guarantees exactly one caller reaches this line for one transition, so
+       * the restore cannot double-run.
+       *
+       * `restoreStockInTx` is unconditional and skips `untracked` products itself.
+       */
+      if (input.to === 'cancelled') {
+        await restoreOrderStock(tx, input.tenantId, order.id);
+      }
 
       if (settles) {
         await recordPaymentInTx(tx, {
@@ -475,6 +557,25 @@ export async function changeOrderStatus(
     },
     { actor: input.actor },
   );
+
+  /**
+   * Phase 9. `Customer.ordersCount` and `.totalSpentAgorot` are a CACHE of a query over the orders,
+   * and this order's status just changed — `paid → refunded` and `pending → cancelled` both move
+   * money out of a lifetime total that counted it from the moment the order was placed.
+   *
+   * AFTER the transaction, not inside it: the rebuild reads every order of that phone, and holding
+   * the order transaction open for a paged scan would put a merchant pressing «ألغِ الطلب» on the
+   * critical path of it.
+   *
+   * Best effort by contract, exactly like `refreshStorefront`: the status change has already
+   * committed, and failing it because a cache rebuild did not land would be the wrong trade. The
+   * «أعد حساب المجاميع» button on the customer screen is the net.
+   */
+  if (result.ok && customerPhone) {
+    await recomputeCustomerTotals(tenantDb(input.tenantId, input.actor), input.tenantId, customerPhone);
+  }
+
+  return result;
 }
 
 // -----------------------------------------------------------------------------
@@ -602,14 +703,32 @@ export async function orderPurgeSummary(
 export interface ExportOrderRecord {
   number: number;
   status: OrderStatusValue;
+  channel: OrderChannelValue;
   totalAgorot: number;
   currency: string;
   placedAt: Date;
   paidAt: Date | null;
+  cancelledAt: Date | null;
+  /** Cart-channel commercial fields — null/zero on every buy_now row (Phase 8). */
+  subtotalAgorot: number | null;
+  discountAgorot: number;
+  deliveryFeeAgorot: number;
+  paymentMethod: string | null;
+  deliveryArea: string | null;
+  trackingCode: string | null;
   customerName: string | null;
   customerPhone: string | null;
   customerNote: string | null;
-  items: Array<{ nameSnapshot: string; priceAgorot: number; quantity: number; subtotalAgorot: number }>;
+  /** Customer-authored and address-grade — identifiers file only, like name and phone. */
+  deliveryAddress: string | null;
+  cancelReason: string | null;
+  items: Array<{
+    nameSnapshot: string;
+    variantLabel: string | null;
+    priceAgorot: number;
+    quantity: number;
+    subtotalAgorot: number;
+  }>;
 }
 
 /**
@@ -629,17 +748,28 @@ export async function readOrdersForExport(
     select: {
       number: true,
       status: true,
+      channel: true,
       totalAgorot: true,
       currency: true,
       placedAt: true,
       paidAt: true,
+      cancelledAt: true,
+      subtotalAgorot: true,
+      discountAgorot: true,
+      deliveryFeeAgorot: true,
+      paymentMethod: true,
+      deliveryArea: true,
+      trackingCode: true,
       customerName: true,
       customerPhone: true,
       customerNote: true,
+      deliveryAddress: true,
+      cancelReason: true,
       items: {
         orderBy: { createdAt: 'asc' },
         select: {
           nameSnapshot: true,
+          variantLabel: true,
           priceAgorot: true,
           quantity: true,
           subtotalAgorot: true,
@@ -648,29 +778,142 @@ export async function readOrdersForExport(
     },
   });
 
-  return rows.map((row) => ({ ...row, status: row.status as OrderStatusValue }));
+  return rows.map((row) => ({
+    ...row,
+    status: row.status as OrderStatusValue,
+    channel: row.channel as OrderChannelValue,
+  }));
 }
 
 export {
+  CART_ORDER_STATUSES,
   ORDER_STATUSES,
   InvalidOrderTransitionError,
   canTransitionOrder,
+  isCartOrderStatus,
   isOrderStatus,
   isSettledStatus,
   nextOrderStatuses,
+  type BuyNowOrderStatus,
+  type CartOrderStatus,
+  type OrderChannelValue,
   type OrderStatusValue,
 } from './status';
 
 export { ORDER_NUMBER_KEY, allocateOrderNumber } from './numbering';
 
 export {
+  CART_MAX_LINE_ITEMS,
   CHECKOUT_MAX_NOTE,
   CHECKOUT_MAX_QUANTITY,
+  TRACKING_CODE_MIN_LENGTH,
+  cartCheckoutSchema,
+  cartOrderStatusChangeSchema,
+  cartQuoteSchema,
   checkoutSchema,
+  couponSchema,
   gatewayConfigSchema,
   merchantPaymentsSchema,
+  orderCancelSchema,
+  orderContactEditSchema,
+  orderNoteSchema,
+  orderSettingsSchema,
   orderStatusChangeSchema,
+  phoneField,
+  trackingLookupSchema,
+  type CartCheckoutInput,
+  type CartItemInput,
+  type CartQuoteInput,
   type CheckoutInput,
+  type CouponInput,
   type GatewayConfigInput,
   type MerchantPaymentsInput,
+  type OrderCancelInput,
+  type OrderContactEditInput,
+  type OrderNoteInput,
+  type OrderSettingsInput,
+  type TrackingLookupInput,
 } from './schema';
+
+// -----------------------------------------------------------------------------
+// Phase 8 — cart, checkout settings and coupons
+// -----------------------------------------------------------------------------
+
+export { generateTrackingCode } from './tracking';
+
+export {
+  listOrderHistory,
+  recordOrderHistory,
+  type OrderHistoryActorRole,
+  type OrderHistoryEntryView,
+  type RecordOrderHistoryInput,
+} from './history';
+
+export {
+  computeCouponDiscount,
+  createCoupon,
+  deleteCoupon,
+  getCoupon,
+  listCoupons,
+  redeemCouponInTx,
+  setCouponActive,
+  updateCoupon,
+  validateCoupon,
+  type CouponDetailView,
+  type CouponErrorCode,
+  type CouponListRow,
+  type CouponMatch,
+  type CouponValidationContext,
+  type RedeemCouponResult,
+  type SaveCouponResult,
+  type UpdateCouponResult,
+  type ValidateCouponResult,
+} from './coupons';
+
+export { getOrderSettings, saveOrderSettings, type OrderSettingsView } from './settings';
+
+export {
+  MAX_CART_ORDERS_PER_TENANT_PER_HOUR,
+  checkoutCart,
+  computeDeliveryFee,
+  quoteCart,
+  type CartQuoteLine,
+  type CartQuoteResult,
+  type CheckoutCartInput,
+  type CheckoutCartLine,
+  type CheckoutCartRejection,
+  type CheckoutCartResult,
+  type QuoteCartInput,
+} from './checkout';
+
+export {
+  findOrderByTrackingCode,
+  selfCancelOrder,
+  selfEditOrder,
+  type SelfCancelResult,
+  type SelfEditResult,
+  type SelfServiceRejection,
+  type TrackedOrderLine,
+  type TrackedOrderView,
+  type TrackingLookupResult,
+} from './self-service';
+
+export {
+  addCartOrderNote,
+  cancelCartOrderByMerchant,
+  changeCartOrderStatus,
+  editCartOrderByMerchant,
+  getCartOrder,
+  listCartOrders,
+  type CancelCartOrderResult,
+  type CartActionInput,
+  type CartOrderDetail,
+  type CartOrderDetailView,
+  type CartOrderLineView,
+  type CartOrderListPage,
+  type CartOrderListRow,
+  type CartOrderPaymentView,
+  type ChangeCartOrderStatusResult,
+  type ListCartOrdersOptions,
+  type MerchantEditResult,
+} from './merchant-cart';

@@ -16,128 +16,201 @@
  * the right-hand edge here and would be the left-hand one in a locale that ever needs it.
  */
 
+/*
+ * «مرصد» — the 2026-08-30 palette. See `DESIGN_BRIEF.md`.
+ *
+ * The ladder is no longer warm sand; it is a near-neutral cooled by a trace of green, so the mint
+ * accent reads as the only colour on the screen rather than as one of two temperatures competing.
+ * The STRUCTURE below is unchanged — same token names, same four-way accent split, same bridge —
+ * because the structure was never the problem. Only values moved.
+ *
+ * CONTRAST IS ASSERTED, NOT CLAIMED HERE. `tests/unit/chrome-contrast.test.ts` parses this file
+ * and `dashboard.css`, resolves every mode and every accent, and fails on any pair under its
+ * threshold — body text and `on-solid` at 4.5:1, rules and large text at 3:1. Ratios are not
+ * written into these comments on purpose: a hand-computed number in a comment is unverifiable,
+ * goes stale the first time a hex moves, and reads as authority it has not earned.
+ *
+ * `--sba-ink-faint` is the one token held to 3:1 rather than 4.5:1, and that is a real constraint
+ * on its use: hints and disabled labels only, never body copy.
+ */
 [data-surface='admin'] {
-  --sba-ink: #241c14;
-  --sba-ink-soft: #6b5d4d;
-  --sba-ink-faint: #9c8d7c;
-  --sba-paper: #faf7f1;
+  --sba-ink: #101815;
+  --sba-ink-soft: #55645e;
+  /* #86948d was the first pick and lands at 2.8:1 on the paper — under the 3:1 floor for the
+     hints and disabled labels this token exists for. Darkened until it clears. */
+  --sba-ink-faint: #7d8b84;
+  --sba-paper: #eef2f0;
   --sba-panel: #ffffff;
-  --sba-panel-alt: #f5f0e6;
-  --sba-rule: #e0d5c2;
-  --sba-rule-strong: #cbbca3;
-  --sba-accent: #a63d0b;
-  --sba-accent-soft: #f6e7dd;
-  --sba-olive: #4f6338;
-  --sba-olive-soft: #e8eddf;
+  --sba-panel-alt: #f5f9f7;
+  --sba-rule: #dce4e0;
+  --sba-rule-strong: #b9c6c1;
+
+  /*
+   * The accent family carries a deliberate split the original single token could not:
+   *   --sba-accent        text-level — links, borders, active markers; readable ON the paper
+   *   --sba-accent-strong solid fills — primary buttons; readable UNDER --sba-on-solid
+   *   --sba-accent-hover  the strong fill's hover
+   *   --sba-accent-soft   the tint behind overridden rows and checked cards
+   * In light mode text-level and strong coincide; in dark they cannot (a fill dark enough for
+   * white text is too dark to read AS text on a dark panel), which is the whole reason the
+   * split exists. The five `[data-accent]` blocks at the end of this file swap the family.
+   */
+  /*
+   * THE ACCENT IS NOT ONE VALUE ACROSS MODES. «مرصد»'s mint `#5fd3a8` is 9.4:1 on the dark ground
+   * and 1.7:1 on white — it fails everything in light mode. So light resolves the same hue family
+   * against its own paper (a deep teal-green) and dark takes the mint. That is precisely what the
+   * four-way split above exists for, and why it could not be collapsed to one token.
+   */
+  --sba-accent: #0b6a55;
+  --sba-accent-strong: #0b6a55;
+  --sba-accent-hover: #095745;
+  --sba-accent-soft: #ddefe8;
+  --sba-on-solid: #ffffff;
+
+  /* The secondary "good" hue. Kept green-adjacent but shifted off the accent so an OK badge and a
+     primary button are not the same colour doing two jobs. */
+  --sba-olive: #3f6b3a;
+  --sba-olive-soft: #e4efe2;
+  --sba-ok-ink: #24401f;
+  /* «مرصد»'s attention hue — the third state between "fine" and "wrong". The ledger had no amber
+     of its own before; expiring subscriptions and pending queues borrowed danger's red, which
+     overstates them. Reaches the kit as `--sbx-warn` for the state hairline. */
+  --sba-warn: #8a5a08;
   --sba-danger: #9c1c2c;
+  --sba-danger-strong: #9c1c2c;
   --sba-danger-soft: #f8e3e5;
+  --sba-danger-ink: #6f0f1c;
 
   --sba-rail: 15rem;
   --sba-radius: 4px;
 
-  /* Numerals must line up in a column of money. */
-  --sba-numeric: 'Segoe UI', 'Zain', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  /* Depth in light mode is a whisper of the ink's own hue; dark mode drops it entirely and
+     lets the raised-surface ladder do the work, as a dark UI should. */
+  --sba-shadow: 0 1px 2px rgb(36 28 20 / 0.04), 0 6px 18px rgb(36 28 20 / 0.05);
+
+  /*
+   * Numerals must line up in a column of money.
+   *
+   * This used to lead with 'Segoe UI' — which was not a typographic choice, it was the only face
+   * that actually loaded here: the self-hosted families were declared inside template stylesheets
+   * that this surface never imports. Now that `src/app/fonts.css` is on the root layout, the head
+   * of the stack is the face with genuine tabular digits, and Segoe UI is what it always should
+   * have been: a fallback.
+   */
+  --sba-numeric: 'IBM Plex Sans Arabic', 'Segoe UI', system-ui, sans-serif;
+
+  /*
+   * The `--sbx-*` bridge. Two consumers now: the shared theme switch (globals.css) and, since
+   * Phase 11, the whole shared chrome kit (`src/app/kit.css`). Mapped once — every alias points
+   * at a `--sba-*` variable that already flips with `[data-theme]` / `[data-accent]` — and the
+   * LEDGER'S OWN VALUES ride through it: the 4px radius and the 15rem rail reach the kit as
+   * `--sbx-radius` / `--sbx-rail-width`, which is how the two surfaces share one chrome without
+   * sharing one temperature.
+   */
+  --sbx-panel: var(--sba-panel);
+  --sbx-rule: var(--sba-rule-strong);
+  --sbx-ink-soft: var(--sba-ink-soft);
+  --sbx-accent: var(--sba-accent);
+  --sbx-ink: var(--sba-ink);
+  --sbx-ink-faint: var(--sba-ink-faint);
+  --sbx-paper: var(--sba-paper);
+  --sbx-panel-alt: var(--sba-panel-alt);
+  --sbx-hairline: var(--sba-rule);
+  --sbx-accent-soft: var(--sba-accent-soft);
+  --sbx-on-solid: var(--sba-on-solid);
+  --sbx-radius: var(--sba-radius);
+  --sbx-rail-width: var(--sba-rail);
+  --sbx-shadow: var(--sba-shadow);
+  /* «مرصد»: the two state hues the kit's `[data-state]` hairline needs. Aliases like the rest —
+     each points at a `--sba-*` that already flips with `[data-theme]`, so the hairline follows
+     the mode without a second block anywhere. */
+  --sbx-warn: var(--sba-warn);
+  --sbx-danger: var(--sba-danger);
 
   color: var(--sba-ink);
   background: var(--sba-paper);
   min-height: 100dvh;
 }
 
+/*
+ * THE DARK LEDGER — «مرصد»'s home ground, and the surface's DEFAULT (see `theme.ts`).
+ *
+ * Not grey and not black: every surface keeps a trace of the light theme's green so the two modes
+ * are recognisably the same product, the raised surfaces get LIGHTER instead of casting shadows
+ * (`--sba-shadow: none` — a shadow on a dark panel is a smudge, not a lift), the ink is a cool
+ * off-white rather than `#fff`, and the accent steps up in lightness so it still reads AS TEXT
+ * while `--sba-accent-strong` stays deep enough to carry `--sba-on-solid`. Form controls follow
+ * via `color-scheme`.
+ *
+ * Held to the same thresholds as the light block by the same test — see the note above.
+ */
+[data-surface='admin'][data-theme='dark'] {
+  color-scheme: dark;
+
+  --sba-ink: #e6efea;
+  --sba-ink-soft: #8fa098;
+  --sba-ink-faint: #6b7a73;
+  --sba-paper: #0f1513;
+  --sba-panel: #171f1c;
+  --sba-panel-alt: #1c2622;
+  --sba-rule: #232e2a;
+  --sba-rule-strong: #3a4b45;
+
+  --sba-accent: #5fd3a8;
+  --sba-accent-strong: #12735d;
+  /* #178a70 put white at 4.28:1 — under the 4.5 a button LABEL needs. Stepped down until it
+     clears while staying lighter than `-strong`, which is what a hover on a dark UI must be. */
+  --sba-accent-hover: #158066;
+  --sba-accent-soft: #14261f;
+
+  --sba-olive: #9fc98c;
+  --sba-olive-soft: #1a2618;
+  --sba-ok-ink: #bfe0ae;
+  --sba-warn: #e8a33d;
+  --sba-danger: #e8757f;
+  --sba-danger-strong: #8e1b28;
+  --sba-danger-soft: #2c1a1d;
+  --sba-danger-ink: #f2a8af;
+
+  --sba-shadow: none;
+}
+
+/*
+ * Unclassed links (account names in tables, inline references) follow the surface's accent in
+ * BOTH modes — the global `a { color: var(--sb-primary) }` is a light-paper value and goes
+ * near-invisible on the dark ledger. `:not([class])` keeps buttons-as-links and every classed
+ * component out of reach. Focus rings likewise: the global olive ring disappears on dark, the
+ * active accent never does.
+ */
+[data-surface='admin'] a:not([class]) {
+  color: var(--sba-accent);
+}
+
+[data-surface='admin'] a:focus-visible,
+[data-surface='admin'] button:focus-visible {
+  outline-color: var(--sba-accent);
+}
+
 /* --- Shell ---------------------------------------------------------------- */
 
-.sba-shell {
-  display: grid;
-  grid-template-columns: var(--sba-rail) minmax(0, 1fr);
-  min-height: 100dvh;
-}
-
-.sba-rail {
-  border-inline-end: 1px solid var(--sba-rule);
-  background: var(--sba-panel-alt);
-  padding: var(--sb-space-6) var(--sb-space-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sb-space-6);
-  position: sticky;
-  inset-block-start: 0;
-  block-size: 100dvh;
-  overflow-y: auto;
-}
-
-.sba-brand {
-  display: block;
-  font-size: var(--sb-text-lg);
-  font-weight: 700;
-  color: var(--sba-ink);
-  text-decoration: none;
-  line-height: 1.3;
-  padding-inline-start: var(--sb-space-3);
-  border-inline-start: 3px solid var(--sba-accent);
-}
-
-.sba-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.sba-nav-link {
-  display: block;
-  padding: var(--sb-space-2) var(--sb-space-3);
-  color: var(--sba-ink-soft);
-  text-decoration: none;
-  border-radius: var(--sba-radius);
-  border-inline-start: 3px solid transparent;
-  font-size: var(--sb-text-sm);
-}
-
-.sba-nav-link:hover {
-  background: rgba(166, 61, 11, 0.06);
-  color: var(--sba-ink);
-}
-
-.sba-nav-link[aria-current='page'] {
-  background: var(--sba-panel);
-  border-inline-start-color: var(--sba-accent);
-  color: var(--sba-ink);
-  font-weight: 600;
-}
-
-.sba-rail-foot {
-  margin-block-start: auto;
-  border-block-start: 1px solid var(--sba-rule);
-  padding-block-start: var(--sb-space-4);
-  font-size: var(--sb-text-sm);
-  color: var(--sba-ink-soft);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sb-space-2);
-  align-items: flex-start;
-}
+/*
+ * THE SHELL AND THE RAIL MOVED TO THE KIT (Phase 11, Track 11.G): `.sbk-shell`, the grouped
+ * `.sbk-rail`, the drawer and the palette live once in `src/app/kit.css`, consumed READ-ONLY on
+ * the `--sbx-*` bridge mapped above — the ledger's density arrives as bridge values, never as a
+ * fork of the kit (invariant extension 7). What was here — `.sba-shell`, `.sba-rail`,
+ * `.sba-brand`, `.sba-nav*`, `.sba-rail-foot` and the 60rem wrapping-band fallback — was
+ * deleted with its consumers. This file keeps only the ledger look: the content column below,
+ * the dense tables, the status dots and the matrix components A1 built.
+ */
 
 .sba-main {
   padding: var(--sb-space-8);
   max-width: 78rem;
   width: 100%;
+  min-width: 0;
 }
 
 @media (max-width: 60rem) {
-  .sba-shell {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .sba-rail {
-    position: static;
-    block-size: auto;
-    border-inline-end: 0;
-    border-block-end: 1px solid var(--sba-rule);
-  }
-
-  .sba-nav {
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
-
   .sba-main {
     padding: var(--sb-space-4);
   }
@@ -182,6 +255,7 @@
   border-radius: var(--sba-radius);
   padding: var(--sb-space-6);
   margin-block-end: var(--sb-space-6);
+  box-shadow: var(--sba-shadow);
 }
 
 .sba-panel-head {
@@ -232,6 +306,15 @@
 .sba-stat {
   background: var(--sba-panel);
   padding: var(--sb-space-4) var(--sb-space-4) var(--sb-space-6);
+  /*
+   * The state hairline's gutter, reserved on EVERY tile.
+   *
+   * `[data-state]` in `kit.css` colours a 2px inline-start border. Without this transparent
+   * default only the flagged tiles would carry a border, and `box-sizing: border-box` would pull
+   * their text 2px out of line with the neutral tiles beside them — a row of five where two sit
+   * slightly off. Reserving the gutter makes the flag a colour change and nothing else.
+   */
+  border-inline-start: 2px solid transparent;
 }
 
 .sba-stat-label {
@@ -300,6 +383,10 @@
   font-weight: 600;
   color: var(--sba-ink-soft);
   white-space: nowrap;
+}
+
+.sba-table tbody tr {
+  transition: background-color 150ms ease-out;
 }
 
 .sba-table tbody tr:hover {
@@ -389,10 +476,16 @@
   text-decoration: none;
   cursor: pointer;
   min-block-size: 2.25rem;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out,
+    color 150ms ease-out, transform 100ms ease-out;
 }
 
 .sba-btn:hover {
   border-color: var(--sba-ink-soft);
+}
+
+.sba-btn:active:not([disabled]) {
+  transform: translateY(1px);
 }
 
 .sba-btn[disabled] {
@@ -401,20 +494,20 @@
 }
 
 .sba-btn--primary {
-  background: var(--sba-accent);
-  border-color: var(--sba-accent);
-  color: #fff;
+  background: var(--sba-accent-strong);
+  border-color: var(--sba-accent-strong);
+  color: var(--sba-on-solid);
 }
 
 .sba-btn--primary:hover {
-  background: #8c3309;
-  border-color: #8c3309;
+  background: var(--sba-accent-hover);
+  border-color: var(--sba-accent-hover);
 }
 
 .sba-btn--danger {
-  background: var(--sba-danger);
-  border-color: var(--sba-danger);
-  color: #fff;
+  background: var(--sba-danger-strong);
+  border-color: var(--sba-danger-strong);
+  color: var(--sba-on-solid);
 }
 
 .sba-btn--quiet {
@@ -490,6 +583,13 @@
   padding: var(--sb-space-2) var(--sb-space-3);
   min-block-size: 2.4rem;
   inline-size: 100%;
+  transition: border-color 150ms ease-out;
+}
+
+.sba-input:hover,
+.sba-select:hover,
+.sba-textarea:hover {
+  border-color: var(--sba-ink-soft);
 }
 
 .sba-input:focus-visible,
@@ -514,6 +614,42 @@
   font-size: var(--sb-text-sm);
   color: var(--sba-ink-faint);
   line-height: 1.6;
+}
+
+.sba-subhead {
+  margin: var(--sb-space-6) 0 var(--sb-space-3);
+  font-size: var(--sb-text-base);
+  font-weight: 600;
+  color: var(--sba-ink);
+}
+
+/* --- Appearance picker (owner restyles a live site from the content tab) --- */
+
+.sba-look-group {
+  border: 0;
+  padding: 0;
+  margin: 0 0 var(--sb-space-4);
+  min-inline-size: 0;
+}
+
+.sba-look-group legend {
+  padding: 0;
+  margin-block-end: var(--sb-space-2);
+}
+
+/*
+ * MOVED TO THE KIT (Phase 11, 11.G). The cards themselves — `.sba-look`, `.sba-look-card` and its
+ * body/name/desc/swatch parts — are now `.sbk-look-*` in `src/app/kit.css`, rendered identically
+ * by the merchant's appearance studio, this surface's per-account «شكل الموقع» tab and
+ * `/accounts/new`. Deleted rather than aliased: two class sets for one control is how the two
+ * pickers drift apart, which is the whole reason the kit exists.
+ *
+ * The fieldset wrapper above and the warning below stay — they are this surface's own chrome, not
+ * the card.
+ */
+
+.sba-look-warning {
+  color: var(--sba-accent);
 }
 
 .sba-check {
@@ -569,13 +705,13 @@
 .sba-notice--ok {
   border-color: var(--sba-olive);
   background: var(--sba-olive-soft);
-  color: #33421f;
+  color: var(--sba-ok-ink);
 }
 
 .sba-notice--error {
   border-color: var(--sba-danger);
   background: var(--sba-danger-soft);
-  color: #6f0f1c;
+  color: var(--sba-danger-ink);
 }
 
 .sba-notice ul {
@@ -771,8 +907,8 @@
 }
 
 .sba-segmented button[aria-pressed='true'] {
-  background: var(--sba-accent);
-  color: #fff;
+  background: var(--sba-accent-strong);
+  color: var(--sba-on-solid);
   font-weight: 600;
 }
 
@@ -867,6 +1003,7 @@
   border-block-start: 4px solid var(--sba-accent);
   border-radius: var(--sba-radius);
   padding: var(--sb-space-8);
+  box-shadow: var(--sba-shadow);
 }
 
 .sba-auth-title {
@@ -909,4 +1046,95 @@
 
 .sba-facts dd {
   margin: 0;
+}
+
+/* --- The five accents (src/shared/ui-theme.ts picks; the layout stamps) ----- */
+
+/*
+ * Each block swaps ONLY the accent family; paper, ink and the secondary stay put, so the ledger
+ * stays the ledger whatever colour the operator prefers. Every value was chosen against the AA
+ * thresholds for its role: `-strong` holds ≥4.5:1 under `--sba-on-solid`, the text-level value
+ * holds ≥4.5:1 on the panel it sits on, in its own mode.
+ *
+ * RETUNED FOR «مرصد» (2026-08-30). Two things changed and both matter:
+ *
+ *   1. THE `-soft` TINTS ARE COOL NOW. They were mixed toward the old sand paper — `#34241a` for
+ *      clay, `#232a19` for olive. Dropped onto a green-neutral panel those read as mud, because a
+ *      tint's job is to be the SAME ground shifted toward the accent, and the ground moved.
+ *   2. `sea` IS THE DEFAULT AND RESTATES THE BASE. It used to be a blue-teal `#0e6e7a`; it is now
+ *      the mint family the base tokens carry, so choosing it after another accent returns the
+ *      operator to the shipped look without a cookie-clearing special case. That role used to
+ *      belong to `clay`, which is now simply one of the four alternatives.
+ */
+
+[data-surface='admin'][data-accent='sea'] {
+  --sba-accent: #0b6a55;
+  --sba-accent-strong: #0b6a55;
+  --sba-accent-hover: #095745;
+  --sba-accent-soft: #ddefe8;
+}
+
+[data-surface='admin'][data-accent='sea'][data-theme='dark'] {
+  --sba-accent: #5fd3a8;
+  --sba-accent-strong: #12735d;
+  /* #178a70 put white at 4.28:1 — under the 4.5 a button LABEL needs. Stepped down until it
+     clears while staying lighter than `-strong`, which is what a hover on a dark UI must be. */
+  --sba-accent-hover: #158066;
+  --sba-accent-soft: #14261f;
+}
+
+[data-surface='admin'][data-accent='clay'] {
+  --sba-accent: #a63d0b;
+  --sba-accent-strong: #a63d0b;
+  --sba-accent-hover: #8c3309;
+  --sba-accent-soft: #f6e6de;
+}
+
+[data-surface='admin'][data-accent='clay'][data-theme='dark'] {
+  --sba-accent: #e0854e;
+  --sba-accent-strong: #93370a;
+  --sba-accent-hover: #b5460f;
+  --sba-accent-soft: #2a2019;
+}
+
+[data-surface='admin'][data-accent='olive'] {
+  --sba-accent: #4a6234;
+  --sba-accent-strong: #4a6234;
+  --sba-accent-hover: #3b4f28;
+  --sba-accent-soft: #e6eede;
+}
+
+[data-surface='admin'][data-accent='olive'][data-theme='dark'] {
+  --sba-accent: #a7c283;
+  --sba-accent-strong: #465d31;
+  --sba-accent-hover: #56713d;
+  --sba-accent-soft: #1d251a;
+}
+
+[data-surface='admin'][data-accent='night'] {
+  --sba-accent: #2a4d7e;
+  --sba-accent-strong: #2a4d7e;
+  --sba-accent-hover: #213e66;
+  --sba-accent-soft: #e2eaf4;
+}
+
+[data-surface='admin'][data-accent='night'][data-theme='dark'] {
+  --sba-accent: #8fb2dd;
+  --sba-accent-strong: #27466f;
+  --sba-accent-hover: #315789;
+  --sba-accent-soft: #182229;
+}
+
+[data-surface='admin'][data-accent='berry'] {
+  --sba-accent: #97203f;
+  --sba-accent-strong: #97203f;
+  --sba-accent-hover: #7c1a34;
+  --sba-accent-soft: #f6e1e7;
+}
+
+[data-surface='admin'][data-accent='berry'][data-theme='dark'] {
+  --sba-accent: #e389a4;
+  --sba-accent-strong: #8a1d39;
+  --sba-accent-hover: #a92546;
+  --sba-accent-soft: #291a20;
 }

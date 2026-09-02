@@ -37,7 +37,25 @@
   --sb-space-8: 32px;
   --sb-space-12: 48px;
 
-  --sb-font: 'Zain', 'IBM Plex Sans Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif;
+  /*
+   * THE CHROME TYPE PAIR — «مرصد».
+   *
+   * Two faces, two jobs. IBM Plex Sans Arabic carries body and every number: its digits stay
+   * unambiguous at 13px and its counters do not close up in a dense table row, which is what an
+   * admin screen mostly is. Alexandria carries headings and KPI values, where a heavier, tighter
+   * face gives the page a hierarchy that a single weight-varied family never does.
+   *
+   * Both are declared in `src/app/fonts.css` and imported by the ROOT layout. Before that they
+   * were declared only inside template stylesheets, which the private surfaces never import — so
+   * this stack silently resolved to Segoe UI/Tahoma on every admin and dashboard page.
+   * `tests/unit/phase9-templates.test.ts` now asserts the head of each stack is self-hosted.
+   *
+   * Zain is deliberately NOT here. It is a storefront face — warm, wide, set large for a parent
+   * holding a phone in a market — and it reads as soft rather than precise in a control surface.
+   */
+  --sb-font: 'IBM Plex Sans Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif;
+  --sb-font-display: 'Alexandria', 'IBM Plex Sans Arabic', 'Noto Sans Arabic', 'Segoe UI',
+    sans-serif;
   --sb-text-sm: 0.9375rem;
   --sb-text-base: 1.0625rem;
   --sb-text-lg: 1.25rem;
@@ -69,7 +87,10 @@ body {
 h1,
 h2,
 h3 {
-  line-height: 1.35;
+  /* The display face, tightened: Alexandria at 700 needs less leading than body text does. */
+  font-family: var(--sb-font-display);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
   margin: 0 0 var(--sb-space-4);
   font-weight: 700;
 }
@@ -171,6 +192,73 @@ button:focus-visible {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/*
+ * The theme switch (dark/light + accent), shared by the two private surfaces.
+ *
+ * Styled ONCE here against `--sbx-*` bridge variables; `admin.css` and `dashboard.css` each map
+ * those onto their own tokens. The component itself never knows which surface it is on, and the
+ * storefront never defines the bridge, so it cannot even render styled there by accident.
+ */
+.sbx-theme {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sb-space-2);
+  align-items: flex-start;
+}
+
+.sbx-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sb-space-2);
+  font: inherit;
+  font-size: var(--sb-text-sm);
+  color: var(--sbx-ink-soft);
+  background: var(--sbx-panel);
+  border: 1px solid var(--sbx-rule);
+  border-radius: 999px;
+  padding: var(--sb-space-1) var(--sb-space-3);
+  cursor: pointer;
+  transition: color 150ms ease-out, border-color 150ms ease-out, background-color 150ms ease-out;
+}
+
+.sbx-mode:hover {
+  color: var(--sbx-accent);
+  border-color: var(--sbx-accent);
+}
+
+.sbx-mode-icon {
+  inline-size: 1.05rem;
+  block-size: 1.05rem;
+  color: var(--sbx-accent);
+  flex: none;
+}
+
+.sbx-accents {
+  display: inline-flex;
+  gap: var(--sb-space-2);
+  align-items: center;
+}
+
+.sbx-accent-dot {
+  inline-size: 1.15rem;
+  block-size: 1.15rem;
+  border-radius: 50%;
+  border: 2px solid var(--sbx-panel);
+  box-shadow: 0 0 0 1px var(--sbx-rule);
+  padding: 0;
+  cursor: pointer;
+  transition: transform 150ms ease-out, box-shadow 150ms ease-out;
+}
+
+.sbx-accent-dot:hover {
+  transform: scale(1.15);
+}
+
+.sbx-accent-dot[aria-checked='true'] {
+  box-shadow: 0 0 0 2px var(--sbx-accent);
+  transform: scale(1.1);
 }
 
 /*

@@ -1,0 +1,478 @@
+/*
+ * رفّ — dense retail shelf.
+ *
+ * Personality: a shelf, not a magazine. A cool paper ground, white cards lifted off it by one hairline
+ * and one flat shadow, a 2px radius on absolutely everything including the badge, and a grid that
+ * fills by CARD WIDTH rather than by a column count. Deep green for anything you can press, brick for
+ * anything discounted. Nothing on the page is decorative.
+ *
+ * WHAT IT IS FOR: a grocer, a hardware shop or a pharmacy with forty to four hundred SKUs, most of
+ * them without a photograph. See `definition.ts` for the shop, the type scale and the palette
+ * arithmetic — including why the density does not come from the leading.
+ *
+ * THE FOUR DEVICES:
+ *   1. THE AUTO-FILL SHELF. `.sf-grid` is `repeat(auto-fill, minmax(9.5rem, 1fr))` instead of a fixed
+ *      track count, so one rule covers 360px to 1600px and a merchant with four hundred products gets
+ *      six per row on a desktop and two on a phone without a breakpoint in between.
+ *   2. PRICE-FIRST CARDS. The spec table is re-ordered so the price is the first and largest thing
+ *      under the name, and «متوفر / خلص» is a coloured word rather than a bordered pill.
+ *   3. HAIRLINE EVERYTHING. One border colour, one weight, 2px corners. There is no second surface
+ *      tone in the chrome, because a shelf's structure is its edges.
+ *   4. SEARCH IS A PRIMARY CONTROL. This is the only template where the search block is styled as
+ *      furniture rather than as a section: a shop with four hundred SKUs is navigated by typing, and
+ *      بيت's underlined field would be the wrong answer to the same markup.
+ *
+ * NO `@font-face` HERE, DELIBERATELY — Zain is declared once, in `diwan.css`, and both files are in
+ * the same bundle on every storefront. The reasoning is written out at the top of `bayt.css`.
+ */
+
+/* ------------------------------------------------------- chrome + heads -- */
+
+[data-template='raff'] .sf-header {
+  background: var(--t-surface);
+  border-block-end: 1px solid var(--t-border);
+}
+
+[data-template='raff'] .sf-header__inner {
+  padding-block: var(--t-space-md);
+}
+
+/*
+ * The department row is the header's most useful element in this template, so it gets the surface it
+ * deserves: a tinted strip under the brand, full width, with the links as hit areas rather than as
+ * text. A grocer's customer navigates by department far more often than by the two links beside the
+ * shop name.
+ */
+[data-template='raff'] .sf-catnav {
+  margin-block-start: var(--t-space-md);
+  margin-inline: calc(var(--t-space-lg) * -1);
+  padding-inline: var(--t-space-lg);
+  padding-block: var(--t-space-sm);
+  background: var(--t-bg);
+  border-block-start: 1px solid var(--t-border);
+  border-block-end: 0;
+}
+
+[data-template='raff'] .sf-catnav a {
+  padding-inline: var(--t-space-sm);
+  padding-block: var(--t-space-xs);
+  border: 1px solid transparent;
+  border-radius: var(--t-radius-sm);
+  background: var(--t-surface);
+}
+
+[data-template='raff'] .sf-catnav a:hover,
+[data-template='raff'] .sf-catnav a[aria-current='page'] {
+  border-color: var(--t-primary);
+  /* The base rule paints the current department with a bottom border; a bordered chip already has
+     four, so the marker becomes the border's colour and the underline is cancelled. */
+  border-block-end-color: var(--t-primary);
+}
+
+/*
+ * A section head is a label: a green rule above it, the title at `lg`, no bottom border. Titles here
+ * are small on purpose — «وصل حديثاً» is a shelf label, and this page has eight of them. Every pixel
+ * a heading takes is a product the customer has to scroll for.
+ */
+[data-template='raff'] .sf-block__head {
+  border-block-start: 2px solid var(--t-primary);
+  padding-block-start: var(--t-space-sm);
+  margin-block-end: var(--t-space-lg);
+}
+
+[data-template='raff'] .sf-block__title {
+  font-size: var(--t-text-xl);
+}
+
+/* --------------------------------------------------------- the stage hero -- */
+
+/*
+ * A 16:9 strip, then the copy in a tight row underneath. The stage is one bordered object like every
+ * other object in the template, and its copy padding is deliberately much smaller than سوق نيون's
+ * `--t-space-2xl` on the same variant: the hero is a shelf talker above the first row of products,
+ * not a fold of its own.
+ */
+[data-template='raff'] .sf-hero {
+  padding-block: var(--t-space-xl) var(--t-block);
+}
+
+[data-template='raff'] .sf-hero--stage .sf-hero__inner {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+  overflow: hidden;
+  gap: 0;
+}
+
+[data-template='raff'] .sf-hero--stage .sf-hero__media .sf-media {
+  border-radius: 0;
+  aspect-ratio: 16 / 9;
+}
+
+[data-template='raff'] .sf-hero--stage .sf-hero__copy {
+  padding: var(--t-space-lg);
+}
+
+[data-template='raff'] .sf-hero__text {
+  font-size: var(--t-text-base);
+  margin-block-start: var(--t-space-sm);
+}
+
+[data-template='raff'] .sf-hero__actions {
+  margin-block-start: var(--t-space-lg);
+}
+
+/* -------------------------------------------------------------- the shelf -- */
+
+/*
+ * THE GRID IS THE TEMPLATE.
+ *
+ * `auto-fill` with a 9.5rem floor rather than the `--sf-cols` track count every other template uses.
+ * 9.5rem is the width at which a two-line Arabic product name plus a price row stays readable at this
+ * type scale — «معجون طماطم مركّز 400 غرام» wraps to two lines and neither is orphaned. The count then
+ * follows the viewport: two at 360px, four on a tablet, six at 1440px, and no breakpoint anywhere.
+ *
+ * This intentionally IGNORES `--sf-cols`, which the section sets inline from
+ * `config.columns ?? template.layout.gridColumns`. That is not a merchant's preference being
+ * discarded — `products_grid.columns` is unset on every default arrangement, and a grocer who does
+ * set it to 2 gets 2 through `.sf-grid`'s own inline property on every OTHER template. Here the shelf
+ * is the design, and `gridColumns: 4` in the definition is the fallback for the four consumers that
+ * read the number without this stylesheet (see its docblock).
+ */
+[data-template='raff'] .sf-grid {
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: var(--t-space-md);
+}
+
+[data-template='raff'] .sf-card {
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+  background: var(--t-surface);
+  box-shadow: var(--t-elev-card);
+}
+
+[data-template='raff'] .sf-card:hover,
+[data-template='raff'] .sf-cat:hover {
+  border-color: var(--t-primary);
+}
+
+/*
+ * 1:1 and TINY. A grocery photograph is a package shot: it identifies the product, it does not sell
+ * it. Square is also the shape most of these images arrive in from a supplier's catalogue, so a 4:5
+ * box would letterbox nearly every one of them into the hatch placeholder's colour.
+ */
+[data-template='raff'] .sf-card__media .sf-media {
+  border-radius: 0;
+  border-block-end: 1px solid var(--t-border);
+  aspect-ratio: 1 / 1;
+}
+
+[data-template='raff'] .sf-card__body {
+  padding: var(--t-space-md);
+  gap: var(--t-space-sm);
+}
+
+[data-template='raff'] .sf-card__name {
+  font-size: var(--t-text-base);
+  line-height: 1.45;
+  -webkit-line-clamp: 2;
+}
+
+/* --------------------------------------------------- the price-first spec -- */
+
+/*
+ * The `spec` body, re-ordered.
+ *
+ * `product-card.tsx` renders a `<dl>` of three pairs — price, availability, SKU — in that order, with
+ * `.sf-card__spec` laying them out as a two-column label/value grid. ورشة keeps that: a builders'
+ * merchant reads it as a table. A grocer does not read it at all; they look for a number.
+ *
+ * So the grid becomes ONE column, the price's value is promoted to `--t-text-xl` in the brand green,
+ * and the labels shrink to `--t-text-xs` muted. Nothing is hidden — «السعر», «التوفّر» and «رقم
+ * الصنف» all still render, in the DOM order the component chose, which is the order a screen reader
+ * needs; the visual weight is simply not uniform any more.
+ *
+ * WHY NOT `display: none` ON THE LABELS. It would save two lines per card and it is the obvious
+ * temptation at this density. A price with no label beside a bare «موجود» is ambiguous the moment a
+ * merchant adds a second number (a unit price, a deposit), and a label removed from the flow is
+ * removed from the accessibility tree too — so the one row that answers «بقدّيش» would lose the word
+ * that says it is a price.
+ */
+[data-template='raff'] .sf-card__spec {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  font-size: var(--t-text-xs);
+}
+
+[data-template='raff'] .sf-card__spec dt {
+  color: var(--t-text-muted);
+  font-size: var(--t-text-xs);
+  line-height: 1.3;
+}
+
+[data-template='raff'] .sf-card__spec dd {
+  line-height: 1.35;
+  margin-block-end: var(--t-space-xs);
+}
+
+[data-template='raff'] .sf-price {
+  font-size: var(--t-text-xl);
+  color: var(--t-link);
+}
+
+/*
+ * A rectangular label, not a lozenge — `--t-radius-pill` is 2px in this template, so `.sf-badge`
+ * arrives square already and this only adds the brick fill it needs to read as a price sticker.
+ *
+ * `:not(.sf-badge--off)` IS REQUIRED, not tidiness. `.sf-badge--off` — the «خلص» marker — scores
+ * (0,1,0) in `storefront.css`, and a bare `[data-template='raff'] .sf-badge` scores (0,2,0), so it
+ * would win and paint "sold out" in the same brick fill as a discount. Excluding the modifier keeps
+ * the relationship the right way round: an offer shouts, an absence does not.
+ */
+[data-template='raff'] .sf-badge:not(.sf-badge--off) {
+  background: var(--t-secondary);
+  color: var(--t-on-secondary);
+  letter-spacing: 0;
+}
+
+[data-template='raff'] .sf-btn {
+  border-radius: var(--t-radius-md);
+  padding-inline: var(--t-space-lg);
+}
+
+/* ------------------------------------------------------- department tiles -- */
+
+[data-template='raff'] .sf-cats {
+  /* Tighter than the base's 11rem: a department tile is a label with a picture, and eight of them
+     should fit one row on a laptop rather than two. */
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: var(--t-space-md);
+}
+
+[data-template='raff'] .sf-cat {
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+  background: var(--t-surface);
+  box-shadow: var(--t-elev-card);
+}
+
+[data-template='raff'] .sf-cat__label {
+  padding: var(--t-space-sm) var(--t-space-md);
+  font-size: var(--t-text-sm);
+  /* A department name and its count on one line at this width would clip the name; stacking keeps
+     both, and `align-items: baseline` from the base is what would have forced them side by side. */
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+/* ------------------------------------------------- Phase 9: banner strip -- */
+
+/*
+ * A 16:9 strip with the caption in a tight bordered row underneath — the same object as the hero, and
+ * on purpose: in this template a banner and the hero are the same kind of thing (a promotion above the
+ * shelf), so they should not be two different treatments.
+ */
+[data-template='raff'] .sf-banner {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+  overflow: hidden;
+}
+
+[data-template='raff'] .sf-banner .sf-media {
+  border-radius: 0;
+}
+
+[data-template='raff'] .sf-banner__copy {
+  padding: var(--t-space-md) var(--t-space-lg) var(--t-space-lg);
+  gap: var(--t-space-sm);
+}
+
+[data-template='raff'] .sf-banner__title {
+  font-size: var(--t-text-lg);
+}
+
+/* ------------------------------------------ Phase 9: trust, hours, stats -- */
+
+/*
+ * The trust row is ONE bordered strip, not three cards — the promise strip a supermarket prints along
+ * the top of a leaflet. `auto-fit` still handles two claims or three; the strip is what makes them
+ * read as a single statement.
+ */
+[data-template='raff'] .sf-trust {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+  padding: var(--t-space-lg);
+  gap: var(--t-space-lg);
+  box-shadow: var(--t-elev-card);
+}
+
+[data-template='raff'] .sf-trust__item {
+  gap: var(--t-space-sm);
+}
+
+[data-template='raff'] .sf-trust__icon {
+  color: var(--t-link);
+}
+
+[data-template='raff'] .sf-trust__title {
+  font-size: var(--t-text-sm);
+}
+
+[data-template='raff'] .sf-trust__text {
+  font-size: var(--t-text-xs);
+}
+
+/*
+ * The week as a BANDED table. Alternating row tints are the one place this template borrows from a
+ * spreadsheet rather than from a shop, and it earns it: seven rows of two short strings are read by
+ * jumping to one of them, and a band is a faster target than a rule between rules.
+ *
+ * `:nth-child(even)` counts the `<div>` rows inside the `<dl>`, which is exactly what
+ * `opening-hours.tsx` renders — one `div` per weekday, always seven, always in Sunday-first order. It
+ * is not counting text nodes or a wrapper, so the banding cannot slip by one.
+ */
+[data-template='raff'] .sf-hours {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+  max-inline-size: 30rem;
+  overflow: hidden;
+}
+
+[data-template='raff'] .sf-hours > div {
+  padding-inline: var(--t-space-md);
+  padding-block: var(--t-space-sm);
+  border-block-end: 0;
+}
+
+[data-template='raff'] .sf-hours > div:nth-child(even) {
+  background: var(--t-bg);
+}
+
+[data-template='raff'] .sf-hours dt {
+  color: var(--t-text);
+}
+
+/*
+ * «مفتوح الآن» is GREEN, not brick.
+ *
+ * The badge rule above fills every badge with the brick secondary, which is the offer colour — and an
+ * offer colour behind "we are open" reads as a promotion rather than as a status. The primary is the
+ * template's "yes" and the `--off` variant keeps the muted treatment for «مغلق»، so the pair reads
+ * correctly in both states. (0,4,0) against the badge rule's (0,3,0), so it holds regardless of order.
+ */
+[data-template='raff'] .sf-block--hours .sf-badge:not(.sf-badge--off) {
+  background: var(--t-primary);
+  color: var(--t-on-primary);
+}
+
+/*
+ * Stats are a FOOTNOTE here, and that is the whole design decision. سوق نيون sets «4000+» at display
+ * size because a night-market stall is selling itself; a grocer's numbers are reassurance printed
+ * small next to the till. `--t-text-lg` in text colour, in one bordered strip like the trust row.
+ */
+[data-template='raff'] .sf-stats {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+  padding: var(--t-space-lg);
+  gap: var(--t-space-lg);
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+}
+
+[data-template='raff'] .sf-stat__value {
+  font-size: var(--t-text-lg);
+}
+
+[data-template='raff'] .sf-stat__label {
+  font-size: var(--t-text-xs);
+}
+
+/* ----------------------------------------------- Phase 9: search, primary -- */
+
+/*
+ * THE ONE TEMPLATE WHERE SEARCH IS FURNITURE.
+ *
+ * A shop with four hundred SKUs is navigated by typing, and `search_bar` is the section that does it.
+ * So the block gets a panel of its own — the same white-on-paper card as a product, at full width —
+ * and the field is set at `--t-text-lg`, a step above body, which is the only type in the template
+ * that is larger than it needs to be to be read. بيت's underlined field is the same markup and the
+ * opposite decision, which is the clearest single illustration of what a template is for.
+ *
+ * The `id` prefix is the hook because `SectionBlock` gives `search_bar` no modifier class;
+ * `diwan.css` records why matching the stable anchor is safe rather than clever.
+ */
+[data-template='raff'] .sf-block[id^='search'] .sf-search {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+  padding: var(--t-space-lg);
+  box-shadow: var(--t-elev-card);
+}
+
+/* The input sits on the PAGE tone inside a white panel, so the field reads as cut into the card
+   rather than as a white box on a white box. `.sf-btn` is already filled in the base, so the submit
+   needs no rule at all — the emphasis is the field's size, not a second colour. */
+[data-template='raff'] .sf-search__input {
+  font-size: var(--t-text-lg);
+  background: var(--t-bg);
+}
+
+/* ---------------------------------------------------------- the ledgers --- */
+
+[data-template='raff'] .sf-note,
+[data-template='raff'] .sf-offer,
+[data-template='raff'] .sf-quote,
+[data-template='raff'] .sf-checkout,
+[data-template='raff'] .sf-input,
+[data-template='raff'] .sf-textarea,
+[data-template='raff'] .sf-select {
+  border-radius: var(--t-radius-md);
+}
+
+[data-template='raff'] .sf-checkout {
+  border-block-start: 2px solid var(--t-primary);
+}
+
+[data-template='raff'] .sf-footer {
+  background: var(--t-surface);
+  border-block-start: 1px solid var(--t-border);
+}
+
+/* ---------------------------------------------------------- responsive --- */
+
+@media (max-width: 40rem) {
+  /*
+   * The shelf floor drops to 8rem on a phone.
+   *
+   * At 360px the content width is about 20.5rem, so a 9.5rem floor plus a 10px gap gives exactly two
+   * columns with 1.5rem to spare — and one device narrower than that (a 320px screen: 18.5rem) it
+   * gives ONE, which turns a grocer's shelf into a list. 8rem keeps two columns down to 320px, which
+   * is the narrowest viewport this platform's traffic actually contains.
+   *
+   * The base `.sf-grid` responsive rules do not apply to this template at all — they score (0,1,0)
+   * against this file's (0,2,0) — so every breakpoint the shelf needs has to be here. That is the
+   * cost of owning `.sf-grid`, and it is stated in `bayt.css` as the general rule.
+   */
+  [data-template='raff'] .sf-grid {
+    grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+    gap: var(--t-space-sm);
+  }
+
+  [data-template='raff'] .sf-cats {
+    grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+  }
+
+  [data-template='raff'] .sf-card__body {
+    padding: var(--t-space-sm);
+  }
+
+  /* The department strip is edge-to-edge on a phone, so it takes the narrower shell padding. */
+  [data-template='raff'] .sf-catnav {
+    margin-inline: calc(var(--t-space-md) * -1);
+    padding-inline: var(--t-space-md);
+  }
+}

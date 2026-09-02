@@ -1,5 +1,6 @@
 import { tenantDb, SYSTEM_ACTOR } from '@/server/db';
 import { CACHE_KEYS, CACHE_TTL, cacheDel, cacheGet, cacheSet } from '@/server/redis';
+import { isSingleTenant, loadStandaloneEntitlements } from '@/server/single-tenant';
 import { jerusalemMonthWindow } from '@/server/time';
 import {
   type CapabilityKey,
@@ -60,6 +61,27 @@ async function loadFeatures(tenantId: string): Promise<FeatureSet> {
 }
 
 export async function resolveFeatures(tenantId: string): Promise<FeatureSet> {
+  /**
+   * SINGLE-TENANT MODE (Q25): the answer is frozen in the bundle, not resolved from plans.
+   *
+   * A standalone deployment has no `plans` rows and no super admin to toggle an override, so the
+   * lookup below would resolve every feature to absent — i.e. a shop that paid for the احترافي
+   * plan would boot with the catalogue of a free one. The snapshot is what it was entitled to on
+   * the day it was exported.
+   *
+   * FIRST, before the cache: caching a snapshot that never changes buys nothing and would put a
+   * stale copy of it behind a TTL after an operator edited the file and restarted.
+   *
+   * A MISSING snapshot falls through to the query on purpose — see `loadStandaloneEntitlements`.
+   * The query then answers "no features", which is the fail-closed direction: a broken bundle
+   * renders a shop with nothing switched on rather than one with everything, including the
+   * features that collect customers' names and phone numbers.
+   */
+  if (isSingleTenant()) {
+    const snapshot = loadStandaloneEntitlements();
+    if (snapshot) return snapshot.features;
+  }
+
   const key = CACHE_KEYS.entitlements(tenantId);
   const cached = await cacheGet<FeatureSet>(key);
   if (cached) return cached;
@@ -175,6 +197,19 @@ export async function canEdit(
 ): Promise<boolean> {
   if (role === 'super_admin') return true;
   if (role === 'staff') return false;
+
+  /**
+   * SINGLE-TENANT MODE (Q25): an owner edits everything they can see.
+   *
+   * `editable_by = admin` is a contract with a PLATFORM: the merchant sees the field read-only and
+   * asks an operator to change it. On a server the merchant owns there is no operator — the change
+   * request would go into a queue nobody reads, on a screen whose "اطلب تعديل" button is the only
+   * way to change a field the merchant is standing in front of. Visibility still decides whether
+   * the capability exists at all, so a shop exported without banners still has no banners.
+   */
+  if (isSingleTenant()) {
+    return isCapabilityVisible(tenantId, capabilityKey);
+  }
 
   const capabilities = await resolveCapabilities(tenantId);
   const state = capabilities[capabilityKey];

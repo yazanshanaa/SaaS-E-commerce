@@ -14,7 +14,14 @@ export function AccountTabs({ tenantId }: { tenantId: string }) {
     { href: base, key: 'overview' },
     { href: `${base}/content`, key: 'content' },
     { href: `${base}/permissions`, key: 'permissions' },
+    // Phase 9. Assigning platform carriers to THIS shop. After `permissions` because it is the same
+    // kind of decision — what this tenant is given — and before `subscription`, which is money.
+    { href: `${base}/carriers`, key: 'carriers' },
     { href: `${base}/subscription`, key: 'subscription' },
+    // Phase 10 (Q24, Q26). LAST, after money, because it is the tab an operator visits least and
+    // the one whose buttons do the most: a restore rewrites the shop, and an export hands its whole
+    // catalogue to somebody. Distance from the tabs used daily is deliberate.
+    { href: `${base}/backups`, key: 'backups' },
   ];
 
   return (

@@ -28,8 +28,12 @@ export interface ZipEntry {
  * WebP and AVIF are compressed formats; running deflate over them costs CPU proportional to the
  * merchant's whole image library and gives back a fraction of a percent. CSVs are text and
  * compress by an order of magnitude, so they keep level 9.
+ *
+ * `.gz`/`.tgz` joined the list in Phase 10: a standalone bundle nests the platform's own
+ * `source.tar.gz`, which is both already compressed and the largest entry in the archive — the
+ * exact shape this rule exists for, on the one path already documented as memory-bound.
  */
-const STORED_EXTENSIONS = ['.webp', '.avif', '.jpg', '.jpeg', '.png', '.zip'];
+const STORED_EXTENSIONS = ['.webp', '.avif', '.jpg', '.jpeg', '.png', '.zip', '.gz', '.tgz'];
 
 function isPreCompressed(name: string): boolean {
   const lower = name.toLowerCase();

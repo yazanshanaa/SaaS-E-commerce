@@ -1,0 +1,726 @@
+/*
+ * The private surfaces' shared chrome — Phase 11, Tracks 11.F / 11.G.
+ *
+ * ONE implementation of the shell, the grouped rail, the mobile drawer, the collapse and the
+ * command palette, styled entirely against the `--sbx-*` bridge each surface maps from its own
+ * tokens at the top of `dashboard.css` / `admin.css` (the same contract the theme switch has
+ * used since the panel-theming batch). The kit never knows which surface it is on, light or
+ * dark, or which accent is active — the bridge answers all three — and the storefront never
+ * defines the bridge, so nothing here can reach a shop.
+ *
+ * THE EXTRACTION IS A ONE-WAY DOOR (the phase plan's own warning): a change to a rule here
+ * changes both surfaces. That is the point — and it is also why the kit's scope is the CHROME:
+ * the widget layers (buttons, tables, forms, notices) keep their per-surface files, because the
+ * two ARE different by design (the ledger's 4px density against the workbench's 8px calm), and
+ * a "shared" widget file that immediately forked per surface would be the old duplication with
+ * an extra hop. Recorded in docs/DECISIONS.md.
+ *
+ * BREAKPOINTS (the kit standardises what was 60/40 on one surface and 60/48 on the other):
+ *   < 48rem  — the rail is an off-canvas DRAWER behind a labelled toggle; a top bar carries the
+ *              menu button, the brand and the palette.
+ *   ≥ 48rem  — the rail, sticky, collapsible to icons-only (state in a cookie, SSR-stamped).
+ *   ≥ 90rem  — the content column widens, so a 1440px screen is not a column of whitespace.
+ */
+
+/* --- «مرصد» signature elements (DESIGN_BRIEF.md) ----------------------------- */
+
+/*
+ * 1. THE INLINE SPARKLINE (`_components/kit/sparkline.tsx`).
+ *
+ * Sits inside a KPI card under the value. `preserveAspectRatio="none"` lets it span whatever
+ * width the card has; the path's `vector-effect` keeps the stroke from stretching with it.
+ */
+.sbk-spark {
+  display: block;
+  inline-size: 100%;
+  block-size: 26px;
+  margin-block-start: var(--sb-space-2);
+  color: var(--sbx-accent);
+  overflow: visible;
+}
+
+.sbk-spark__area {
+  opacity: 0.12;
+}
+
+/*
+ * The draw-on. ONCE, on mount, 600ms — never on scroll, never repeated. A control surface is
+ * looked at for hours and motion that recurs while someone reads is motion that grates.
+ *
+ * `pathLength` normalises every line to 100 units regardless of its real geometry, so one dash
+ * pair works for a 5-point week and a 30-point month alike.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .sbk-spark__line {
+    stroke-dasharray: 100;
+    stroke-dashoffset: 100;
+    animation: sbk-spark-draw 600ms ease-out forwards;
+  }
+
+  .sbk-spark__area {
+    animation: sbk-spark-fade 600ms ease-out forwards;
+    opacity: 0;
+  }
+}
+
+@keyframes sbk-spark-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes sbk-spark-fade {
+  to {
+    opacity: 0.12;
+  }
+}
+
+/*
+ * 2. THE CORNER BLOOM — a single radial wash of the accent in the block-start / inline-end
+ * corner of the PRIMARY card on a screen. Never on every card: its entire job is to say "this
+ * one", and a page where everything blooms says nothing.
+ *
+ * It replaces the drop shadow, which is `none` in dark mode by policy — a shadow on a dark panel
+ * is a smudge, not a lift. Opt in with `data-bloom="true"`.
+ */
+[data-bloom='true'] {
+  position: relative;
+  overflow: hidden;
+}
+
+[data-bloom='true']::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  inline-size: 9rem;
+  block-size: 9rem;
+  background: radial-gradient(circle at 100% 0, var(--sbx-accent), transparent 70%);
+  opacity: 0.13;
+  pointer-events: none;
+}
+
+/*
+ * 3. THE STATE HAIRLINE — a 2px rule on a card's inline-start edge in the state's hue.
+ *
+ * ALWAYS alongside a text label, never instead of one. `admin.css` already records the rule this
+ * follows: a control that differs from another only by hue is unusable, for colour-blind readers
+ * and on a sunlit phone alike. The hairline makes a state scannable down a column; the label is
+ * what actually says which state it is.
+ */
+[data-state] {
+  border-inline-start: 2px solid var(--sbx-rule);
+}
+
+[data-state='ok'] {
+  border-inline-start-color: var(--sbx-accent);
+}
+
+[data-state='warn'] {
+  border-inline-start-color: var(--sbx-warn);
+}
+
+[data-state='danger'] {
+  border-inline-start-color: var(--sbx-danger);
+}
+
+/* --- the shell -------------------------------------------------------------- */
+
+.sbk-shell {
+  display: grid;
+  grid-template-columns: var(--sbk-rail-size, var(--sbx-rail-width, 15.5rem)) minmax(0, 1fr);
+  min-height: 100dvh;
+}
+
+.sbk-shell[data-collapsed='true'] {
+  --sbk-rail-size: 4.25rem;
+}
+
+/*
+ * The attribute above is stamped SERVER-SIDE from the cookie, which is what makes the first paint
+ * flash-free. These two keep the grid TRACK in step after the toggle: `KitRail` writes the cookie
+ * and flips its own `data-collapsed`, but nothing re-renders the shell, so without them pressing
+ * «صغّر القائمة» clipped the labels and centred the icons inside a still-15.5rem column until the
+ * next full page load — and expanding again left icons stranded in a 4.25rem one.
+ *
+ * The rail omits the attribute when expanded (`data-collapsed={collapsed ? 'true' : undefined}`),
+ * hence `:not([data-collapsed])` rather than a 'false' value. Both selectors are (0,3,0), so the
+ * live state beats the SSR attribute either way.
+ */
+.sbk-shell:has(.sbk-rail[data-collapsed='true']) {
+  --sbk-rail-size: 4.25rem;
+}
+
+.sbk-shell:has(.sbk-rail:not([data-collapsed])) {
+  --sbk-rail-size: var(--sbx-rail-width, 15.5rem);
+}
+
+/* --- the top bar (drawer viewports only) ------------------------------------ */
+
+.sbk-topbar {
+  display: none;
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 40;
+  align-items: center;
+  gap: var(--sb-space-3);
+  padding: var(--sb-space-2) var(--sb-space-4);
+  background: var(--sbx-panel-alt);
+  border-block-end: 1px solid var(--sbx-hairline);
+}
+
+.sbk-topbar__brand {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sbk-topbar__brand a {
+  color: var(--sbx-ink);
+  text-decoration: none;
+}
+
+/* --- the rail ---------------------------------------------------------------- */
+
+.sbk-rail {
+  border-inline-end: 1px solid var(--sbx-hairline);
+  background: var(--sbx-panel-alt);
+  padding: var(--sb-space-5) var(--sb-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sb-space-4);
+  position: sticky;
+  inset-block-start: 0;
+  block-size: 100dvh;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.sbk-rail__brand {
+  padding-inline: var(--sb-space-2);
+}
+
+.sbk-rail__brand a {
+  display: block;
+  font-size: var(--sb-text-lg);
+  font-weight: 700;
+  color: var(--sbx-ink);
+  text-decoration: none;
+  line-height: 1.3;
+  padding-inline-start: var(--sb-space-3);
+  border-inline-start: 3px solid var(--sbx-accent);
+}
+
+.sbk-rail__brand small {
+  display: block;
+  font-size: var(--sb-text-sm);
+  font-weight: 400;
+  color: var(--sbx-ink-soft);
+}
+
+.sbk-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sb-space-4);
+  min-width: 0;
+}
+
+.sbk-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/*
+ * The group heading: small caps would be a Latin habit — Arabic has none — so the label is a
+ * size-and-colour step with a hairline, which is how this platform's ledgers already speak.
+ */
+.sbk-group-label {
+  font-size: var(--sb-text-sm);
+  color: var(--sbx-ink-faint);
+  padding: var(--sb-space-2) var(--sb-space-3) var(--sb-space-1);
+  border-block-start: 1px solid var(--sbx-hairline);
+  margin-block-start: var(--sb-space-1);
+}
+
+.sbk-group:first-child .sbk-group-label {
+  border-block-start: 0;
+  margin-block-start: 0;
+}
+
+.sbk-link {
+  display: flex;
+  align-items: center;
+  gap: var(--sb-space-3);
+  padding: var(--sb-space-2) var(--sb-space-3);
+  color: var(--sbx-ink-soft);
+  text-decoration: none;
+  border-radius: var(--sbx-radius);
+  border-inline-start: 3px solid transparent;
+  min-width: 0;
+  transition: background-color 150ms ease-out, color 150ms ease-out, border-color 150ms ease-out;
+}
+
+.sbk-link__icon {
+  flex: none;
+  color: var(--sbx-ink-faint);
+  transition: color 150ms ease-out;
+}
+
+.sbk-link__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sbk-link:hover {
+  background: color-mix(in srgb, var(--sbx-accent) 9%, transparent);
+  color: var(--sbx-ink);
+}
+
+.sbk-link:hover .sbk-link__icon {
+  color: var(--sbx-accent);
+}
+
+.sbk-link[aria-current='page'] {
+  background: var(--sbx-panel);
+  color: var(--sbx-ink);
+  font-weight: 600;
+  border-inline-start-color: var(--sbx-accent);
+}
+
+.sbk-link[aria-current='page'] .sbk-link__icon {
+  color: var(--sbx-accent);
+}
+
+.sbk-rail__foot {
+  margin-block-start: auto;
+  border-block-start: 1px solid var(--sbx-hairline);
+  padding-block-start: var(--sb-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sb-space-2);
+  font-size: var(--sb-text-sm);
+  color: var(--sbx-ink-soft);
+  align-items: flex-start;
+  min-width: 0;
+}
+
+/* --- collapsed (icons-only) -------------------------------------------------- */
+
+/*
+ * The link LABELS STAY IN THE TREE — visually clipped, still the links' accessible names — and
+ * the `title` attribute (set by the component only while collapsed) carries the mouse tooltip.
+ */
+.sbk-rail[data-collapsed='true'] .sbk-link__label {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * The FOOT and the decorations leave the tree entirely (`display: none`, never a clip): the
+ * foot holds real controls — the theme switch, sign-out — and a clipped control stays in the
+ * tab order, which hands a keyboard user an invisible focus stop. Collapsed is an icons-only
+ * mode; the controls come back with one press of the expand toggle below them.
+ */
+.sbk-rail[data-collapsed='true'] .sbk-group-label,
+.sbk-rail[data-collapsed='true'] .sbk-rail__brand small,
+.sbk-rail[data-collapsed='true'] .sbk-rail__foot,
+.sbk-rail[data-collapsed='true'] .sbk-palette-btn .sbk-kbd {
+  display: none;
+}
+
+.sbk-rail[data-collapsed='true'] .sbk-group {
+  border-block-start: 1px solid var(--sbx-hairline);
+  padding-block-start: var(--sb-space-1);
+}
+
+.sbk-rail[data-collapsed='true'] .sbk-link {
+  justify-content: center;
+  padding-inline: var(--sb-space-2);
+}
+
+.sbk-rail[data-collapsed='true'] .sbk-rail__brand a {
+  padding-inline-start: 0;
+  border-inline-start: 0;
+  text-align: center;
+  font-size: var(--sb-text-base);
+}
+
+.sbk-rail[data-collapsed='true'] .sbk-collapse-btn__icon {
+  transform: scaleX(-1);
+}
+
+/* --- shared small controls ---------------------------------------------------- */
+
+.sbk-icon-btn {
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sb-space-2);
+  cursor: pointer;
+  background: var(--sbx-panel);
+  color: var(--sbx-ink-soft);
+  border: 1px solid var(--sbx-rule);
+  border-radius: var(--sbx-radius);
+  padding: var(--sb-space-2);
+  min-inline-size: 44px;
+  min-block-size: 40px;
+  justify-content: center;
+}
+
+.sbk-icon-btn:hover {
+  color: var(--sbx-accent);
+  border-color: var(--sbx-accent);
+}
+
+.sbk-palette-btn {
+  justify-content: flex-start;
+  inline-size: 100%;
+  color: var(--sbx-ink-faint);
+}
+
+.sbk-kbd {
+  margin-inline-start: auto;
+  font-size: 0.7rem;
+  font-family: inherit;
+  border: 1px solid var(--sbx-hairline);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--sbx-ink-faint);
+  /* A keyboard chord reads left-to-right even on an RTL page. */
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.sbk-collapse-btn {
+  inline-size: 100%;
+}
+
+.sbk-vh {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- the drawer (below 48rem) ------------------------------------------------- */
+
+/*
+ * 47.99/48, not 48/48.01. The contract at the top of this file is "< 48rem drawer, ≥ 48rem
+ * collapsible rail", and `max-width: 48rem` INCLUDES 48rem — so at exactly 768px the drawer won
+ * and `.sbk-collapse-btn` was display:none at the one width where the collapse is promised.
+ * The old pair also left (48rem, 48.01rem) matching neither query, where `.sbk-backdrop` had no
+ * styles at all.
+ */
+@media (max-width: 47.99rem) {
+  .sbk-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sbk-topbar {
+    display: flex;
+  }
+
+  .sbk-rail {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-start: 0;
+    inline-size: min(19rem, 86vw);
+    z-index: 60;
+    transform: translateX(100%);
+    visibility: hidden;
+    transition: transform 200ms ease-out, visibility 200ms;
+    border-inline-end: 1px solid var(--sbx-rule);
+    box-shadow: var(--sbx-shadow);
+  }
+
+  .sbk-rail[data-open='true'] {
+    transform: translateX(0);
+    visibility: visible;
+  }
+
+  /* The collapse control has no meaning inside a drawer. */
+  .sbk-collapse-btn {
+    display: none;
+  }
+
+  /* The rail's own palette button neither — the top bar carries it. */
+  .sbk-rail .sbk-palette-btn {
+    display: none;
+  }
+
+  .sbk-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgb(0 0 0 / 0.45);
+  }
+}
+
+@media (min-width: 48rem) {
+  .sbk-topbar,
+  .sbk-backdrop {
+    display: none;
+  }
+}
+
+/* --- the command palette ------------------------------------------------------- */
+
+.sbk-palette-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: start center;
+  padding: 12vh var(--sb-space-4) var(--sb-space-4);
+}
+
+.sbk-palette-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.45);
+}
+
+.sbk-palette {
+  position: relative;
+  inline-size: min(34rem, 100%);
+  background: var(--sbx-panel);
+  border: 1px solid var(--sbx-rule);
+  border-radius: calc(var(--sbx-radius) + 4px);
+  box-shadow: var(--sbx-shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sbk-palette__input {
+  font: inherit;
+  color: var(--sbx-ink);
+  background: transparent;
+  border: 0;
+  border-block-end: 1px solid var(--sbx-hairline);
+  padding: var(--sb-space-4);
+  inline-size: 100%;
+}
+
+.sbk-palette__input:focus-visible {
+  outline: none;
+  border-block-end-color: var(--sbx-accent);
+}
+
+.sbk-palette__list {
+  list-style: none;
+  margin: 0;
+  padding: var(--sb-space-2);
+  max-block-size: 50vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sbk-palette__item {
+  font: inherit;
+  display: flex;
+  align-items: center;
+  gap: var(--sb-space-3);
+  inline-size: 100%;
+  text-align: start;
+  cursor: pointer;
+  background: transparent;
+  color: var(--sbx-ink);
+  border: 0;
+  border-radius: var(--sbx-radius);
+  padding: var(--sb-space-2) var(--sb-space-3);
+}
+
+.sbk-palette__item:hover,
+.sbk-palette__item:focus-visible {
+  background: color-mix(in srgb, var(--sbx-accent) 10%, transparent);
+}
+
+.sbk-palette__item--search {
+  color: var(--sbx-ink-soft);
+}
+
+.sbk-palette__query {
+  font-weight: 700;
+  color: var(--sbx-ink);
+}
+
+.sbk-palette__empty {
+  color: var(--sbx-ink-faint);
+  padding: var(--sb-space-3);
+  text-align: center;
+}
+
+/* --- the template look-cards ---------------------------------------------------- */
+
+/*
+ * The card grid both template pickers render — the merchant's appearance studio (11.D) and the
+ * admin's per-account and onboarding pickers (11.G): one component, one class set, on the
+ * bridge. A card IS the radio: the input stays in the tree for the form and the keyboard,
+ * visually hidden the accessible way (clip, not display:none — display:none leaves tab order).
+ */
+.sbk-look-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  margin-block-end: 16px;
+}
+
+.sbk-look-pick {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--sbx-rule);
+  border-radius: calc(var(--sbx-radius) + 4px);
+  padding: 12px;
+  background: var(--sbx-panel);
+  cursor: pointer;
+}
+
+.sbk-look-pick input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sbk-look-pick:hover {
+  border-color: var(--sbx-accent);
+}
+
+.sbk-look-pick:has(input:checked) {
+  border-color: var(--sbx-accent);
+  box-shadow: 0 0 0 1px var(--sbx-accent);
+}
+
+.sbk-look-pick:has(input:focus-visible) {
+  outline: 3px solid var(--sbx-accent);
+  outline-offset: 2px;
+}
+
+.sbk-look-pick__name {
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sbk-look-pick__desc {
+  color: var(--sbx-ink-soft);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.sbk-look-pick__dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.sbk-look-pick__dot {
+  inline-size: 16px;
+  block-size: 16px;
+  border-radius: 999px;
+  border: 1px solid var(--sbx-rule);
+}
+
+/*
+ * The structural preview (`_components/kit/template-preview.tsx`).
+ *
+ * The three colour dots survive on the admin cards because an operator on a call reads a palette
+ * faster than a wireframe, but the dots alone could never separate «ديوان» from «دار» — both warm,
+ * both light, different grid and different mask. The thumbnail carries the structure.
+ *
+ * It bleeds to the card's inline edges and sits above the padding, so the card reads as a screen
+ * with a caption rather than as a box with a picture in it. `overflow: hidden` on the card clips
+ * the SVG to the top corners; the SVG inherits the radius so it does not fight the clip.
+ */
+.sbk-look-pick {
+  overflow: hidden;
+  padding-block-start: 0;
+}
+
+.sbk-look-pick__shot {
+  display: block;
+  margin-inline: -12px;
+  margin-block-end: 4px;
+  border-block-end: 1px solid var(--sbx-rule);
+  background: var(--sbx-panel);
+}
+
+/*
+ * A LOCKED card — a template the plan does not include.
+ *
+ * Deliberately NOT `opacity: .5` over the whole card. A wash that dims the preview defeats the
+ * only reason the card is rendered at all: the merchant is meant to see what they would get. So
+ * the preview keeps full contrast and only the CHROME retreats — dashed rule, muted name, no
+ * hover, no pointer. The upgrade tag next to the name does the talking.
+ *
+ * It is a `<span>`, not a disabled input: a disabled control is skipped by the tab order and
+ * announces nothing, which would leave a keyboard user with a silent gap exactly where the
+ * explanation is.
+ */
+.sbk-look-pick--locked {
+  border-style: dashed;
+  cursor: default;
+}
+
+.sbk-look-pick--locked:hover {
+  border-color: var(--sbx-rule);
+}
+
+.sbk-look-pick--locked .sbk-look-pick__name,
+.sbk-look-pick--locked .sbk-look-pick__desc {
+  color: var(--sbx-ink-soft);
+}
+
+/* --- empty states with an action ---------------------------------------------- */
+
+.sbk-empty-action {
+  margin-block-start: var(--sb-space-3);
+  display: inline-flex;
+}
+
+/* --- the wide screen ----------------------------------------------------------- */
+
+/*
+ * A 1440px display was a 62rem column in an ocean of paper. The widening lives HERE, over both
+ * surfaces' wrap classes, because the breakpoint is the kit's — the surface files keep their
+ * base measure.
+ */
+@media (min-width: 90rem) {
+  .sbd-wrap {
+    max-width: 76rem;
+  }
+
+  .sba-main {
+    max-width: 90rem;
+  }
+}

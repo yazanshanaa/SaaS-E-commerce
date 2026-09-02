@@ -1,0 +1,210 @@
+/*
+ * موعد — salons, clinics, workshops, tutors (Phase 11, Track 11.E).
+ *
+ * Personality: a calm reception. Misted white, a teal that books, plum as the quiet second voice,
+ * and the arch as a doorway on every photograph — the shared mask, framed here in a thin border
+ * rather than دار's thick surface mat, because a clinic frames its licence and not its holiday
+ * photos. No heading mark at all (the ورشة restraint at the opposite temperature); `framed` panels
+ * hold prices and policies; the `printed` press makes the one action — booking — feel stamped.
+ *
+ * Against its neighbours: ورشة shares the face and the restraint — موعد is light, arched and
+ * printed where ورشة is slate, square and outlined. دار shares the arch and the press — موعد's
+ * ledger fold leads with facts where دار's split leads with a photograph.
+ */
+
+/* ------------------------------------------------------- chrome + heads -- */
+
+[data-template='mawid'] .sf-header {
+  border-block-end: 1px solid var(--t-border);
+  background: var(--t-surface);
+}
+
+/* A reception speaks quietly: the head is the title, a breath of space, nothing drawn. */
+[data-template='mawid'] .sf-block__head {
+  margin-block-end: var(--t-space-lg);
+}
+
+[data-template='mawid'] .sf-block__title {
+  color: var(--t-text);
+}
+
+/* --------------------------------------------------------- ledger hero --- */
+
+/*
+ * The reception desk. The facts pad renders as the appointment card: white rows, teal labels,
+ * the whole pad rounded and framed — the first thing the fold answers is «إمتى فاضيين وقدّيش».
+ */
+[data-template='mawid'] .sf-hero--ledger {
+  background: var(--t-surface);
+  border-block-end: 1px solid var(--t-border);
+  padding-block: var(--t-space-2xl);
+}
+
+[data-template='mawid'] .sf-hero__facts {
+  border: var(--t-rule-frame);
+  border-radius: var(--t-radius-md);
+  overflow: hidden;
+}
+
+[data-template='mawid'] .sf-hero__fact dt {
+  color: var(--t-link);
+  font-weight: var(--t-weight-display);
+}
+
+/* ----------------------------------------------------------- the cards -- */
+
+/*
+ * A service card is a name and a price — the overlay body in flow, under the arched photograph of
+ * the room or the result. The arch keeps دار's radius token but wears a hairline frame: a doorway
+ * drawn, not matted.
+ */
+[data-template='mawid'] .sf-card {
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-lg);
+  background: var(--t-surface);
+  box-shadow: var(--t-elev-card);
+}
+
+[data-template='mawid'] .sf-card:hover,
+[data-template='mawid'] .sf-cat:hover,
+[data-template='mawid'] .sf-index a:hover {
+  border-color: var(--t-primary);
+}
+
+[data-template='mawid'] .sf-card__media {
+  padding: var(--t-space-sm) var(--t-space-sm) 0;
+}
+
+[data-template='mawid'] .sf-card__media .sf-media {
+  border: 1px solid var(--t-border);
+  --sf-ratio: 4 / 5;
+}
+
+[data-template='mawid'] .sf-price {
+  color: var(--t-link);
+}
+
+/* «موعد» sells time: the badge reads as a session tag, soft plum on white. */
+[data-template='mawid'] .sf-badge {
+  background: var(--t-surface-alt);
+  color: var(--t-accent);
+  border: 1px solid var(--t-border);
+}
+
+/* ------------------------------------------------------ categories list -- */
+
+/* The department index is the price list's spine: ruled rows, counts in plum. */
+[data-template='mawid'] .sf-index {
+  border-radius: var(--t-radius-md);
+  overflow: hidden;
+  border: var(--t-rule-frame);
+}
+
+[data-template='mawid'] .sf-cat__count {
+  color: var(--t-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------- buttons -- */
+
+[data-template='mawid'] .sf-btn {
+  border-radius: var(--t-radius-pill);
+  padding-inline: var(--t-space-xl);
+}
+
+[data-template='mawid'] .sf-btn--ghost {
+  border-color: var(--t-border);
+  color: var(--t-link);
+  background: var(--t-surface);
+}
+
+/* -------------------------------------------------- panels, hours, stats -- */
+
+/* The glyphs in the reassurance panel stay line drawings in teal — clinical, not decorative. */
+[data-template='mawid'] .sf-trust__icon {
+  color: var(--t-link);
+}
+
+/*
+ * The hours are this template's most important block: a clinic's customer checks them before
+ * anything else. The framed pad, the teal open-now badge, and tabular figures so seven rows of
+ * times line up on the colon.
+ */
+[data-template='mawid'] .sf-hours {
+  background: var(--t-surface);
+  border: var(--t-rule-frame);
+  border-radius: var(--t-radius-md);
+  padding: var(--t-space-sm) var(--t-space-lg);
+  max-inline-size: 32rem;
+}
+
+[data-template='mawid'] .sf-hours dt {
+  color: var(--t-text);
+  font-weight: var(--t-weight-display);
+}
+
+[data-template='mawid'] .sf-hours dd {
+  color: var(--t-link);
+}
+
+[data-template='mawid'] .sf-stat {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+  padding: var(--t-space-lg);
+  text-align: center;
+  align-items: center;
+}
+
+[data-template='mawid'] .sf-stat__value {
+  color: var(--t-link);
+}
+
+[data-template='mawid'] .sf-quote {
+  border-radius: var(--t-radius-md);
+  border: 1px solid var(--t-border);
+  border-block-start: 3px solid var(--t-secondary);
+}
+
+[data-template='mawid'] .sf-offer {
+  border-radius: var(--t-radius-md);
+  border: var(--t-rule-frame);
+}
+
+/* ------------------------------------------------------- Phase 9 boards -- */
+
+/* The board is the establishing shot of the room: wide, calm, its caption on a clean plate below. */
+[data-template='mawid'] .sf-banner .sf-media {
+  border: 1px solid var(--t-border);
+}
+
+[data-template='mawid'] .sf-banner__copy {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-md);
+  margin-inline: var(--t-space-lg);
+  margin-block-start: calc(-1 * var(--t-space-md));
+  padding: var(--t-space-lg);
+  position: relative;
+}
+
+/* ------------------------------------------------------------ the form -- */
+
+[data-template='mawid'] .sf-checkout {
+  border-radius: var(--t-radius-md);
+  border: var(--t-rule-frame);
+  background: var(--t-surface);
+}
+
+[data-template='mawid'] .sf-input,
+[data-template='mawid'] .sf-textarea,
+[data-template='mawid'] .sf-select {
+  border-radius: var(--t-radius-md);
+  background: var(--t-bg);
+}
+
+/* -------------------------------------------------------------- footer -- */
+
+[data-template='mawid'] .sf-footer {
+  background: var(--t-surface-alt);
+}

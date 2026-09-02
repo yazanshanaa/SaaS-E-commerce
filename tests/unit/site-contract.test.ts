@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   AA_LARGE,
@@ -128,13 +130,41 @@ describe('resolveColors', () => {
 });
 
 describe('templates', () => {
-  it('ships exactly the three launch templates, with distinct fonts', () => {
-    expect(TEMPLATE_KEYS).toEqual(['diwan', 'neon-souq', 'warsheh']);
+  /**
+   * Phase 9 (Q21) added `bayt` and `raff` and kept the three launch keys, which is the whole point:
+   * `templates_allowed` pins a live tenant to a key, so a key is append-only and the first three may
+   * never move. The order is asserted, not just the set, because it is the order three pickers render.
+   *
+   * The three faces on disk are shared by five templates now, so this no longer asserts one font per
+   * template — `tests/unit/phase9-templates.test.ts` asserts the thing that actually matters instead:
+   * every family is declared exactly once across the bundle and every file it names is in
+   * `public/fonts/`. What stays here is that a font key is one of the vetted Arabic faces, since this
+   * file is the shared contract's own test.
+   */
+  it('ships the nine templates in a stable order, on vetted Arabic faces', () => {
+    expect(TEMPLATE_KEYS).toEqual([
+      'diwan',
+      'neon-souq',
+      'warsheh',
+      'bayt',
+      'raff',
+      // Phase 11 (Q27/Q31) appended «دار» and the three verticals. Appended, never inserted —
+      // `prisma/seed.ts` derives `Template.sortOrder` from `indexOf(key)`.
+      'aldar',
+      'matbakh',
+      'mawid',
+      'jihaz',
+    ]);
 
     const fonts = Object.values(TEMPLATES).map((t) => t.fontKey);
-    expect(new Set(fonts).size).toBe(3);
-    // CLAUDE.md design rules: never Inter / Poppins / Roboto.
-    expect(fonts).not.toContain('inter');
+    expect(fonts).toHaveLength(9);
+    // Four faces now: Rubik joined in Phase 11 (Q32), taken by «دار» and «جهاز».
+    expect(new Set(fonts).size).toBe(4);
+    for (const font of fonts) {
+      // CLAUDE.md design rules: Alexandria / IBM Plex Sans Arabic / Zain / Rubik, and never
+      // Inter / Poppins / Roboto.
+      expect(['zain', 'alexandria', 'ibm-plex-sans-arabic', 'rubik']).toContain(font);
+    }
   });
 
   it('enforces templates_allowed', () => {
@@ -148,6 +178,40 @@ describe('section config schemas', () => {
     for (const type of SECTION_TYPES) {
       expect(() => parseSectionConfig(type, {})).not.toThrow();
     }
+  });
+
+  /**
+   * Phase 9. `SECTION_TYPES` and the prisma `SectionType` enum are the SAME closed set in two
+   * languages, and nothing before this test made them prove it.
+   *
+   * The drift is silent in both directions and neither direction is theoretical. A type in the
+   * contract but not in the enum means `Section.type` refuses the insert — a merchant adds a block
+   * and gets an unexpected-error banner. A value in the enum but not in the contract means
+   * `loadTenantSource` filters the row out as unknown (`isSectionType`), so the block is stored,
+   * invisible, and un-deletable from a UI that cannot list it.
+   *
+   * Read out of `schema.prisma` rather than out of the generated client on purpose: the client is a
+   * build artefact and can be stale, which is exactly the condition this test has to survive to be
+   * worth having. `$Enums.SectionType` would have passed against a Phase 8 client all through
+   * Phase 9.
+   */
+  it('matches the prisma SectionType enum exactly, in both directions', () => {
+    const schema = readFileSync(
+      path.join(process.cwd(), 'prisma', 'schema.prisma'),
+      'utf8',
+    );
+
+    const block = /enum SectionType \{([\s\S]*?)\n\}/.exec(schema);
+    expect(block, 'enum SectionType not found in prisma/schema.prisma').not.toBeNull();
+
+    const fromPrisma = block![1]!
+      .split('\n')
+      .map((line) => line.replace(/\/\/.*$/, '').trim())
+      // `@@map` and any other attribute line is not a member.
+      .filter((line) => line.length > 0 && !line.startsWith('@'))
+      .sort();
+
+    expect(fromPrisma).toEqual([...SECTION_TYPES].sort());
   });
 
   it('applies defaults rather than demanding a full config', () => {

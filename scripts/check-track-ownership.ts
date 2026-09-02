@@ -97,6 +97,16 @@ const FORBIDDEN = [
   // ticks it at merge, from the branches it just reviewed.
   'TODO.md',
   'scripts/**',
+  /**
+   * Added in Phase 11, and it had been missing since Group A rather than being newly relevant.
+   *
+   * `src/server/tenancy` owns `SURFACE_ROOT`, `UNPREFIXED_PATHS` and `surfacePath()` — the map from a
+   * hostname to a route subtree, which every surface depends on and no track owns. A worktree adding
+   * one entry to `UNPREFIXED_PATHS` makes that path resolve on the storefront and the admin panel too,
+   * so a merchant-only route becomes reachable on every merchant's own domain. Nothing in the list
+   * below is more shared than this, and it was the one piece of shared routing the check could not see.
+   */
+  'src/server/tenancy/**',
 ];
 
 const OWNERSHIP: Record<string, readonly string[]> = {
@@ -155,6 +165,74 @@ const OWNERSHIP: Record<string, readonly string[]> = {
     'tests/**/b3-*.test.ts',
     'tests/**/b3-*.spec.ts',
   ],
+
+  /*
+    PHASE 11 — templates that look designed, dashboards that feel easy (docs/PHASE-11.md).
+
+    Track 11.0 is absent on purpose: it is main-session work by definition (shared contracts,
+    forbidden files, shared test suites), and a track entry for it would be a licence to do that
+    work from a worktree.
+
+    Order: 11.A -> (11.B | 11.C | 11.D | 11.H) -> 11.E -> 11.F -> 11.G.
+  */
+  '11a': [
+    // 11.A owns `storefront.css` OUTRIGHT so 11.C cannot collide with it — the two tracks were
+    // both specced against that file before this table existed, which is precisely the collision
+    // this script is for.
+    'src/templates/components/**',
+    'src/templates/sections/**',
+    'src/templates/storefront.css',
+    'src/templates/diwan/**',
+    'src/templates/neon-souq/**',
+    'src/templates/warsheh/**',
+    'src/templates/bayt/**',
+    'src/templates/raff/**',
+    'docs/decisions/11a.md',
+    'tests/**/11a-*.test.ts',
+    'tests/**/11a-*.spec.ts',
+  ],
+  '11b': ['src/templates/aldar/**', 'docs/decisions/11b.md', 'tests/**/11b-*.test.ts'],
+  // Palettes and ground blocks only. `tokens.ts` and `types.ts` are the CONTRACT and stayed in
+  // 11.0, because 11.A needs the signature tokens they emit and merges first.
+  '11c': ['docs/decisions/11c.md', 'tests/**/11c-*.test.ts', 'tests/**/11c-*.spec.ts'],
+  '11d': [
+    'src/app/dashboard/preview/**',
+    'src/app/dashboard/appearance/**',
+    'src/app/dashboard/_components/color-editor.tsx',
+    'messages/ar/appearance.json',
+    'docs/decisions/11d.md',
+    'tests/**/11d-*.test.ts',
+    'tests/**/11d-*.spec.ts',
+  ],
+  '11e': [
+    'src/templates/matbakh/**',
+    'src/templates/mawid/**',
+    'src/templates/jihaz/**',
+    'docs/decisions/11e.md',
+    'tests/**/11e-*.test.ts',
+  ],
+  '11f': [
+    'src/app/_components/kit/**',
+    'src/app/kit.css',
+    'src/app/dashboard/**',
+    'messages/ar/dashboard.json',
+    'docs/decisions/11f.md',
+    'tests/**/11f-*.test.ts',
+    'tests/**/11f-*.spec.ts',
+  ],
+  '11g': [
+    'src/app/admin/**',
+    'messages/ar/admin.json',
+    'docs/decisions/11g.md',
+    'tests/**/11g-*.test.ts',
+    'tests/**/11g-*.spec.ts',
+  ],
+  '11h': [
+    'src/app/dashboard/billing/**',
+    'docs/decisions/11h.md',
+    'tests/**/11h-*.test.ts',
+    'tests/**/11h-*.spec.ts',
+  ],
 };
 
 /**
@@ -169,6 +247,20 @@ const RESERVED_WITHIN: Record<string, readonly string[]> = {
   // session for the same reason src/server/demo/types.ts is: both tracks code to it literally.
   b1: ['src/server/billing/demo-content.ts'],
   b3: ['src/server/demo/types.ts', 'src/server/demo/placeholder.ts', 'src/server/demo/packs/**'],
+
+  /*
+    PHASE 11. The 11.D / 11.F seam, and it is the reason 11.D merges first: 11.F owns
+    `src/app/dashboard/**` wholesale, but three of those paths are the live preview, and a chrome
+    refresh restyling a `<select>` that 11.D is about to delete is wasted work in both directions.
+  */
+  '11f': [
+    'src/app/dashboard/preview/**',
+    'src/app/dashboard/appearance/**',
+    'src/app/dashboard/_components/color-editor.tsx',
+    'src/app/dashboard/billing/**',
+  ],
+  // 11.G inherits A1's surface, and the same two carve-outs inside it still belong to B1 and B3.
+  '11g': ['src/app/admin/demos/**', 'src/app/admin/lifecycle/**'],
 };
 
 // -----------------------------------------------------------------------------

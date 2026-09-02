@@ -31,6 +31,10 @@ blob-report/
 # passed its gate on files no clone would have had.
 /storage/
 .tmp/
+# Every embedded-postgres data directory, present and future. `.pgdata-dev/` (scripts/dev-native.ts)
+# was missing from this list — a complete database of every tenant's rows, one `git add .` away
+# from a public repository. Caught in the 2026-08-21 security review; the glob closes the class.
+.pgdata*/
 .pgdata/
 .pgdata-e2e/
 seed-assets/**/*.jpg
@@ -47,3 +51,12 @@ pnpm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local machine debris that shares this directory and is not part of the platform.
+# `*.log` above already covers agent-report.log and the gate logs; these are the rest, named
+# because the first `git add -A` after eighteen uncommitted days would otherwise have swept a
+# folder of marketing video renders and three crash-diagnosis notes into the repository.
+/itqan-reel-queenstyle/
+/bsod-evidence.txt
+/restart-diagnosis.txt
+/wsl-check.txt

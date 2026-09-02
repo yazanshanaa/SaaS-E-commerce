@@ -13,22 +13,41 @@ import {
 } from '@/shared/site-contract';
 import {
   allTemplates,
+  counterpartGround,
   deriveColorTokens,
   fontUrl,
   getTemplate,
+  isDarkColor,
   readableOn,
   templateCssVars,
+  templateThemeCss,
   TEMPLATE_IMPLEMENTATIONS,
 } from '@/templates';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
+const read = (file: string) => ({ file, source: readFileSync(path.join(repoRoot, file), 'utf8') });
+
+/**
+ * STOREFRONT sheets. Held to the storefront's structural rules — `.sf-media` must reserve an
+ * aspect ratio, no forbidden font, no glassmorphism, no physical direction, no purple gradient.
+ */
 const CSS_FILES = [
   'src/templates/storefront.css',
   'src/templates/diwan/diwan.css',
   'src/templates/neon-souq/neon-souq.css',
   'src/templates/warsheh/warsheh.css',
-].map((file) => ({ file, source: readFileSync(path.join(repoRoot, file), 'utf8') }));
+].map(read);
+
+/**
+ * Sheets that carry `@font-face`, which since 2026-08-30 is `src/app/fonts.css` and nothing else.
+ *
+ * A SEPARATE list, and the separation is the lesson: adding the font sheet to `CSS_FILES` kept the
+ * swap/local-path check honest but also subjected a stylesheet of nothing but `@font-face` blocks
+ * to the storefront's LAYOUT rules, and it duly failed for having no `.sf-media` rule. One list
+ * per contract; a file belongs to the contract it actually implements.
+ */
+const FONT_SHEETS = ['src/app/fonts.css'].map(read);
 
 describe('the template registry', () => {
   it('implements every key the shared contract declares, and no others', () => {
@@ -56,12 +75,131 @@ describe('the template registry', () => {
     expect(getTemplate('warsheh').key).toBe('warsheh');
   });
 
-  it('gives the three templates genuinely different structure, not one layout in three palettes', () => {
+  /**
+   * The other direction from `phase9-templates.test.ts`'s distance check.
+   *
+   * That one stops the set from COLLAPSING into re-skins; this one stops it from collapsing the other
+   * way — a set where every template picked `split` would satisfy no distance rule but would still
+   * mean the axis had stopped doing anything. Phase 11's `imageMask` is held to the same bar as the
+   * three it joined.
+   */
+  it('gives the templates genuinely different structure, not one layout in nine palettes', () => {
     const layouts = allTemplates().map((template) => template.layout);
 
     expect(new Set(layouts.map((l) => l.hero)).size).toBe(3);
     expect(new Set(layouts.map((l) => l.productCard)).size).toBe(3);
     expect(new Set(layouts.map((l) => l.categories)).size).toBe(3);
+    expect(new Set(layouts.map((l) => l.imageMask)).size).toBe(3);
+  });
+
+  /**
+   * Every template says which scheme its designed ground is (Phase 11, Q34).
+   *
+   * Asserted against the ground itself rather than taken on trust: a template claiming `light` while
+   * shipping a near-black background would make `counterpartGround` build a dark counterpart for a
+   * page that was already dark, and the symptom — a storefront that looks identical in both schemes —
+   * is one nobody would think to file a bug about.
+   */
+  it('labels every designed ground with the scheme it actually is', () => {
+    for (const template of allTemplates()) {
+      const { scheme, background } = template.tokens.color;
+      expect(['light', 'dark'], `${template.key} scheme`).toContain(scheme);
+      expect(isDarkColor(background), `${template.key} says ${scheme} but ships ${background}`).toBe(
+        scheme === 'dark',
+      );
+    }
+  });
+
+  /**
+   * Dark mode, end to end — Phase 11, Q34.
+   *
+   * `prefers-color-scheme` and nothing else: no toggle, no cookie, no column, no migration. What that
+   * buys is that the whole feature is testable as a pure function of a template and a palette, which
+   * is what this asserts.
+   *
+   * The `.sf-root` half is not cosmetic. The tokens used to live in an inline `style` attribute, which
+   * beats every stylesheet rule — so a media-query override of `--t-bg` would have lost to the inline
+   * `--t-bg` it was overriding, silently, with no error and no symptom beyond a storefront that never
+   * went dark. Moving them into a rule of ordinary specificity IS the mechanism.
+   */
+  it('emits the counterpart palette under the OPPOSITE preference, and only there', () => {
+    for (const template of allTemplates()) {
+      const base = {
+        primary: template.tokens.color.primary,
+        secondary: template.tokens.color.secondary,
+        background: template.tokens.color.background,
+        surface: template.tokens.color.surface,
+        text: template.tokens.color.text,
+      };
+
+      const css = templateThemeCss(template, base);
+      expect(css, `${template.key} base rule`).toContain('.sf-root{');
+      expect(css, `${template.key} emits --t-bg`).toContain('--t-bg:');
+
+      /**
+       * A dark-designed template still refuses to build a DARK counterpart — asking it for one is
+       * asking for the ground it already has, and Phase 11 must change nothing for a
+       * dark-preference visitor on سوق نيون / ورشة / بيت / جهاز.
+       */
+      const target = template.tokens.color.scheme === 'dark' ? 'light' : 'dark';
+      expect(
+        counterpartGround(template, base, template.tokens.color.scheme),
+        `${template.key} must not counterpart its own scheme`,
+      ).toBeNull();
+
+      /**
+       * The OPPOSITE preference gets the hand-tuned counterpart (Track 11.C; the light grounds for
+       * the dark-designed templates were owner-approved 2026-08-28 — docs/DECISIONS.md). The
+       * designed ground stays on `:root`, so a visitor with no stated preference sees no change.
+       */
+      const counterpart = counterpartGround(template, base, target);
+      expect(counterpart, `${template.key} should gain a ${target} ground`).not.toBeNull();
+      expect(css, `${template.key} media block`).toContain(
+        `@media (prefers-color-scheme:${target})`,
+      );
+
+      // Every token the media block overrides must ALSO be declared on the base rule — a token whose
+      // only definition lives inside a media query is a hole in the page for anyone the query misses.
+      const media = css.slice(css.indexOf('@media'));
+      const baseRule = css.slice(0, css.indexOf('@media'));
+      // NON-capturing on the delimiter, or `property` is the brace rather than the token and the
+      // assertion quietly degrades to `toContain('{:')` — passing nothing and proving nothing.
+      for (const [, property] of media.matchAll(/(?:[;{])(--t-[a-z0-9-]+):/g)) {
+        expect(baseRule, `${template.key} declares ${property} only in the dark block`).toContain(
+          `${property}:`,
+        );
+      }
+
+      // The counterpart grounds are hand-tuned (Track 11.C), and hand-tuned or not they are never
+      // allowed to be inaccessible — the guard runs over them exactly as over the designed ones.
+      const counter = deriveColorTokens(base, counterpart!);
+      for (const surface of [counter.background, counter.surface, counter.surfaceAlt]) {
+        expect(
+          contrastRatio(counter.text, surface),
+          `${template.key} ${target} text on ${surface}`,
+        ).toBeGreaterThanOrEqual(AA_NORMAL);
+        expect(
+          contrastRatio(counter.textMuted, surface),
+          `${template.key} ${target} muted on ${surface}`,
+        ).toBeGreaterThanOrEqual(AA_NORMAL);
+        expect(
+          contrastRatio(counter.link, surface),
+          `${template.key} ${target} link on ${surface}`,
+        ).toBeGreaterThanOrEqual(AA_NORMAL);
+      }
+
+      /**
+       * Track 11.C's own bar: the counterpart is HAND-TUNED, not derived — its designed text ships
+       * unchanged through the guard, which is what "a measured palette" means mechanically. A
+       * `flipGround` fallback fails this, because a crude flip rarely lands on a text colour the
+       * guard leaves alone on all three surfaces by accident.
+       */
+      const hand = template.tokens.color.altGround;
+      expect(hand, `${template.key} has no hand-tuned altGround`).toBeTruthy();
+      expect(counter.text.toLowerCase(), `${template.key} altGround text was walked`).toBe(
+        hand!.text.toLowerCase(),
+      );
+    }
   });
 
   it('ships a COMPLETE token set per template — colours, type scale, spacing and radii', () => {
@@ -357,7 +495,7 @@ describe('self-hosted Arabic fonts', () => {
   });
 
   it('declares every family with font-display: swap and a local path', () => {
-    for (const { file, source } of CSS_FILES) {
+    for (const { file, source } of FONT_SHEETS) {
       for (const block of source.match(/@font-face\s*\{[^}]*\}/g) ?? []) {
         expect(block, `${file}: @font-face without swap`).toMatch(/font-display:\s*swap/);
         expect(block, `${file}: @font-face pointing off-origin`).not.toMatch(/url\(['"]?https?:/);

@@ -1,6 +1,12 @@
 import { TEMPLATE_KEYS, isTemplateKey, type TemplateKey } from '@/shared/site-contract';
+import { aldar } from './aldar/definition';
+import { bayt } from './bayt/definition';
 import { diwan } from './diwan/definition';
+import { jihaz } from './jihaz/definition';
+import { matbakh } from './matbakh/definition';
+import { mawid } from './mawid/definition';
 import { neonSouq } from './neon-souq/definition';
+import { raff } from './raff/definition';
 import { warsheh } from './warsheh/definition';
 import type { TemplateDefinition } from './types';
 
@@ -11,11 +17,23 @@ import type { TemplateDefinition } from './types';
  * and B2 render. `TEMPLATE_IMPLEMENTATIONS` is exhaustive by type: adding a key to the contract
  * without adding an implementation here is a typecheck failure, not a runtime 500 on a
  * merchant's storefront.
+ *
+ * A registered template also needs its stylesheet imported in `src/app/site/layout.tsx` — that is
+ * the one part of shipping a template this file cannot enforce, because a missing import is not a
+ * type error, it is an unstyled storefront. `tests/unit/phase9-templates.test.ts` asserts the
+ * layout imports one sheet per key for exactly that reason.
  */
 export const TEMPLATE_IMPLEMENTATIONS: Record<TemplateKey, TemplateDefinition> = {
   diwan,
   'neon-souq': neonSouq,
   warsheh,
+  bayt,
+  raff,
+  // Phase 11 (Q27/Q31): «دار» plus the three verticals. Appended in contract order.
+  aldar,
+  matbakh,
+  mawid,
+  jihaz,
 };
 
 /** The template every fallback lands on: the warm general-retail one, and `basic`'s default. */

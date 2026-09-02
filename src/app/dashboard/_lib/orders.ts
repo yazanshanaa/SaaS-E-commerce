@@ -83,6 +83,18 @@ export async function loadOrders(
   };
 }
 
+/**
+ * Whether the pre-cart trading history exists at all — the cart-on inbox renders its channel
+ * switch only when there is something behind the second tab. A count rather than a boolean so
+ * the page could surface it later; a `count` on `[tenantId, channel, status, placedAt]` is
+ * index-only either way.
+ */
+export async function countBuyNowOrders(ctx: MerchantContext): Promise<number> {
+  return ctx.db.order.count({
+    where: { tenantId: ctx.tenantId, channel: 'buy_now' },
+  });
+}
+
 export interface OrderDetailView {
   order: OrderView;
   /** The legal next moves, resolved from the state machine rather than hardcoded in the page. */

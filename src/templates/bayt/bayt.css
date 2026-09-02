@@ -1,0 +1,496 @@
+/*
+ * بيت — warm editorial.
+ *
+ * Personality: a room lit by one lamp. Deep warm brown, clay, warm stone. Large square-cornered
+ * photography, a display face used at a size that earns the name, and separation by air and a single
+ * stone hairline — never by a box and never by a shadow. There is no `box-shadow` and no `border-radius`
+ * on a picture anywhere in this file; the only round things in the template are its controls.
+ *
+ * WHAT IT IS FOR: a clothing or home-goods shop with a banner board, twenty items, and real
+ * photographs of them. See `definition.ts` for the shop, the type scale and the palette arithmetic.
+ *
+ * THE FOUR DEVICES, so a reviewer can check the file against its own intent:
+ *   1. FULL-BLEED PHOTOGRAPHY. The hero portrait and the banner board break out of `.sf-shell`'s
+ *      measure and run to the viewport edge; everything textual stays inside it. That contrast — a
+ *      picture with no margin beside text with a lot of it — is the entire editorial effect.
+ *   2. NO CARD. `.sf-card` has no background, no border and no padding: a product is a photograph
+ *      with two lines under it. The grid gap is the only separation.
+ *   3. THE STONE HAIRLINE. One 1px rule in the secondary colour does every division in the template —
+ *      section heads, the category index, the trust row, the hours.
+ *   4. UNDERLINED FIELDS. Inputs are a baseline rule rather than a box, which is what a form looks
+ *      like in print. The focus ring is untouched: `.sf-root .sf-input:focus-visible` in
+ *      `storefront.css` still paints a 2px outline, which is the one thing an underlined field must
+ *      not lose.
+ *
+ * NO `@font-face` HERE, DELIBERATELY. Alexandria is declared once, in `neon-souq.css`, and both files
+ * are in the same bundle on every storefront (`src/app/site/layout.tsx` plus the two `@import`s at the
+ * top of `storefront.css`). A second declaration of one family is a second path to keep in step with
+ * `public/fonts/`, and a family declared twice with one path stale is an invisible fallback to a
+ * system font — which is exactly the failure the self-hosting rule exists to prevent.
+ * `tests/unit/phase9-templates.test.ts` asserts every template's family is declared exactly once
+ * across the bundle, and that the file it points at is on disk.
+ */
+
+/* ------------------------------------------------------- chrome + heads -- */
+
+[data-template='bayt'] .sf-header {
+  border-block-end: 1px solid var(--t-secondary);
+  background: var(--t-bg);
+}
+
+[data-template='bayt'] .sf-header__inner {
+  padding-block: var(--t-space-lg);
+}
+
+/* The shop name is the masthead. It is the largest thing in the header by a wide margin, which is
+   what a magazine does with its own name — and it is why this template can carry a header with no
+   logo at all, which is the state every new account is in. */
+[data-template='bayt'] .sf-brand__name {
+  font-size: var(--t-text-xl);
+  letter-spacing: var(--t-tracking-display);
+}
+
+[data-template='bayt'] .sf-brand__tag {
+  letter-spacing: 0.06em;
+}
+
+[data-template='bayt'] .sf-catnav {
+  border-block-start-color: var(--t-secondary);
+}
+
+/*
+ * The section head is a stone rule with the title sitting ON it.
+ *
+ * A rule under a title is a divider; a rule under a title with the lead beneath the rule is a
+ * masthead. The `--t-space-xl` bottom margin is deliberate and large: this is the template that buys
+ * its hierarchy with space rather than with weight, because Arabic has no case to shift and Alexandria
+ * has only two weights on disk.
+ */
+[data-template='bayt'] .sf-block__head {
+  border-block-end: 1px solid var(--t-secondary);
+  padding-block-end: var(--t-space-md);
+  margin-block-end: var(--t-space-xl);
+}
+
+/*
+ * The shared heading-mark glyph is SUPPRESSED (Phase 11): بيت's `rule` mark is the stone hairline
+ * the head already closes with, and this file's own docblock rule stands — one hairline does every
+ * separation in the template. A second short rule stacked above the first would be the template's
+ * one ornament twice. Same reasoning as `neon-souq.css`, recorded in docs/DECISIONS.md.
+ */
+[data-template='bayt'] .sf-mark {
+  display: none;
+}
+
+[data-template='bayt'] .sf-block__title {
+  font-size: var(--t-text-2xl);
+  letter-spacing: var(--t-tracking-display);
+}
+
+[data-template='bayt'] .sf-block__lead {
+  max-inline-size: 52ch;
+}
+
+/* --------------------------------------------------------- photography --- */
+
+/*
+ * SQUARE CORNERS ON EVERY IMAGE.
+ *
+ * `.sf-media` rounds by `--t-radius-md` in the base, and this template's `md` is 4px — small, but a
+ * 4px round-over on a 500px photograph is the visual signature of a component library rather than of
+ * a shop. A photograph is a rectangle.
+ */
+[data-template='bayt'] .sf-media {
+  border-radius: 0;
+}
+
+/*
+ * THE FULL-BLEED BREAK-OUT, and the one block that gets it.
+ *
+ * `inline-size: 100vw` with `margin-inline: calc(50% - 50vw)` is the standard trick, and it is exact
+ * here rather than approximately right: `50%` resolves against the containing block, which for a
+ * direct child of `.sf-shell` is the shell's CONTENT box — so the shell's own `padding-inline` and
+ * the margin that centres it cancel algebraically at every breakpoint, with no second rule and no
+ * hardcoded padding value. `margin-inline` sets both edges, so nothing about it is direction-aware;
+ * the physical-property spelling of this hack is the commonest way a full-bleed element ends up
+ * shifted off-canvas in RTL.
+ *
+ * THE HERO PORTRAIT DELIBERATELY DOES NOT DO THIS, and the reason is worth recording because the
+ * rule looks like it should work: `.sf-hero__media` is a GRID ITEM of `.sf-hero__inner`, and a
+ * percentage margin on a grid item resolves against its grid AREA — 57% of the content width here,
+ * not the content width. The two terms then do not cancel, the image lands off-centre by a few
+ * hundred pixels and the document picks up a horizontal scrollbar. So the hero gets its scale from a
+ * wider column instead, which is the same editorial effect for none of the risk.
+ */
+[data-template='bayt'] .sf-block--banners .sf-carousel {
+  inline-size: 100vw;
+  max-inline-size: 100vw;
+  margin-inline: calc(50% - 50vw);
+}
+
+[data-template='bayt'] .sf-hero--split .sf-hero__inner {
+  /* Copy first, then the picture, and the picture is the larger column: the reverse of ديوان's
+     balance, because there the image illustrates the copy and here the copy captions the image. */
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: var(--t-space-xl);
+  align-items: center;
+}
+
+[data-template='bayt'] .sf-hero__title {
+  line-height: var(--t-line-tight);
+}
+
+[data-template='bayt'] .sf-hero__text {
+  font-size: var(--t-text-lg);
+  max-inline-size: 42ch;
+}
+
+/* ---------------------------------------------------- the card that is not -- */
+
+/*
+ * A product is a photograph with a name and a price under it. No border, no background, no shadow,
+ * no padding — the grid gap does the separating, and the picture's own edge is the card's edge.
+ */
+[data-template='bayt'] .sf-card {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+
+[data-template='bayt'] .sf-card__body {
+  padding: var(--t-space-md) 0 0;
+  gap: var(--t-space-xs);
+}
+
+/*
+ * 4:5 — the shape a garment is photographed in, and the one number in this file that is worth
+ * arguing about. It is set as `aspect-ratio` rather than as `--sf-ratio` because `product-card.tsx`
+ * passes no ratio at all, so either would work here; using the resolved property keeps this file
+ * consistent with the hero and the banner, where the inline custom property would win. See
+ * `neon-souq.css` for the bug that taught this.
+ */
+[data-template='bayt'] .sf-card__media .sf-media {
+  aspect-ratio: 4 / 5;
+}
+
+[data-template='bayt'] .sf-card__name {
+  font-size: var(--t-text-lg);
+  font-weight: var(--t-weight-body);
+  -webkit-line-clamp: 2;
+}
+
+/* The hover is on the NAME, not on the card: there is no card edge to change. An underline is also
+   the only hover this template can give that does not add a box to a design built on not having any. */
+[data-template='bayt'] .sf-card__link:hover .sf-card__name {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+[data-template='bayt'] .sf-price {
+  font-size: var(--t-text-base);
+  font-weight: var(--t-weight-body);
+  color: var(--t-accent);
+}
+
+/* Stone, hollow, square-ish: a badge here is a note in the margin, not a sticker. */
+[data-template='bayt'] .sf-badge {
+  background: transparent;
+  border: 1px solid var(--t-secondary);
+  color: var(--t-accent);
+  border-radius: var(--t-radius-sm);
+  letter-spacing: 0.04em;
+}
+
+/* The «خلص» modifier, restated at a specificity that survives the rule above — see the same note in
+   `warsheh.css`. It has to stay after it: the two tie at (0,2,0). */
+[data-template='bayt'] .sf-badge--off {
+  border-color: var(--t-border);
+  color: var(--t-text-muted);
+}
+
+[data-template='bayt'] .sf-btn {
+  border-radius: var(--t-radius-pill);
+  letter-spacing: 0.02em;
+  padding-inline: var(--t-space-xl);
+}
+
+[data-template='bayt'] .sf-btn--ghost {
+  border-color: var(--t-secondary);
+}
+
+/* ------------------------------------------------- the category index ---- */
+
+/*
+ * `categories: 'index'` — a typographic list, which is the second reason this template can carry a
+ * shop with no category photographs. Rules top and bottom, one between each pair, and the count in
+ * muted stone at the inline end; the whole row is the target.
+ */
+[data-template='bayt'] .sf-index {
+  border-block: 1px solid var(--t-secondary);
+  border-inline: 0;
+}
+
+[data-template='bayt'] .sf-index > li + li {
+  border-block-start: 1px solid var(--t-border);
+}
+
+[data-template='bayt'] .sf-index a {
+  background: transparent;
+  padding-block: var(--t-space-md);
+  padding-inline: 0;
+  font-size: var(--t-text-lg);
+}
+
+[data-template='bayt'] .sf-index a:hover {
+  color: var(--t-link);
+}
+
+/* ------------------------------------------------------- Phase 9: board -- */
+
+/*
+ * A 4:5 board, full-bleed, with the caption on a FLOATING INSET PLATE over the bottom of the
+ * photograph — inset from three edges rather than spanning the full width, which is what makes it a
+ * caption card rather than the scrim سوق نيون uses on the same block. The plate is opaque
+ * (`--t-bg`, the deepest brown in the palette), so the contrast of the text on it is a guarded
+ * token pair and owes nothing to what the merchant photographed.
+ */
+[data-template='bayt'] .sf-banner__copy {
+  position: absolute;
+  inset-inline: var(--t-space-xl);
+  inset-block-end: var(--t-space-xl);
+  background: var(--t-bg);
+  border: 1px solid var(--t-secondary);
+  padding: var(--t-space-lg) var(--t-space-xl);
+  gap: var(--t-space-sm);
+  /* A caption is not a column: past this width the plate would be a band, which is the other
+     template's device. */
+  max-inline-size: 34rem;
+}
+
+[data-template='bayt'] .sf-banner__title {
+  font-size: var(--t-text-xl);
+  letter-spacing: var(--t-tracking-display);
+}
+
+/*
+ * The board's own block loses its side padding, because the picture is full-bleed and the caption
+ * carries its own inset. The controls are pulled back inside the measure so they line up with the
+ * text of every other section rather than with the edge of the screen.
+ */
+[data-template='bayt'] .sf-block--banners .sf-carousel__controls {
+  max-inline-size: var(--t-measure);
+  margin-inline: auto;
+  padding-inline: var(--t-space-lg);
+}
+
+/* ------------------------------------------- Phase 9: trust, hours, stats -- */
+
+/*
+ * The trust row is CENTRED AND STACKED — glyph over title over subtitle — where every other template
+ * puts the glyph beside the words. That is the difference between a promise strip in a shop window
+ * and a feature list in an application, and it is the composition this template needs because its
+ * columns are wide and its type is large.
+ */
+[data-template='bayt'] .sf-trust {
+  gap: var(--t-space-xl);
+  border-block: 1px solid var(--t-secondary);
+  padding-block: var(--t-space-xl);
+}
+
+[data-template='bayt'] .sf-trust__item {
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--t-space-sm);
+}
+
+[data-template='bayt'] .sf-trust__icon {
+  color: var(--t-link);
+  margin-block-start: 0;
+}
+
+[data-template='bayt'] .sf-trust__copy {
+  align-items: center;
+  gap: var(--t-space-xs);
+}
+
+[data-template='bayt'] .sf-trust__title {
+  font-size: var(--t-text-lg);
+  font-weight: var(--t-weight-body);
+  letter-spacing: 0.02em;
+}
+
+/*
+ * The week in two columns on a wide screen. Seven rows in one narrow column beside 76rem of empty
+ * page is the shape that made this block look unfinished; `columns` splits it without any change to
+ * the markup, and `break-inside: avoid` keeps a day and its hours together at the fold between them.
+ *
+ * `display: block` IS LOAD-BEARING. `.sf-facts` makes this `<dl>` a grid, and multi-column layout
+ * does not apply to a grid container — `columns` on it is silently ignored, which is the kind of rule
+ * that looks right in a diff and does nothing on the page. Each ROW keeps its own `display: grid`
+ * from `.sf-facts div`, so the day/hours pair still lines up inside the column.
+ */
+[data-template='bayt'] .sf-hours {
+  display: block;
+  max-inline-size: 46rem;
+  columns: 2;
+  column-gap: var(--t-space-2xl);
+}
+
+[data-template='bayt'] .sf-hours > div {
+  break-inside: avoid;
+  padding-block: var(--t-space-sm);
+  border-block-end-color: var(--t-border);
+}
+
+/* The last row of a multi-column list is not the last row of a COLUMN, so the base's
+   `:last-child { border-block-end: 0 }` would leave one column ruled and the other not. */
+[data-template='bayt'] .sf-hours > div:last-child {
+  border-block-end: 1px solid var(--t-border);
+}
+
+/*
+ * The stats row is the loudest thing in the template after the photography: clay figures at display
+ * scale, a stone rule above and below, and enough air that three of them fill a screen. It is the
+ * editorial "by the numbers" panel.
+ */
+[data-template='bayt'] .sf-stats {
+  gap: var(--t-space-xl);
+  border-block: 1px solid var(--t-secondary);
+  padding-block: var(--t-space-xl);
+}
+
+[data-template='bayt'] .sf-stat {
+  align-items: center;
+  text-align: center;
+}
+
+[data-template='bayt'] .sf-stat__value {
+  color: var(--t-link);
+  font-size: var(--t-text-xl);
+  letter-spacing: var(--t-tracking-display);
+}
+
+[data-template='bayt'] .sf-stat__label {
+  letter-spacing: 0.06em;
+}
+
+/* --------------------------------------------- Phase 9: the search field -- */
+
+/*
+ * An UNDERLINED field, not a box — the print-form idiom, and the reason this template's search reads
+ * as part of the page rather than as a widget dropped into it.
+ *
+ * Two things are deliberately not removed: the visible `<label>` (a placeholder is not a label, and
+ * an underlined field with no label is the worst offender in that category), and the focus outline
+ * from `storefront.css`, which is what keeps this AA — an underline that thickens is not a visible
+ * focus indicator on its own.
+ */
+[data-template='bayt'] .sf-search__input {
+  background: transparent;
+  border: 0;
+  border-block-end: 1px solid var(--t-border);
+  border-radius: 0;
+  padding-inline: 0;
+  font-size: var(--t-text-lg);
+}
+
+[data-template='bayt'] .sf-search__label {
+  letter-spacing: 0.06em;
+  font-size: var(--t-text-sm);
+  color: var(--t-text-muted);
+}
+
+/* ---------------------------------------------- Phase 9: the three grids -- */
+
+/*
+ * «وصل حديثاً» and «الأكثر مبيعاً» run at three across rather than the template's two, and
+ * «منتجات إلها علاقة» keeps whatever the section chose.
+ *
+ * Two columns is right for the main catalogue grid, where the photograph is the page. A secondary
+ * strip of new arrivals at the same scale competes with it, and the block is a footnote to the
+ * products above it — so it gets the same treatment at a smaller size. The anchor prefix is the hook
+ * because `SectionBlock` gives these types no modifier class; `diwan.css` records why that is safe.
+ */
+[data-template='bayt'] .sf-block[id^='new'] .sf-grid,
+[data-template='bayt'] .sf-block[id^='bestsellers'] .sf-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--t-space-lg);
+}
+
+/* ------------------------------------------------------------- the form -- */
+
+/*
+ * The checkout is the one place the template accepts a box: a form a customer types their address
+ * into needs a visible container, and «إتمام الطلب» is not the moment to be austere. It is a stone
+ * hairline on the page background rather than a filled panel, so it is still this template's box and
+ * not a generic one.
+ */
+[data-template='bayt'] .sf-checkout {
+  border: 1px solid var(--t-secondary);
+  border-radius: var(--t-radius-md);
+  background: var(--t-bg);
+  padding: var(--t-space-xl);
+}
+
+[data-template='bayt'] .sf-input,
+[data-template='bayt'] .sf-textarea,
+[data-template='bayt'] .sf-select {
+  background: var(--t-surface);
+  border-color: var(--t-border);
+  border-radius: var(--t-radius-sm);
+}
+
+[data-template='bayt'] .sf-footer {
+  background: var(--t-bg);
+  border-block-start: 1px solid var(--t-secondary);
+}
+
+/* ---------------------------------------------------------- responsive --- */
+
+@media (max-width: 60rem) {
+  /*
+   * The one-column collapse has to be REPEATED here, and this is the trap every namespaced template
+   * sheet falls into exactly once.
+   *
+   * `storefront.css` collapses the split hero at this width with `.sf-hero--split .sf-hero__inner`,
+   * which scores (0,2,0). The 0.8/1.2 rule above carries the template's attribute selector and scores
+   * (0,3,0) — so it wins at EVERY width, media query or not, and the base collapse never applies. A
+   * template that overrides a responsive base rule owns that rule's breakpoints too.
+   */
+  [data-template='bayt'] .sf-hero--split .sf-hero__inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  [data-template='bayt'] .sf-hours {
+    columns: 1;
+  }
+
+  [data-template='bayt'] .sf-hours > div:last-child {
+    border-block-end: 0;
+  }
+}
+
+@media (max-width: 40rem) {
+  /*
+   * The banner caption comes off the picture, for the reason `neon-souq.css` gives at the same
+   * breakpoint: a 4:5 image at 100vw is taller than a phone is wide, and an inset plate with a
+   * 44px button in it would cover the half of it the merchant framed.
+   */
+  [data-template='bayt'] .sf-banner__copy {
+    position: static;
+    inset-inline: auto;
+    max-inline-size: none;
+    background: transparent;
+    border: 0;
+    padding: var(--t-space-md) var(--t-space-lg) 0;
+  }
+
+  /* Three across at 360px is a 100px-wide photograph. The base grid's two columns is the floor. */
+  [data-template='bayt'] .sf-block[id^='new'] .sf-grid,
+  [data-template='bayt'] .sf-block[id^='bestsellers'] .sf-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

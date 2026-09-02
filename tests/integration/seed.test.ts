@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { authDb } from '@/server/db';
 import { can, canEdit, invalidateEntitlements } from '@/server/entitlements';
+import { CAPABILITY_KEYS, FEATURE_KEYS } from '@/shared/features';
+import { TEMPLATE_KEYS } from '@/shared/site-contract';
 import { resolveTenantByHostname, isDemoTokenValid } from '@/server/tenancy';
 import { adminDb, resetTenants } from '../helpers/factories';
 
@@ -83,18 +85,32 @@ describe('the seeded plans', () => {
     }
   });
 
+  /*
+   * COUNTED AGAINST THE REGISTRY, not against a number typed here.
+   *
+   * These two assertions used to read `toBe(19)` and `toBe(7)`, with a comment deriving them by
+   * hand ("17 Phase 1-7 keys + cart + coupons"). Phases 9 and 11 took the matrix to 32 features,
+   * and the test failed for being out of date rather than for finding anything — which is the
+   * failure mode that teaches people to ignore a red suite.
+   *
+   * What this test is actually for is "every plan carries the WHOLE matrix, none is missing a
+   * row", and that is expressible without a literal. Add a feature key and this passes or fails on
+   * whether the seed writes it, which is the question.
+   */
   it('seeds the full feature matrix on every plan', async () => {
     const plans = await adminDb().plan.findMany({ include: { features: true, capabilities: true } });
 
+    expect(plans.length, 'no plans were seeded at all').toBeGreaterThan(0);
     for (const plan of plans) {
-      expect(plan.features.length, `${plan.key} features`).toBe(17);
-      expect(plan.capabilities.length, `${plan.key} capabilities`).toBe(6);
+      expect(plan.features.length, `${plan.key} features`).toBe(FEATURE_KEYS.length);
+      expect(plan.capabilities.length, `${plan.key} capabilities`).toBe(CAPABILITY_KEYS.length);
     }
   });
 
-  it('seeds the three launch templates', async () => {
+  it('seeds every template the contract declares', async () => {
     const templates = await adminDb().template.findMany({});
-    expect(templates.map((t) => t.key).sort()).toEqual(['diwan', 'neon-souq', 'warsheh']);
+    // Was pinned to the three launch keys; Phase 9 added two and Phase 11 four more.
+    expect(templates.map((t) => t.key).sort()).toEqual([...TEMPLATE_KEYS].sort());
   });
 });
 
@@ -184,7 +200,9 @@ describe('the seeded demo tenant', () => {
 
     expect(await can(tenant.id, 'products_limit')).toBe(1000);
     expect(await can(tenant.id, 'change_requests_per_month')).toBe(0);
-    expect(await can(tenant.id, 'templates_allowed')).toEqual(['diwan', 'neon-souq', 'warsheh']);
+    // The demo plan carries ALL templates (`prisma/seed.ts` spells this `ALL_TEMPLATES`), so this
+    // follows the contract rather than restating the three keys that existed when it was written.
+    expect(await can(tenant.id, 'templates_allowed')).toEqual([...TEMPLATE_KEYS]);
     expect(await can(tenant.id, 'color_mode')).toBe('custom');
     expect(await can(tenant.id, 'staff_accounts')).toBe(true);
     expect(await can(tenant.id, 'custom_domain')).toBe(false);

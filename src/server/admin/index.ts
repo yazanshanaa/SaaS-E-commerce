@@ -109,6 +109,7 @@ export {
   saveSocialLinks,
   seedDefaultSections,
   setSectionEnabled,
+  setSiteAppearance,
   type SiteContent,
 } from './site-content';
 
@@ -190,3 +191,32 @@ export {
   type DsrFilters,
   type DsrRow,
 } from '@/server/dsr';
+
+/**
+ * Phase 10 — the owner's backup surfaces (Q23, Q24, Q26).
+ *
+ * `./backups` OBSERVES the platform's own `pg_dump` sidecar and can ask it to run; it never takes a
+ * backup itself, because the tools and the write credentials deliberately live in one container the
+ * internet cannot reach. `@/server/tenant-backup` is the other half — one shop's data as one
+ * restorable artifact — and is re-exported here so the admin screens keep importing from one
+ * barrel, exactly as the DSR functions above do.
+ */
+export {
+  downloadBackupObject,
+  loadBackups,
+  requestBackupRun,
+  type BackupDownload,
+  type BackupManifest,
+  type BackupRound,
+  type BackupSidecarStatus,
+  type BackupsView,
+} from './backups';
+export {
+  createTenantBackup,
+  deleteTenantBackup,
+  downloadTenantBackup,
+  listTenantBackups,
+  requestStandaloneExport,
+  restoreTenantBackup,
+  type TenantBackupRow,
+} from '@/server/tenant-backup';

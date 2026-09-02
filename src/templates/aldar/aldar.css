@@ -1,0 +1,320 @@
+/*
+ * دار — the neighbourhood shop that reassures before it sells (Phase 11, Track 11.B).
+ *
+ * Personality: a home, not a stall. Sand paper, terracotta only where you can act, sage drawing the
+ * quiet second voice, and the arch on every photograph with an 8px surface frame — a picture hung on
+ * a wall, not printed on the page. The radii are the identity (26 / 14 / pill), the squiggle under
+ * every section title is the handwriting, and the printed button is the press you can feel. All
+ * three ornaments arrive from the SHARED signature layer (`storefront.css`, selected by the shell's
+ * `data-*` attributes) — this file composes them and adds nothing privately, which is the whole
+ * argument of Track 11.A.
+ *
+ * Structure against its neighbours: ديوان shares the split hero and the arch — دار answers with the
+ * rounded soft-block panel, the printed press and photographs framed in SURFACE rather than ruled in
+ * BORDER. بيت shares the overlay card — دار's body sits on a rounded plate under the photo where
+ * بيت's sits flush on square film. Neither reads as the other at a glance, which 11.B's gate
+ * measures with a screenshot diff.
+ */
+
+/*
+ * Rubik (Q32) — the fourth face, declared HERE and nowhere else: the declared-once rule in
+ * `tests/unit/phase9-templates.test.ts` walks every sheet in the bundle, and جهاز deliberately
+ * borrows this declaration the way بيت borrows Alexandria's. Arabic subset only; the woff2 pair is
+ * fetched by `scripts/fetch-rubik.mjs` and each file must stay under 120,000 bytes.
+ */
+/*
+ * Rubik's `@font-face` pair moved to `src/app/fonts.css` (imported by the root layout).
+ * It still requires the one-time `node scripts/fetch-rubik.mjs` — the woff2 pair is not
+ * committed, and until it is on disk both «دار» and «جهاز» render in a system fallback.
+ */
+
+/* ------------------------------------------------------- chrome + heads -- */
+
+[data-template='aldar'] .sf-header {
+  border-block-end: 0;
+  background: var(--t-bg);
+  /* The header floats on air, not on a rule: the first hairline a visitor sees is the hem under
+     the first section title, which keeps the top of the page as soft as the brief asks. */
+  padding-block-start: var(--t-space-xs);
+}
+
+[data-template='aldar'] .sf-nav a {
+  border-block-end: 0;
+  border-radius: var(--t-radius-pill);
+  padding-inline: var(--t-space-md);
+  padding-block: var(--t-space-xs);
+}
+
+[data-template='aldar'] .sf-nav a:hover,
+[data-template='aldar'] .sf-nav a[aria-current='page'] {
+  background: var(--t-surface-alt);
+}
+
+[data-template='aldar'] .sf-catnav {
+  border-block-start: 0;
+}
+
+[data-template='aldar'] .sf-catnav a {
+  border-block-end: 0;
+  border-radius: var(--t-radius-pill);
+  padding-inline: var(--t-space-md);
+  border: 1px solid var(--t-border);
+}
+
+[data-template='aldar'] .sf-catnav a:hover,
+[data-template='aldar'] .sf-catnav a[aria-current='page'] {
+  background: var(--t-surface);
+  border-color: var(--t-secondary);
+}
+
+/* The head is air + the squiggle: no border, generous room, the mark doing the drawing. */
+[data-template='aldar'] .sf-block__head {
+  margin-block-end: var(--t-space-xl);
+}
+
+/* ----------------------------------------------------------- the arches -- */
+
+/*
+ * The 8px SURFACE frame — a photograph hung on the wall. The shared `[data-mask='arch']` rule
+ * already cuts the half-circle from `--t-media-radius`; this adds the mat around it and the
+ * template's card shadow under it. Every image takes it: cards, tiles, gallery, the boards.
+ */
+[data-template='aldar'] .sf-media {
+  border: 8px solid var(--t-surface);
+  box-shadow: var(--t-elev-card);
+}
+
+/* ----------------------------------------------------------------- hero -- */
+
+[data-template='aldar'] .sf-hero__inner {
+  position: relative;
+  padding-block: var(--t-space-xl);
+}
+
+/*
+ * The sage circle behind the copy — the brief's one piece of scenery. A pseudo-element disc in the
+ * SECOND voice at low opacity, sitting behind the text and in front of the page; it is decoration,
+ * carries nothing, and is clipped by nothing because the hero is the one block with air to spare.
+ * Opacity on a solid token, never a translucent hex and never a gradient.
+ */
+[data-template='aldar'] .sf-hero--split .sf-hero__copy {
+  position: relative;
+}
+
+[data-template='aldar'] .sf-hero--split .sf-hero__copy::before {
+  content: '';
+  position: absolute;
+  inset-block-start: -12%;
+  inset-inline-start: -8%;
+  inline-size: 22rem;
+  max-inline-size: 80%;
+  aspect-ratio: 1;
+  border-radius: var(--t-radius-pill);
+  background: var(--t-secondary);
+  opacity: 0.12;
+  pointer-events: none;
+}
+
+[data-template='aldar'] .sf-hero--split .sf-hero__copy > * {
+  position: relative;
+}
+
+[data-template='aldar'] .sf-hero__text {
+  font-size: var(--t-text-lg);
+}
+
+/* -------------------------------------------------------------- buttons -- */
+
+/*
+ * Everything you can press is a pill, and the primary ones are PRINTED — the solid 6px offset
+ * shadow and the half-depth press both arrive from the shared layer (`data-button='printed'`).
+ */
+[data-template='aldar'] .sf-btn {
+  border-radius: var(--t-radius-pill);
+  padding-inline: var(--t-space-xl);
+}
+
+[data-template='aldar'] .sf-btn--ghost {
+  border-color: var(--t-secondary);
+  color: var(--t-accent);
+  background: var(--t-surface);
+}
+
+/* ---------------------------------------------------------------- cards -- */
+
+[data-template='aldar'] .sf-card {
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-lg);
+  background: var(--t-surface);
+  /* The media already casts the card shadow from inside its frame; twice would be a smudge. */
+  box-shadow: none;
+}
+
+[data-template='aldar'] .sf-card:hover,
+[data-template='aldar'] .sf-cat:hover {
+  border-color: var(--t-secondary);
+}
+
+/* The framed photograph floats INSIDE the card on the sand tint, not edge to edge. */
+[data-template='aldar'] .sf-card__media {
+  padding: var(--t-space-md) var(--t-space-md) 0;
+}
+
+[data-template='aldar'] .sf-card__media .sf-media {
+  --sf-ratio: 4 / 5;
+}
+
+/* The overlay body in flow, on its plate: name, then the price as the warm answer. */
+[data-template='aldar'] .sf-card__body {
+  gap: var(--t-space-xs);
+  padding: var(--t-space-md) var(--t-space-lg) var(--t-space-lg);
+}
+
+[data-template='aldar'] .sf-price {
+  color: var(--t-link);
+}
+
+[data-template='aldar'] .sf-badge {
+  border: 1px solid var(--t-border);
+  background: var(--t-surface-alt);
+  color: var(--t-text);
+}
+
+/* ------------------------------------------------------ categories rail -- */
+
+[data-template='aldar'] .sf-cat {
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-lg);
+}
+
+[data-template='aldar'] .sf-cat .sf-media {
+  border-width: 6px;
+  --sf-ratio: 1 / 1;
+}
+
+[data-template='aldar'] .sf-cat__label {
+  justify-content: center;
+  font-weight: var(--t-weight-display);
+}
+
+/* -------------------------------------------------- panels, trust, hours -- */
+
+/*
+ * The reassurance strip: ONE soft block (shared `data-panel='soft-block'`) holding three lines of
+ * policy. The glyphs sit in sage discs — the only filled circles in the template beside the hero's
+ * scenery, so the eye reads them as one family. Items carry no border and no background of their
+ * own: three floating feature cards is the forbidden pattern, and the panel is the guard against it.
+ */
+[data-template='aldar'] .sf-trust__icon {
+  background: var(--t-secondary);
+  color: var(--t-on-secondary);
+  border-radius: var(--t-radius-pill);
+  box-sizing: content-box;
+  padding: 10px;
+  margin-block-start: 0;
+}
+
+[data-template='aldar'] .sf-trust__item {
+  align-items: center;
+}
+
+[data-template='aldar'] .sf-hours {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-lg);
+  padding: var(--t-space-sm) var(--t-space-lg);
+  max-inline-size: 32rem;
+}
+
+[data-template='aldar'] .sf-stat {
+  background: var(--t-surface-alt);
+  border-radius: var(--t-radius-lg);
+  padding: var(--t-space-lg);
+  text-align: center;
+  align-items: center;
+}
+
+[data-template='aldar'] .sf-stat__value {
+  color: var(--t-link);
+}
+
+[data-template='aldar'] .sf-quote {
+  border-radius: var(--t-radius-lg);
+  border: 1px solid var(--t-border);
+  border-inline-start: 6px solid var(--t-secondary);
+}
+
+[data-template='aldar'] .sf-offer {
+  border-radius: var(--t-radius-lg);
+  border: 1px solid var(--t-secondary);
+}
+
+/* ------------------------------------------------------- Phase 9 boards -- */
+
+/* The board keeps the arch and the frame; its caption sits under it on a soft plate. */
+[data-template='aldar'] .sf-banner__copy {
+  background: var(--t-surface-alt);
+  border-radius: var(--t-radius-lg);
+  margin-inline: var(--t-space-lg);
+  margin-block-start: calc(-1 * var(--t-space-lg));
+  padding: var(--t-space-lg);
+  position: relative;
+}
+
+[data-template='aldar'] .sf-carousel__controls {
+  justify-content: center;
+}
+
+/* ------------------------------------------------------------ the form -- */
+
+[data-template='aldar'] .sf-checkout {
+  border-radius: var(--t-radius-lg);
+  border: 1px solid var(--t-secondary);
+  background: var(--t-surface);
+}
+
+[data-template='aldar'] .sf-input,
+[data-template='aldar'] .sf-textarea,
+[data-template='aldar'] .sf-select {
+  border-radius: var(--t-radius-md);
+  background: var(--t-bg);
+}
+
+[data-template='aldar'] .sf-search__input {
+  border-radius: var(--t-radius-pill);
+  background: var(--t-surface);
+  padding-inline: var(--t-space-lg);
+}
+
+/* -------------------------------------------------------------- footer -- */
+
+[data-template='aldar'] .sf-footer {
+  background: var(--t-surface-alt);
+  border-block-start: 0;
+}
+
+[data-template='aldar'] .sf-social a {
+  background: var(--t-surface);
+  border-color: var(--t-border);
+}
+
+/* ---------------------------------------------------------- responsive -- */
+
+@media (max-width: 60rem) {
+  /*
+   * The brief's one layout demand: on a phone the PICTURE leads and the copy follows — the
+   * photograph sells, not the sentence. Visual order only; the DOM keeps copy first, and there is
+   * nothing focusable inside the media box, so no tab order moves.
+   */
+  [data-template='aldar'] .sf-hero--split .sf-hero__inner {
+    gap: var(--t-space-lg);
+  }
+
+  [data-template='aldar'] .sf-hero--split .sf-hero__media {
+    order: -1;
+  }
+
+  [data-template='aldar'] .sf-hero--split .sf-hero__copy::before {
+    display: none;
+  }
+}

@@ -1,62 +1,98 @@
 /*
  * سوق نيون — bold fashion.
  *
- * Personality: a night-market stall under a sign. The image IS the card — the name and price sit
- * over its base on a solid scrim, not on a panel underneath. Display type is oversized with
- * negative tracking, section titles are numbered, and the second colour (gold) appears only as
- * a hairline and a number, never as a fill behind text.
+ * Personality: a night-market stall under a sign. The image IS the card — the name and price sit over
+ * its base on a solid scrim, not on a panel underneath. Display type is oversized with negative
+ * tracking, the second colour (gold) appears only as a hairline and a number, never as a fill behind
+ * text, and the ground is near-black everywhere including the footer.
  *
- * There is no frosted panel and no blur-behind anywhere in this file: the depth comes from the
- * accent and from the black, which is the point of the template.
+ * There is no frosted panel and no blur-behind anywhere in this file: the depth comes from the accent
+ * and from the black, which is the point of the template.
+ *
+ * PHASE 9 REWORK. Three changes:
+ *
+ *   1. THE SECTION HEAD IS A SIGN NOW. A 3px rose rule above the title and a gold hairline under it,
+ *      with the title at display weight and negative tracking — the same two-rule sandwich the stall
+ *      sign in the metaphor has. It was a single top border, which read as a divider rather than as a
+ *      label.
+ *   2. THE CARD SCRIM DECLARES ITS OWN PADDING. It inherited `.sf-card__body`'s even `--t-space-md`
+ *      box, so the band was 24px of padding around three lines of text and covered roughly a third
+ *      of a 3:4 photograph. Half that on the block axis and the same on the inline axis is the shape
+ *      a caption wants: the name is already clamped to two lines, so with tighter padding the band's
+ *      height is now bounded by the design rather than by how long a merchant's product name is.
+ *   3. THE EIGHT PHASE 9 BLOCKS ARE FURNISHED — a poster board whose caption is laid over the
+ *      photograph on the same solid scrim, a trust row of gold-ruled columns, an hours panel with the
+ *      times in gold, and stats at display size, which is the one block in this template that gets to
+ *      shout.
  */
 
-@font-face {
-  font-family: 'Alexandria';
-  font-style: normal;
-  font-weight: 400;
-  src: url('/fonts/alexandria/alexandria-v6-arabic-regular.woff2') format('woff2');
-  font-display: swap;
-  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF,
-    U+0020-007E, U+2000-206F, U+20AA, U+2190-21BB;
-}
+/*
+ * Alexandria's `@font-face` pair moved to `src/app/fonts.css` (imported by the root layout),
+ * so the private surfaces — which import no template sheet — can use it as their display face.
+ */
 
-@font-face {
-  font-family: 'Alexandria';
-  font-style: normal;
-  font-weight: 700;
-  src: url('/fonts/alexandria/alexandria-v6-arabic-700.woff2') format('woff2');
-  font-display: swap;
-  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF,
-    U+0020-007E, U+2000-206F, U+20AA, U+2190-21BB;
-}
+/* ------------------------------------------------------- chrome + heads -- */
 
 [data-template='neon-souq'] .sf-header {
   border-block-end: 1px solid var(--t-border);
 }
 
+/* The sign: rose above, gold hairline below, nothing else. */
 [data-template='neon-souq'] .sf-block__head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--t-space-md);
   border-block-start: 3px solid var(--t-primary);
-  padding-block-start: var(--t-space-md);
+  border-block-end: 1px solid var(--t-secondary);
+  padding-block: var(--t-space-md);
 }
 
-[data-template='neon-souq'] .sf-block__title {
-  text-transform: none;
-  letter-spacing: -0.015em;
+/*
+ * There is deliberately NO `.sf-block__title` rule here.
+ *
+ * The old one set `font-size: var(--t-text-2xl)` — which `storefront.css` already does — and
+ * `letter-spacing: -0.015em`, which overrode `--t-tracking-display` with a second, slightly different
+ * hardcoded number. Two sources for one value is how a type scale stops being a scale: the tracking
+ * moved to -0.03em in `definition.ts` this phase and this rule would have silently kept the old one
+ * for every section heading on the site.
+ */
+
+[data-template='neon-souq'] .sf-catnav {
+  border-block-start-color: var(--t-secondary);
 }
+
+/*
+ * The shared heading-mark glyph is SUPPRESSED here (Phase 11): this template's `rule` mark is the
+ * sign itself — the full-width rose rule above and gold hairline below that `.sf-block__head`
+ * already draws. A third, shorter line between them would be ornament on ornament. The definition
+ * still declares `headingMark: 'rule'` because the sign IS the rule treatment; this override is a
+ * template refining the shared implementation, which source order exists to allow.
+ */
+[data-template='neon-souq'] .sf-mark {
+  display: none;
+}
+
+/* --------------------------------------------------------------- stage --- */
 
 [data-template='neon-souq'] .sf-hero--stage .sf-hero__inner {
   background: var(--t-surface);
   border-radius: var(--t-radius-lg);
   overflow: hidden;
   padding: 0;
+  /* The stage is one object: the image and the copy share a rounded box, so the grid gap that
+     separates them everywhere else would draw a slot through it. */
+  gap: 0;
 }
 
+/*
+ * `aspect-ratio`, not `--sf-ratio`.
+ *
+ * `MediaImage` writes the custom property as an INLINE style (`style={{'--sf-ratio': ratio}}`), and an
+ * inline custom property beats any stylesheet declaration of the same property no matter how specific
+ * the selector — so the old `--sf-ratio: 16 / 9` here was inert. It happened to be invisible because
+ * `hero.tsx` passes exactly `16 / 9` for the stage variant. Setting the RESOLVED property is the shape
+ * that actually overrides, and it is what the two new templates rely on.
+ */
 [data-template='neon-souq'] .sf-hero--stage .sf-hero__media .sf-media {
   border-radius: 0;
-  --sf-ratio: 16 / 9;
+  aspect-ratio: 16 / 9;
 }
 
 [data-template='neon-souq'] .sf-hero--stage .sf-hero__copy {
@@ -67,12 +103,17 @@
   line-height: 1.05;
 }
 
-/* The overlay card: image edge to edge, text over a solid scrim at its base. */
+/* ----------------------------------------------------- the overlay card -- */
+
 [data-template='neon-souq'] .sf-card {
   position: relative;
   border: 1px solid var(--t-border);
   border-radius: var(--t-radius-md);
   background: var(--t-surface);
+}
+
+[data-template='neon-souq'] .sf-card:hover {
+  border-color: var(--t-secondary);
 }
 
 [data-template='neon-souq'] .sf-card__media .sf-media {
@@ -91,8 +132,17 @@
   background: var(--t-surface);
   border-block-start: 1px solid var(--t-secondary);
   gap: var(--t-space-xs);
+  padding: var(--t-space-sm) var(--t-space-md);
 }
 
+/*
+ * Two lines, not the base's three, and it is the clamp that bounds the scrim.
+ *
+ * The band is as tall as its content and its content is merchant copy, so the only way its height is
+ * a design decision rather than a data one is to cap the lines. Two is what a 3:4 photograph can give
+ * up without the product disappearing behind its own name; the full name is still the anchor's
+ * accessible text, so nothing is lost to a screen reader or to search.
+ */
 [data-template='neon-souq'] .sf-card__name {
   font-size: var(--t-text-base);
   -webkit-line-clamp: 2;
@@ -125,6 +175,10 @@
   border-color: var(--t-border);
 }
 
+[data-template='neon-souq'] .sf-cat:hover {
+  border-color: var(--t-secondary);
+}
+
 [data-template='neon-souq'] .sf-quote {
   border-radius: var(--t-radius-sm);
   border-block-start: 3px solid var(--t-primary);
@@ -145,6 +199,127 @@
   border-color: var(--t-border);
 }
 
+/* -------------------------------------------- Phase 9: the poster board -- */
+
+/*
+ * The board is a poster, so the caption goes ON the picture — the same device as the product card,
+ * with the same guarantee: a solid `--t-surface` band with a gold hairline, never a translucent panel
+ * and never a gradient. A 4:5 banner (this template's `bannerAspect`) has the height to spend on it.
+ *
+ * `inset-inline: 0` plus `inset-block-end: 0` rather than a floating inset plate: بيت does the inset
+ * plate, and the two templates must not converge on the one block they both overlay.
+ */
+[data-template='neon-souq'] .sf-banner__copy {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  background: var(--t-surface);
+  border-block-start: 1px solid var(--t-secondary);
+  padding: var(--t-space-lg);
+  gap: var(--t-space-sm);
+}
+
+[data-template='neon-souq'] .sf-banner__title {
+  font-size: var(--t-text-2xl);
+  /* The token, not a second hardcoded number — see the note where `.sf-block__title` used to be. */
+  letter-spacing: var(--t-tracking-display);
+  line-height: var(--t-line-tight);
+}
+
+/*
+ * The controls sit ABOVE the rail, not under it.
+ *
+ * `.sf-carousel` is a grid with the rail first and the controls second, so by default they land under
+ * the board — under an absolutely positioned caption, which reads as a third row of chrome. `order`
+ * lifts them to the top of the block where they read as part of the section's own head, and it is
+ * safe for a keyboard user because the DOM order is unchanged: the buttons still come after the
+ * slides they control, which is the order a screen reader announces and the order tab follows.
+ */
+[data-template='neon-souq'] .sf-carousel__controls {
+  order: -1;
+}
+
+/* ----------------------------------------- Phase 9: trust, hours, stats -- */
+
+/*
+ * The trust row as three columns under gold hairlines — the same rule the section head uses, so the
+ * claims read as three small signs rather than as three cards. No borders on the sides: this template
+ * gets its structure from single rules, not from boxes.
+ */
+[data-template='neon-souq'] .sf-trust__item {
+  border-block-start: 1px solid var(--t-secondary);
+  padding-block-start: var(--t-space-md);
+  align-items: flex-start;
+}
+
+/*
+ * `--t-link`, the guarded primary, not the raw one.
+ *
+ * A 24px glyph is non-text UI and would pass at the 3:1 bar the raw token is checked against, so this
+ * is stricter than it has to be — deliberately. `a2-templates.test.ts` bans `color: var(--t-primary)`
+ * outright in these stylesheets, and the ban is worth more than the exception: the line that sets an
+ * icon's colour and the line that sets a price's colour look identical in review, and one of them is a
+ * contrast failure. The rose is a shade lighter as `--t-link`, which on near-black is an improvement.
+ */
+[data-template='neon-souq'] .sf-trust__icon {
+  color: var(--t-link);
+}
+
+[data-template='neon-souq'] .sf-trust__title {
+  font-size: var(--t-text-lg);
+}
+
+[data-template='neon-souq'] .sf-hours {
+  border-block-start: 3px solid var(--t-primary);
+  padding-block-start: var(--t-space-md);
+  max-inline-size: 34rem;
+}
+
+[data-template='neon-souq'] .sf-hours > div {
+  border-block-end-color: var(--t-border);
+}
+
+/* The times in gold. They are the answer to the question the block exists for, and gold at
+   body-text strength (`--t-accent`) is this template's way of saying "this is the number". */
+[data-template='neon-souq'] .sf-hours dd {
+  color: var(--t-accent);
+  font-weight: var(--t-weight-display);
+}
+
+/*
+ * The stats block is the one place this template lets the display face off its leash. «4000+» at
+ * `--t-text-display` with the tracking the headline uses is the whole point of choosing a display
+ * face, and three figures is few enough that the size is affordable on a phone.
+ */
+[data-template='neon-souq'] .sf-stat__value {
+  color: var(--t-accent);
+  font-size: var(--t-text-display);
+  letter-spacing: var(--t-tracking-display);
+}
+
+[data-template='neon-souq'] .sf-stat__label {
+  letter-spacing: 0.04em;
+}
+
+/* ------------------------------------------------ Phase 9: search + grids -- */
+
+[data-template='neon-souq'] .sf-search__label {
+  letter-spacing: 0.04em;
+  font-size: var(--t-text-sm);
+}
+
+/*
+ * «وصل حديثاً» and «الأكثر مبيعاً» keep the two-column grid the template ships, but their gutters open
+ * up: this is the loud template and its rows are meant to read as posters on a wall rather than as a
+ * catalogue page. The anchor prefixes are the hook — see the note in `diwan.css` for why that is safe.
+ */
+[data-template='neon-souq'] .sf-block[id^='new'] .sf-grid,
+[data-template='neon-souq'] .sf-block[id^='bestsellers'] .sf-grid {
+  gap: var(--t-space-xl);
+}
+
+/* ------------------------------------------------------------- the form -- */
+
 /*
  * neon-souq is near-black with a lit edge. The form keeps that: a tight radius, the primary as a
  * top rule, and inputs on the page background so they read as cut into the panel rather than
@@ -156,8 +331,36 @@
 }
 
 [data-template='neon-souq'] .sf-input,
-[data-template='neon-souq'] .sf-textarea {
+[data-template='neon-souq'] .sf-textarea,
+[data-template='neon-souq'] .sf-select {
   border-radius: var(--t-radius-sm);
   background: var(--t-bg);
   border-color: var(--t-border);
+}
+
+/* ---------------------------------------------------------- responsive --- */
+
+@media (max-width: 40rem) {
+  /*
+   * The caption comes OFF the picture on a phone.
+   *
+   * A 4:5 banner at 100vw is 450px tall on a 360px screen, and an absolutely positioned caption with
+   * a 44px button in it takes 40% of that — so the photograph the merchant chose is mostly a
+   * backdrop for their own text. Below this width the caption returns to the flow underneath, which
+   * is the base rule; everything here is an unset rather than a new design.
+   */
+  [data-template='neon-souq'] .sf-banner__copy {
+    position: static;
+    padding: var(--t-space-md) 0 0;
+    border-block-start: 0;
+    background: transparent;
+  }
+
+  [data-template='neon-souq'] .sf-banner__title {
+    font-size: var(--t-text-xl);
+  }
+
+  [data-template='neon-souq'] .sf-hero--stage .sf-hero__copy {
+    padding: var(--t-space-lg);
+  }
 }

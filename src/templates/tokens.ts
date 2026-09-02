@@ -9,7 +9,7 @@ import {
   rgbToHex,
   type ResolvedColors,
 } from '@/shared/site-contract';
-import type { TemplateDefinition, TemplateTokens } from './types';
+import type { TemplateDefinition, TemplateLayout, TemplateTokens } from './types';
 
 /**
  * Tokens in, CSS custom properties out.
@@ -66,6 +66,73 @@ function defaultSurface(base: ResolvedColors): string {
 }
 
 /**
+ * The three colours that make a scheme: what the page is, what a card is, what the words are.
+ *
+ * `surface` is nullable for the same reason `ResolvedColors.surface` is — an absent surface means
+ * "derive a tint of the background for me", and flattening that to a value makes the derived tint
+ * unreachable (see the note on `ResolvedColors.surface` in `site-contract/colors.ts`).
+ */
+export interface TemplateGround {
+  background: string;
+  surface: string | null;
+  text: string;
+}
+
+/**
+ * Build the counterpart of a ground by walking it across the luminance axis.
+ *
+ * Deliberately crude. It does NOT need to be beautiful, because everything downstream of it goes
+ * through `guard()`, which enforces AA on every derived token against all three surfaces — so the
+ * worst this can produce is a compliant page that a designer would want to improve. Track 11.C
+ * replaces all nine with hand-tuned, measured palettes; until then a template with no `altGround`
+ * still answers a dark-preference visitor with something readable instead of something broken.
+ *
+ * The hue survives on purpose: mixing toward `#121212` rather than to black keeps a warm ground warm,
+ * which is the difference between "this shop at night" and "a different shop".
+ */
+export function flipGround(ground: TemplateGround, toDark: boolean): TemplateGround {
+  const background = toDark
+    ? mix(ground.background, '#121212', 0.9)
+    : mix(ground.background, '#ffffff', 0.92);
+
+  return {
+    background,
+    surface: toDark ? mix(background, '#ffffff', 0.07) : '#ffffff',
+    text: toDark ? mix(background, '#ffffff', 0.93) : mix(background, '#0a0a0a', 0.92),
+  };
+}
+
+/**
+ * The ground to use when the visitor's preference disagrees with the template's designed scheme —
+ * or `null` when there is nothing to swap.
+ *
+ * `null` in two cases, and both matter:
+ *
+ *   1. The template is ALREADY in the target scheme. سوق نيون is a near-black fashion shop; asking
+ *      it for a dark ground is asking for the one it has.
+ *   2. The TENANT has already chosen a ground in the target scheme. A merchant on ديوان who picked a
+ *      charcoal background did so on purpose, and substituting the template's dark ground over their
+ *      choice would be the platform overruling a paying customer about their own shop.
+ */
+export function counterpartGround(
+  template: TemplateDefinition,
+  base: ResolvedColors,
+  target: 'light' | 'dark',
+): TemplateGround | null {
+  const wantsDark = target === 'dark';
+  if (template.tokens.color.scheme === target) return null;
+  if (isDarkColor(base.background) === wantsDark) return null;
+
+  const hand = template.tokens.color.altGround;
+  if (hand) return { ...hand };
+
+  return flipGround(
+    { background: base.background, surface: base.surface, text: base.text },
+    wantsDark,
+  );
+}
+
+/**
  * Can ANY colour carry body text at AA on both the background and this surface?
  *
  * Contrast depends only on relative luminance, so this is a question about intervals on the
@@ -111,7 +178,31 @@ function surfaceIsUsable(base: ResolvedColors, surface: string): boolean {
  * opening hours), and a muted tone that fails 4.5:1 is the single most common accessibility
  * defect in a themed site.
  */
-export function deriveColorTokens(base: ResolvedColors): TemplateTokens['color'] {
+export function deriveColorTokens(
+  input: ResolvedColors,
+  groundOverride?: TemplateGround,
+): TemplateTokens['color'] {
+  /**
+   * Phase 11: the same guard, run over a DIFFERENT ground.
+   *
+   * The tenant's brand colours are theirs and are never replaced — only `background`, `surface` and
+   * `text` are swapped, and then every derived token is recomputed from scratch. That is the whole
+   * mechanism behind "the merchant sets one palette and gets two": a terracotta that clears 4.5:1 on
+   * cream will not clear it on charcoal, and the existing `guard()` below already knows how to walk
+   * it until it does. Nothing about dark mode needed a second colour editor, a column or a migration.
+   *
+   * Optional, and defaulting to no override, because eight existing call sites pass one argument and
+   * none of them is asking about a scheme.
+   */
+  const base: ResolvedColors = groundOverride
+    ? {
+        ...input,
+        background: groundOverride.background,
+        surface: groundOverride.surface,
+        text: groundOverride.text,
+      }
+    : input;
+
   /**
    * A CHOSEN surface that no text colour can serve is refused, and the derived one is used.
    *
@@ -263,16 +354,53 @@ export function deriveColorTokens(base: ResolvedColors): TemplateTokens['color']
     // The guard walks lightness toward the far end; against a very light background it can
     // reach near-black, which reads as a heavy frame. Cap it back toward the text colour.
     border: border.passes ? border.color : mix(base.text, base.background, 0.7),
+    /**
+     * The scheme of the ground this set was actually derived AGAINST — measured, not copied.
+     *
+     * `dark` above is already `isDarkColor(base.background)`, and `base` is post-override, so when a
+     * ground override is in play this reports the OVERRIDE's scheme rather than the template's. That
+     * is the useful answer: a consumer holding a derived token set wants to know what these twelve
+     * colours are for, not what the template was designed in — the definition still says that.
+     */
+    scheme: dark ? 'dark' : 'light',
   };
+}
+
+/**
+ * The shape cut out of every product and category image (Phase 11, `layout.imageMask`).
+ *
+ * A radius for `arch`, a clip path for `notch`, and nothing for `square`. Two properties rather than
+ * one because the two shapes are not expressible in the same CSS: an arch is a corner radius, a ticket
+ * stub is a polygon, and faking either with the other produces a rounded rectangle nobody asked for.
+ */
+function maskVars(mask: TemplateLayout['imageMask']): Record<string, string> {
+  if (mask === 'arch') {
+    return {
+      // The signature: the top of the frame is a half-circle, the bottom keeps the template's radius.
+      '--t-media-radius': '999px 999px var(--t-radius-lg) var(--t-radius-lg)',
+      '--t-media-clip': 'none',
+    };
+  }
+
+  if (mask === 'notch') {
+    return {
+      '--t-media-radius': 'var(--t-radius-md)',
+      '--t-media-clip':
+        'polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px)',
+    };
+  }
+
+  return { '--t-media-radius': '0', '--t-media-clip': 'none' };
 }
 
 /** Flatten the token set into the `--t-*` custom properties every template stylesheet reads. */
 export function templateCssVars(
   template: TemplateDefinition,
   colors: ResolvedColors,
+  groundOverride?: TemplateGround,
 ): CSSProperties {
-  const { tokens } = template;
-  const color = deriveColorTokens(colors);
+  const { tokens, layout, signature } = template;
+  const color = deriveColorTokens(colors, groundOverride);
 
   const vars: Record<string, string> = {
     '--t-primary': color.primary,
@@ -322,9 +450,74 @@ export function templateCssVars(
 
     '--t-block': tokens.layoutBlockSpacing,
     '--t-measure': tokens.layoutMaxWidth,
+
+    /*
+      THE SIGNATURE LAYER (Phase 11). Values, not decisions: the CSS in `storefront.css` selects a
+      treatment from the `data-*` attributes the shell stamps, and reads its magnitudes from here.
+      Emitting them for every template — including the ones whose value is zero — is what keeps
+      `phase9-templates.test.ts`'s "reads no property templateCssVars does not emit" assertion able to
+      catch a typo instead of merely tolerating one.
+    */
+    ...maskVars(layout.imageMask),
+    // The press depth of a `printed` or `stamp` button: a SOLID offset, never a blur. Zero elsewhere,
+    // so the same rule can be written once and simply do nothing on a `flat` template.
+    '--t-press-depth': signature.button === 'printed' ? '6px' : signature.button === 'stamp' ? '4px' : '0px',
+    // Stroke width of the heading mark. `round` linecaps at 3.4px is what makes a squiggle read as
+    // drawn by a hand rather than plotted by a machine.
+    '--t-mark-stroke':
+      signature.headingMark === 'squiggle' ? '3.4px' : signature.headingMark === 'none' ? '0' : '2px',
   };
 
   return vars as CSSProperties;
+}
+
+/**
+ * Both palettes as a stylesheet — Phase 11's dark mode, in one function.
+ *
+ * WHY A `<style>` BLOCK AND NOT THE INLINE ATTRIBUTE IT REPLACES. An inline `style` attribute beats
+ * every stylesheet rule, so a `@media (prefers-color-scheme: dark)` override of `--t-bg` would lose
+ * to the inline `--t-bg` it was trying to override — silently, with no error and no visible symptom
+ * beyond a storefront that never goes dark. The tokens therefore move into a rule of ordinary
+ * specificity, where a media query can actually reach them.
+ *
+ * WHAT `:root` CARRIES IS THE DESIGNED GROUND, NOT "THE LIGHT ONE". Four of the nine templates are
+ * designed dark, and `prefers-color-scheme: light` matches for the large majority of visitors — so
+ * treating the light ground as the base would have flipped سوق نيون, ورشة, بيت and جهاز to a light
+ * page for most of the internet on the day this shipped, which is a product decision and not a token
+ * function's to make. The media block only ever answers the OPPOSITE preference: a light-designed
+ * template gains a dark block, and — since the owner's approval on 2026-08-28 (Track 11.C, recorded
+ * in docs/DECISIONS.md) — a dark-designed template gains a light block. Either way the designed
+ * ground stays the default for every visitor whose OS states no preference, so nothing about a live
+ * storefront changes except for the visitors who explicitly asked.
+ */
+export function templateThemeCss(template: TemplateDefinition, colors: ResolvedColors): string {
+  const designed = templateCssVars(template, colors) as Record<string, string>;
+  const declarations = (vars: Record<string, string>): string =>
+    Object.entries(vars)
+      .map(([property, value]) => `${property}:${value}`)
+      .join(';');
+
+  const base = `.sf-root{${declarations(designed)}}`;
+
+  /**
+   * The counterpart answers the preference the designed ground does not. `counterpartGround`
+   * still returns null when the TENANT's own chosen ground is already in the target scheme — a
+   * merchant who picked a charcoal background on ديوان keeps it in both modes, because the
+   * platform does not overrule a paying customer about their own shop.
+   */
+  const target = template.tokens.color.scheme === 'dark' ? 'light' : 'dark';
+  const counterpart = counterpartGround(template, colors, target);
+  if (!counterpart) return base;
+
+  const flipped = templateCssVars(template, colors, counterpart) as Record<string, string>;
+  // Only what actually MOVED. A media block that restates forty unchanged tokens is forty more
+  // chances for the two lists to drift apart, and it is the diff that documents what the mode is.
+  const changed = Object.entries(flipped).filter(([property, value]) => designed[property] !== value);
+  if (changed.length === 0) return base;
+
+  return `${base}@media (prefers-color-scheme:${target}){.sf-root{${declarations(
+    Object.fromEntries(changed),
+  )}}}`;
 }
 
 /** `/fonts/zain/zain-v4-arabic-regular.woff2` — the path the shell preloads. */

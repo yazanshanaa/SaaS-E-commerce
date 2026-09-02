@@ -14,6 +14,10 @@
 #   aws-cli — R2 is the S3 API. `aws s3 --endpoint-url` is the path every runbook reader knows.
 #   tini    — the container's job is a supervision loop; PID 1 must reap and forward signals or
 #             `docker compose down` waits out its timeout on every deploy.
+#   redis   — Phase 10 (Q23): the owner's "run now" button. The web container cannot take a backup
+#             (no client tools, no age, no write credentials — deliberately, because it is the one
+#             process reachable from the internet), so it leaves a key in Redis and this container
+#             picks it up. Optional at runtime: with no REDIS_URL the loop is exactly what it was.
 
 ARG POSTGRES_VERSION=16
 FROM postgres:${POSTGRES_VERSION}-alpine
@@ -22,6 +26,7 @@ RUN apk add --no-cache \
       age \
       aws-cli \
       coreutils \
+      redis \
       tini
 
 COPY backup.sh /usr/local/bin/backup.sh

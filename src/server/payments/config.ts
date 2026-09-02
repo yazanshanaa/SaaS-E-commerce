@@ -18,12 +18,14 @@ import {
  * TYPE ANYTHING ELSE SEES — `GatewayState` carries `hasCredentials: boolean`, and every admin
  * screen, audit row, event payload and log line is built from that.
  *
- * The row is per `[tenantId, provider]`, and at most one provider is `enabled` at a time. That is
- * an application rule rather than a database one: the unique key is on the pair, so nothing stops
- * two enabled rows existing, and `setGatewayEnabled` disables the others in the same transaction.
- * Enforcing it in code rather than in a partial index keeps Phase 5 at zero migrations, and the
- * read path resolves ONE row (`findFirst({ where: { enabled: true } })`) so a stray second row
- * degrades to "the first one wins", never to a checkout with two gateways.
+ * The row is per `[tenantId, provider]`, and at most one provider is `enabled` at a time —
+ * `setGatewayEnabled` disables the others FIRST in the same transaction, and since the 2026-08-20
+ * pre-launch migration a PARTIAL unique index (`gateway_configs_one_enabled_per_tenant`, on
+ * (tenant_id) WHERE enabled) is the database backstop the Phase 5 carry-forward asked for. The
+ * disable-then-enable ORDER in `setGatewayEnabled` is now load-bearing: uniques are checked per
+ * statement, so enabling before disabling would trip the index mid-transaction. The read path
+ * still resolves ONE row (`findFirst({ where: { enabled: true } })`), so even a state the index
+ * cannot exist in degrades to "the first one wins", never to a checkout with two gateways.
  */
 
 export interface GatewayState {

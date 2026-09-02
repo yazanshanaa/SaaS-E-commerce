@@ -28,6 +28,7 @@ function facts(overrides: Partial<LegalFacts> = {}): LegalFacts {
     isDemo: false,
     sellingEnabled: false,
     collectsOrders: false,
+    collectsViaCart: false,
     analyticsEnabled: false,
     pushEnabled: false,
     activeGatewayProvider: null,

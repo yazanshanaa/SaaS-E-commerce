@@ -1,9 +1,12 @@
 // =============================================================================
 // Souq Bartaa — THE schema.
 //
-// Every table through Phase 5 lands here (docs/PHASES.md, rule 3): no later phase may add a
-// migration. Tables that nothing writes in V1 (Order / OrderItem / TenantCounter) are present
-// and empty on purpose — Phase 5 asserts it needs no migration, and that promise is kept here.
+// Every table through Phase 5 landed here up front (docs/PHASES.md, rule 3), so Phases 1–5 ran
+// on a single migration pair. Tables that nothing wrote in V1 (Order / OrderItem / TenantCounter)
+// were present and empty on purpose — Phase 5 asserted it needed no migration, and that promise
+// was kept. LATER PHASES DO ADD TABLES, each through ONE additive migration owned by the main
+// session (Phase 6 compliance, Phase 8 cart/coupons, Phase 9 merchant depth); the standing rule
+// is "additive, main session only", not "never again".
 //
 // Reading rules:
 //   - Tenant-owned tables carry `tenantId` and an index whose FIRST column is tenantId.
@@ -106,9 +109,20 @@ enum ChangeRequestStatus {
   @@map("change_request_status")
 }
 
-/// The six managed capabilities of access axis (b). Products are deliberately NOT one of
+/// The managed capabilities of access axis (b). Products are deliberately NOT one of
 /// them — routing price edits through change requests would burn a basic plan's two monthly
 /// requests in the first week.
+///
+/// `order_settings` was added in Phase 8 (cart + coupons): unlike the original six, its
+/// `editable_by` does not vary by plan — every plan defaults it to `merchant` — but it still
+/// rides the same axis, because `editable_by = admin` means the platform admin sets delivery
+/// fees and payment methods while the merchant dashboard shows them read-only with a
+/// "اطلب تعديل" action, exactly like the other six.
+/// Phase 9 added eight more, each following the identical contract: `editable_by = admin` still
+/// RENDERS on the storefront, and the merchant dashboard shows it read-only with «اطلب تعديل».
+/// `logo` is on this axis rather than only on the availability axis because "which image is this
+/// shop's mark" is exactly the kind of decision a platform that also designs the site may want to
+/// keep — while the logo itself must still appear in the header either way.
 enum CapabilityKey {
   social_links
   map_location
@@ -116,6 +130,17 @@ enum CapabilityKey {
   announcements_board
   colors
   sections_layout
+  order_settings
+
+  // Phase 9
+  banners
+  opening_hours
+  trust_badges
+  store_stats
+  delivery_zones
+  size_guide
+  tax_settings
+  logo
 
   @@map("capability_key")
 }
@@ -169,6 +194,14 @@ enum ImageFormat {
   @@map("image_format")
 }
 
+/// Eighteen values, and `src/templates/sections/index.tsx` proves the switch over them is
+/// exhaustive with a `const unreachable: never`. Adding a value here without adding a renderer
+/// there is a typecheck failure, which is the point.
+///
+/// Phase 9 added the last eight. `announcements` (text board) and `banner_slider` (image board)
+/// are deliberately separate section types rather than one type with a mode flag: they have
+/// different content models, different capabilities, and a merchant who wants both should get
+/// both without either pretending to be a variant of the other.
 enum SectionType {
   hero
   products_grid
@@ -181,7 +214,60 @@ enum SectionType {
   map
   custom_html
 
+  // Phase 9
+  banner_slider
+  trust_badges
+  opening_hours
+  store_stats
+  new_arrivals
+  best_sellers
+  related_products
+  search_bar
+
   @@map("section_type")
+}
+
+/// Phase 9. The colour of a text strip is a CLOSED set of four token-derived choices, not a hex
+/// field: the reference shop's own reasoning applies — a free colour picker on a strip that spans
+/// every page is how a merchant breaks their own site. Each value resolves through the active
+/// template's tokens, so the same choice looks right on all five templates.
+enum StripColor {
+  dark
+  primary
+  secondary
+  light
+
+  @@map("strip_color")
+}
+
+/// Phase 9. What the first-party beacon is allowed to report. A closed enum rather than a string
+/// keeps the rollup's cardinality bounded and makes an unknown kind a rejected body rather than a
+/// new row in the merchant's report.
+enum AnalyticsEventKind {
+  page_view
+  section_view
+  product_view
+  search
+  whatsapp_click
+  add_to_cart
+  checkout_start
+  order_placed
+
+  @@map("analytics_event_kind")
+}
+
+/// Phase 9. A product's shelf state. `published Boolean` stays the storefront predicate for
+/// backwards compatibility; `archivedAt` is what removes a product from the merchant's own default
+/// list without deleting its order history.
+enum StockPolicy {
+  /// Stock is not counted. The product is available while `available` is true.
+  untracked
+  /// Stock is counted and the storefront refuses to sell at zero.
+  track_and_block
+  /// Stock is counted and shown, but a zero balance still accepts the order (backorder).
+  track_and_allow
+
+  @@map("stock_policy")
 }
 
 enum DemoRequestStatus {
@@ -202,14 +288,106 @@ enum PushMessageStatus {
   @@map("push_message_status")
 }
 
+/// Two independent vocabularies share this one Postgres enum, kept apart by `Order.channel`
+/// (Phase 8) rather than by two separate columns — additive `ADD VALUE`s only, no rename, no
+/// removal, so every `buy_now` row from Phase 5 keeps meaning exactly what it always meant.
+///
+///   channel = buy_now (Phase 5, gateway/manual "buy now"): pending | paid | fulfilled |
+///             cancelled | refunded — untouched, see src/server/orders/status.ts.
+///   channel = cart (Phase 8, the merchant order inbox): new | confirmed | preparing |
+///             delivered | cancelled — a fulfilment-progress vocabulary, not a settlement one:
+///             COD and pickup orders have no "paid" moment worth tracking here at all.
+///
+/// `cancelled` is the one value both vocabularies share, on purpose — one Arabic word, one
+/// meaning, in both inboxes.
 enum OrderStatus {
   pending
   paid
   fulfilled
   cancelled
   refunded
+  new
+  confirmed
+  preparing
+  delivered
 
   @@map("order_status")
+}
+
+/// Phase 10 (Q24, Q25). What a `TenantBackup` row is FOR — the two artifacts share the builder,
+/// the prefix and the protections, and differ in what is packed beside the data.
+///   `backup`             — the shop's data + media, restorable into the SAME tenant.
+///   `standalone_export`  — that, plus the platform source, a compose file and a bootstrap, so the
+///                          shop runs on its own server with no platform behind it.
+enum TenantBackupKind {
+  backup
+  standalone_export
+
+  @@map("tenant_backup_kind")
+}
+
+/// `restoring` is a real state, not a transient: a restore drains the tenant's queue and rewrites
+/// its tables, so the row is the operator-visible record of why the shop looked frozen for a
+/// minute. `failed` keeps `error` for the same reason — a backup that silently disappeared is
+/// indistinguishable from one that was never asked for.
+enum TenantBackupStatus {
+  pending
+  ready
+  failed
+  restoring
+
+  @@map("tenant_backup_status")
+}
+
+/// Distinguishes the two order-taking mechanisms that now both write `Order` rows. Phase 5's
+/// direct "buy now" checkout (behind `payment_gateway`, احترافي-only) predates the cart and is
+/// untouched by it; every row it ever wrote defaults to `buy_now` for free. Phase 8's cart
+/// checkout (behind `cart`, متجر and up) writes `cart`.
+enum OrderChannel {
+  buy_now
+  cart
+
+  @@map("order_channel")
+}
+
+/// The customer's SELECTED method at checkout — cart channel only. Distinct from
+/// `PaymentMethod` (how an order was actually SETTLED, recorded when the merchant marks it
+/// paid): a COD order is `payment_method = cod` from the moment it is placed and gets a
+/// `Payment{method: cash}` row only once the merchant actually collects the cash.
+enum OrderPaymentMethod {
+  cod
+  pickup
+  gateway
+
+  @@map("order_payment_method")
+}
+
+enum CouponType {
+  percent
+  fixed
+  free_delivery
+
+  @@map("coupon_type")
+}
+
+enum CouponScope {
+  all
+  categories
+  products
+
+  @@map("coupon_scope")
+}
+
+/// What `OrderHistoryEntry` records — the cart order's own timeline, separate from `AuditLog`
+/// (which still covers everything else a merchant or admin does).
+enum OrderHistoryKind {
+  created
+  status_changed
+  edited
+  note_added
+  cancelled
+
+  @@map("order_history_kind")
 }
 
 enum ConsentKind {
@@ -538,6 +716,12 @@ model Tenant {
   /// currentPeriodEnd = null is a CONSEQUENCE of this flag, never an independent definition.
   isDemo Boolean @default(false) @map("is_demo")
 
+  /// Which demo pack built this tenant (pre-launch fix, 2026-08-20 — the B3 carry-forward).
+  /// Null on every real account and on demos created before the column existed. The originating
+  /// DemoRequest also carries the pack, but it is deleted on day 30 and never existed for an
+  /// admin-created demo — this is the durable record.
+  demoPackKey String? @map("demo_pack_key")
+
   state TenantState @default(active)
 
   /// Owned by the media jobs (A3). BigInt because 10GB in bytes overflows a 32-bit int.
@@ -583,6 +767,30 @@ model Tenant {
   counters            TenantCounter[]
   themeSettings       ThemeSettings?
   reminders           SubscriptionReminder[]
+  orderSettings       OrderSettings?
+  coupons             Coupon[]
+  couponRedemptions   CouponRedemption[]
+  orderHistoryEntries OrderHistoryEntry[]
+
+  // Phase 9
+  productVariants     ProductVariant[]
+  sizeGuideEntries    SizeGuideEntry[]
+  banners             Banner[]
+  trustBadges         TrustBadge[]
+  openingHours        OpeningHours[]
+  storeStats          StoreStat[]
+  customers           Customer[]
+  deliveryZones       DeliveryZone[]
+  deliveryZoneTowns   DeliveryZoneTown[]
+  tenantCarriers      TenantCarrier[]
+  taxSettings         TaxSettings?
+  analyticsEvents     AnalyticsEvent[]
+  analyticsDaily      AnalyticsDaily[]
+  sectionDwellDaily   SectionDwellDaily[]
+  searchQueryDaily    SearchQueryDaily[]
+
+  // Phase 10
+  backups             TenantBackup[]
 
   @@index([isDemo])
   @@index([state])
@@ -730,6 +938,32 @@ model Site {
   announcementBarLink     String?   @map("announcement_bar_link")
   announcementBarStartsAt DateTime? @map("announcement_bar_starts_at")
   announcementBarEndsAt   DateTime? @map("announcement_bar_ends_at")
+  /// Phase 9. The bar's colour is one of four token-derived choices, never a hex field.
+  announcementBarColor    StripColor @default(dark) @map("announcement_bar_color")
+
+  // --- Phase 9 -------------------------------------------------------------------------------
+  /// The SECOND text strip: mid-homepage rather than site-wide. Same closed colour set, same
+  /// schedule shape, deliberately its own set of columns rather than a second row in a table —
+  /// there are exactly two strips, and a table of two would invite a third.
+  homeStripEnabled  Boolean    @default(false) @map("home_strip_enabled")
+  homeStripText     String?    @map("home_strip_text")
+  homeStripLink     String?    @map("home_strip_link")
+  homeStripStartsAt DateTime?  @map("home_strip_starts_at")
+  homeStripEndsAt   DateTime?  @map("home_strip_ends_at")
+  homeStripColor    StripColor @default(primary) @map("home_strip_color")
+
+  /// Storefront product search. Off by default: a shop with eight products does not need it, and
+  /// a search box that returns everything is worse than no search box. Gated by
+  /// `can('search_insights')` for the merchant-facing report, and by this flag for the box itself.
+  searchEnabled Boolean @default(false) @map("search_enabled")
+
+  /// Column headers for the size chart, parallel to `SizeGuideEntry.cells`. Free-text so a
+  /// clothing shop and a shoe shop can both be right.
+  sizeGuideColumns String[] @default([]) @map("size_guide_columns")
+  sizeGuideNote    String?  @map("size_guide_note")
+
+  /// «أيام الجمعة بنسكّر بدري» — the free-text note under the hours table.
+  hoursNote String? @map("hours_note")
 
   /// One Umami websiteId per tenant, provisioned by A1 at account creation.
   umamiWebsiteId String? @map("umami_website_id")
@@ -885,6 +1119,116 @@ model Testimonial {
   @@map("testimonials")
 }
 
+// =============================================================================
+// Phase 9 — homepage content the merchant controls (capabilities `banners`,
+// `trust_badges`, `opening_hours`, `store_stats`)
+// =============================================================================
+
+/// The image banner board behind the `banner_slider` section. Distinct from `Announcement`, which
+/// is the TEXT board: this one is image-first, has a CTA, and rotates. A banner with no image never
+/// renders — the service enforces it and the storefront re-checks, because a slide that is a bare
+/// caption on a coloured rectangle is what an empty slot looks like to a visitor.
+model Banner {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+
+  imageMediaId String? @map("image_media_id")
+  /// Arabic alt text. Required whenever the banner is published — enforced in the service, not by
+  /// NOT NULL, so a draft banner can exist while the merchant is still typing.
+  alt      String?
+  title    String
+  subtitle String?
+  /// Empty = render no button at all, exactly as the reference shop states it.
+  ctaLabel String? @map("cta_label")
+  ctaHref  String? @map("cta_href")
+
+  sort      Int     @default(0)
+  published Boolean @default(false)
+
+  startsAt DateTime? @map("starts_at")
+  endsAt   DateTime? @map("ends_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  media  Media? @relation(fields: [imageMediaId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, sort])
+  @@index([tenantId, published, startsAt, endsAt])
+  @@map("banners")
+}
+
+/// The trust row — «توصيل مجاني فوق ₪400» / «ادفعي لما توصلك» / «تغليف محتشم». Three short claims
+/// with a subtitle each. `icon` is a key into the template's own icon set, never arbitrary markup
+/// and never an emoji (CLAUDE.md forbids emoji as icons).
+model TrustBadge {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+
+  icon     String @default("check")
+  title    String
+  subtitle String?
+  sort     Int     @default(0)
+  published Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, sort])
+  @@map("trust_badges")
+}
+
+/// One row per weekday. `weekday` is 0=Sunday..6=Saturday — Sunday-first because that is the week
+/// a shop in Bartaa actually opens on, and the storefront renders it in that order without
+/// re-sorting.
+///
+/// `closed = true` means «مغلق» and the two time columns are ignored. Times are stored as
+/// "HH:mm" strings rather than DateTime: a shop opens at 10:00 every Sunday, which is a wall-clock
+/// fact about the shop, not an instant in time, and storing it as a timestamp invites exactly the
+/// timezone bug Phase 7 and Phase 8 each hit once.
+model OpeningHours {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+
+  weekday   Int
+  closed    Boolean @default(false)
+  opensAt   String? @map("opens_at")
+  closesAt  String? @map("closes_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, weekday])
+  @@index([tenantId, weekday])
+  @@map("opening_hours")
+}
+
+/// «7+ سنوات في السوق» — a headline figure and its label. `value` is a STRING, not a number: the
+/// figures a shop is proud of are "7+", "4000+" and "100%", and forcing them through an Int would
+/// mean rendering "7" and losing the plus.
+model StoreStat {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+
+  value String
+  label String
+  sort  Int     @default(0)
+  published Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, sort])
+  @@map("store_stats")
+}
+
 model Category {
   id       String  @id @default(cuid())
   tenantId String  @map("tenant_id")
@@ -898,8 +1242,9 @@ model Category {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  products Product[]
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products        Product[]
+  sizeGuideEntries SizeGuideEntry[]
 
   @@unique([tenantId, key])
   @@index([tenantId, sort])
@@ -923,9 +1268,41 @@ model Product {
   sort        Int     @default(0)
   published   Boolean @default(true)
 
-  /// Q12: variants are out of V1, but the column ships EMPTY now so adding sizes and colours
-  /// later is a fill, not a migration.
+  /// Q12 reserved this for sizes and colours; Q19 (Phase 9) landed them in the relational
+  /// `ProductVariant` table instead, because stock has to be an integer a transaction can lock
+  /// and decrement. DEPRECATED IN PLACE: nothing reads it, nothing writes it, and dropping a
+  /// column nobody uses would cost a migration for no gain. Do not start using it.
   variants Json?
+
+  // --- Phase 9 -------------------------------------------------------------------------------
+  /// السعر قبل الخصم. Agorot, and NOT validated as "greater than price" in the database — a
+  /// merchant mid-edit is allowed to be briefly inconsistent. The storefront simply refuses to
+  /// render a discount badge unless this is strictly greater than `priceAgorot`.
+  compareAtPriceAgorot Int? @map("compare_at_price_agorot")
+
+  /// Free-text Arabic tags, used for the `?tag=` filter and the "خصم" / "جديد" style chips.
+  /// Normalised and de-duplicated in the service, capped there too — a `String[]` with no cap is
+  /// an unbounded row.
+  tags String[] @default([])
+
+  /// «تفاصيل القماش والعناية» — the accordion under the buy button. Separate from `description`
+  /// on purpose: one sells the product, the other stops a return.
+  careInstructions String? @map("care_instructions")
+
+  /// مؤرشف. Non-null hides the product from the storefront AND from the dashboard's default list,
+  /// while keeping every `OrderItem` that references it intact. Deleting a sold product is how you
+  /// corrupt order history.
+  archivedAt DateTime? @map("archived_at")
+
+  stockPolicy StockPolicy @default(untracked) @map("stock_policy")
+
+  /// Balance for a product with NO variants. A product with variants ignores this and sums its
+  /// variants instead — the service owns that rule, so there is one answer to "how many are left"
+  /// and it is never the sum of two sources.
+  stockQty Int @default(0) @map("stock_qty")
+
+  /// Low-stock threshold for «قارب على النفاد». Null = fall back to the platform default.
+  lowStockThreshold Int? @map("low_stock_threshold")
 
   seoTitle       String? @map("seo_title")
   seoDescription String? @map("seo_description")
@@ -933,15 +1310,80 @@ model Product {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  category   Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  images     ProductImage[]
-  orderItems OrderItem[]
+  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category     Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  images       ProductImage[]
+  orderItems   OrderItem[]
+  variantRows  ProductVariant[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, sort])
   @@index([tenantId, categoryId])
+  /// Phase 9: the storefront's own list predicate, and the archived filter, in one index.
+  @@index([tenantId, archivedAt, published, sort])
   @@map("products")
+}
+
+/// Phase 9 / Q19. One row per sellable combination.
+///
+/// `size` and `colour` are NOT NULL with an empty-string default, and that is deliberate: a
+/// Postgres unique index treats two NULLs as distinct, so nullable option columns would cheerfully
+/// accept the same variant twice and the merchant would never know until stock went wrong. Empty
+/// string is the honest encoding of "this product has no colour axis".
+model ProductVariant {
+  id        String @id @default(cuid())
+  tenantId  String @map("tenant_id")
+  productId String @map("product_id")
+
+  size   String @default("")
+  colour String @default("")
+
+  sku String?
+
+  /// Agorot. Null = inherit the product price. «سعر خاص» in the reference shop.
+  priceAgorotOverride Int? @map("price_agorot_override")
+
+  stockQty  Int     @default(0) @map("stock_qty")
+  available Boolean @default(true)
+  sort      Int     @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  /// One combination per product. See the note above on why these columns are not nullable.
+  @@unique([productId, size, colour])
+  @@index([tenantId, productId, sort])
+  /// Serves «قارب على النفاد» without a table scan.
+  @@index([tenantId, stockQty])
+  @@map("product_variants")
+}
+
+/// Phase 9. «جدول المقاسات» — one row per size, columns free-text so a clothing shop can say
+/// "صدر / خصر / طول" and a shoe shop can say "طول القدم" without a schema change.
+model SizeGuideEntry {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+
+  /// Optional scope: null = the tenant's single default chart. A category id scopes a chart to
+  /// one department, which is the difference between a useful chart and a wrong one.
+  categoryId String? @map("category_id")
+
+  label String
+  /// Ordered measurement cells, parallel to `SizeGuide`'s own column headers on the Site row.
+  cells String[] @default([])
+  sort  Int      @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, categoryId, sort])
+  @@map("size_guide_entries")
 }
 
 model ProductImage {
@@ -993,6 +1435,12 @@ model Media {
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   variants      MediaVariant[]
   productImages ProductImage[]
+  /// Phase 9. The ONLY media reference held as a real foreign key. Every other one
+  /// (`Site.logoMediaId`, `Section.config.imageMediaId`, `Category.imageMediaId`,
+  /// `Announcement.imageMediaId`) is a loose id that A3's orphan sweep resolves by hand; a banner
+  /// gets the constraint because a slide whose image was deleted must degrade to "no banner",
+  /// and `SetNull` says that in one line instead of in the sweep.
+  banners       Banner[]
 
   @@unique([tenantId, key])
   @@index([tenantId, status])
@@ -1120,6 +1568,9 @@ model Payment {
 }
 
 /// Phase 5. Per-tenant provider keys, encrypted at rest with ENCRYPTION_KEY.
+/// "At most one ENABLED gateway per tenant" is enforced by a PARTIAL unique index —
+/// `gateway_configs_one_enabled_per_tenant` on (tenant_id) WHERE enabled, in migration
+/// 20260820000000 — which Prisma's schema language cannot express, so it is stated here instead.
 model GatewayConfig {
   id       String  @id @default(cuid())
   tenantId String  @map("tenant_id")
@@ -1260,9 +1711,14 @@ model PushMessage {
 model Order {
   id       String      @id @default(cuid())
   tenantId String      @map("tenant_id")
-  /// From TenantCounter inside the same transaction — never max()+1.
+  /// From TenantCounter inside the same transaction — never max()+1. Shared with `buy_now`:
+  /// one merchant-facing sequence regardless of how an order was taken.
   number   Int
   status   OrderStatus @default(pending)
+
+  /// Phase 5 (`buy_now`, unchanged) defaults every existing and future direct-checkout row to
+  /// `buy_now` for free. Phase 8's cart checkout writes `cart`.
+  channel OrderChannel @default(buy_now)
 
   customerName  String? @map("customer_name")
   customerPhone String? @map("customer_phone")
@@ -1271,17 +1727,48 @@ model Order {
   totalAgorot Int    @map("total_agorot")
   currency    String @default("ILS")
 
+  // --- Cart channel only (Phase 8) — all null/zero/default on every buy_now row ------------
+  /// 8+ cryptographically random chars (never sequential). Unique PER TENANT, not globally: the
+  /// public tracking route already resolves the tenant from the hostname before this is ever
+  /// queried, so a global unique would buy nothing and would need a cross-tenant existence
+  /// check RLS has no legitimate path for.
+  trackingCode String? @map("tracking_code")
+
+  couponId          String?             @map("coupon_id")
+  /// Line total before discount and delivery. Null on buy_now, where `totalAgorot` is the whole
+  /// story; NOT NULL on cart (database-guarded, migration 0004).
+  subtotalAgorot    Int?                @map("subtotal_agorot")
+  discountAgorot    Int                 @default(0) @map("discount_agorot")
+  deliveryFeeAgorot Int                 @default(0) @map("delivery_fee_agorot")
+  paymentMethod     OrderPaymentMethod? @map("payment_method")
+  deliveryArea      String?             @map("delivery_area")
+  deliveryAddress   String?             @map("delivery_address")
+
+  /// SNAPSHOT of `OrderSettings.editWindowMinutes` (already clamped to the platform cap) at the
+  /// moment of checkout — mirrors the price-snapshot rule on `OrderItem`. A merchant tightening
+  /// or widening the window afterwards must never reopen or slam shut the window on an order
+  /// that already exists.
+  editWindowMinutes Int? @map("edit_window_minutes")
+
+  cancelledAt  DateTime? @map("cancelled_at")
+  cancelReason String?   @map("cancel_reason")
+
   placedAt  DateTime  @default(now()) @map("placed_at")
   paidAt    DateTime? @map("paid_at")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
-  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  items    OrderItem[]
-  payments Payment[]
+  tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items            OrderItem[]
+  payments         Payment[]
+  coupon           Coupon?             @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  couponRedemption CouponRedemption?
+  history          OrderHistoryEntry[]
 
   @@unique([tenantId, number])
+  @@unique([tenantId, trackingCode])
   @@index([tenantId, status, placedAt])
+  @@index([tenantId, channel, status, placedAt])
   @@map("orders")
 }
 
@@ -1295,6 +1782,16 @@ model OrderItem {
   priceAgorot     Int    @map("price_agorot")
   quantity        Int    @default(1)
   subtotalAgorot  Int    @map("subtotal_agorot")
+
+  // --- Phase 9 -------------------------------------------------------------------------------
+  /// Which variant was sold. Nullable because every Phase 5 and Phase 8 row predates variants and
+  /// every untracked product still has none. NO foreign key on purpose: `nameSnapshot` already
+  /// establishes that an order item is a SNAPSHOT, and a merchant who deletes a discontinued
+  /// variant must not be blocked by, or silently rewrite, an order from last month.
+  variantId String? @map("variant_id")
+  /// «M · وردي» — the human label, snapshotted at the same moment and for the same reason as the
+  /// name and the price.
+  variantLabel String? @map("variant_label")
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -1320,6 +1817,607 @@ model TenantCounter {
   @@id([tenantId, key])
   @@index([tenantId])
   @@map("tenant_counters")
+}
+
+// =============================================================================
+// Cart, checkout settings and coupons — Phase 8. Additive only: Order/OrderItem/TenantCounter
+// above are Phase 5's, extended rather than replaced (see the Order model's cart-channel block).
+// =============================================================================
+
+/// Per-tenant checkout policy, capability `order_settings` (editable_by defaults to `merchant`
+/// on every plan — see the CapabilityKey enum comment). One row per tenant, created lazily with
+/// platform defaults on first read so a tenant that never opens this screen still gets sane
+/// values rather than an empty form.
+model OrderSettings {
+  id       String @id @default(cuid())
+  tenantId String @unique @map("tenant_id")
+
+  /// 0 = self-service edit/cancel disabled entirely. Clamped to `PlatformSettings
+  /// .orderEditWindowMaxMinutes` on every write — server-side, never merely by the form.
+  editWindowMinutes Int @default(0) @map("edit_window_minutes")
+
+  deliveryFeeAgorot Int @default(0) @map("delivery_fee_agorot")
+  /// Delivery is free at or above this subtotal. Null = no free-delivery threshold.
+  freeDeliveryOverAgorot Int? @map("free_delivery_over_agorot")
+  minOrderAmountAgorot   Int  @default(0) @map("min_order_amount_agorot")
+
+  /// Subset of OrderPaymentMethod as plain text — zod validates the enum membership at every
+  /// write, and `gateway` additionally requires `can(tenantId,'payment_gateway')`, which is a
+  /// plan check that does not belong in a CHECK constraint.
+  paymentMethods String[] @default(["cod"]) @map("payment_methods")
+  /// Phase 8's flat list of area NAMES, with no price of its own. Phase 9 supersedes it with
+  /// `DeliveryZone` + `DeliveryZoneTown` but does NOT drop it: it is still the answer when
+  /// `zonePricingEnabled` is false, which is every tenant that never opens the zone editor.
+  deliveryAreas  String[] @default([]) @map("delivery_areas")
+
+  /// The merchant's own "not taking orders right now" switch — independent of the platform's
+  /// `cart` toggle, which the merchant never controls.
+  orderingPaused Boolean @default(false) @map("ordering_paused")
+
+  // --- Phase 9 -------------------------------------------------------------------------------
+  /// False (the default, and therefore every existing row) = Phase 8 behaviour exactly:
+  /// `deliveryFeeAgorot` flat for everyone. True = the zone table prices the order and
+  /// `deliveryFeeAgorot` is ignored. One flag, so there is never a moment where two pricing
+  /// systems both half-apply.
+  zonePricingEnabled Boolean @default(false) @map("zone_pricing_enabled")
+
+  /// «سعر البلدات غير المدرجة» — what an unmatched town costs. Null while zone pricing is on means
+  /// an unmatched town cannot be served at all, which is a legitimate and often correct answer;
+  /// the checkout says so in Arabic rather than silently charging zero.
+  unlistedTownFeeAgorot Int? @map("unlisted_town_fee_agorot")
+
+  /// «رسوم الدفع عند الاستلام». 0 = no surcharge.
+  codFeeAgorot Int @default(0) @map("cod_fee_agorot")
+  /// «أقصى قيمة لطلب COD» — above this the customer must pay by card. Null = no ceiling.
+  codMaxAgorot Int? @map("cod_max_agorot")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("order_settings")
+}
+
+/// Merchant-owned discount codes, feature `coupons`. Not stackable in V1 — an order carries at
+/// most one (enforced by `CouponRedemption.orderId` being unique, not by discipline alone).
+model Coupon {
+  id       String     @id @default(cuid())
+  tenantId String     @map("tenant_id")
+  code     String
+  type     CouponType
+
+  /// Percent (1-100) when type=percent, agorot when type=fixed, unused (0) when type=free_delivery.
+  value Int @default(0)
+
+  minSubtotalAgorot Int       @default(0) @map("min_subtotal_agorot")
+  maxUses           Int?      @map("max_uses")
+  perPhoneLimit     Int?      @map("per_phone_limit")
+  startsAt          DateTime? @map("starts_at")
+  endsAt            DateTime? @map("ends_at")
+  active            Boolean   @default(true)
+
+  scope            CouponScope @default(all)
+  scopeCategoryIds String[]    @default([]) @map("scope_category_ids")
+  scopeProductIds  String[]    @default([]) @map("scope_product_ids")
+
+  /// Maintained ONLY by the atomic conditional UPDATE in `redeemCouponInTx`
+  /// (src/server/orders/coupons.ts) — never by a plain Prisma `update`, which would race two
+  /// concurrent checkouts against the last remaining use. `coupons_uses_within_max` (migration
+  /// 0004) is the database-level backstop if that discipline is ever broken.
+  usesCount Int @default(0) @map("uses_count")
+
+  createdById String?  @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  redemptions CouponRedemption[]
+  orders      Order[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, active])
+  @@map("coupons")
+}
+
+/// One row per successful redemption — what `perPhoneLimit` is enforced against and what answers
+/// the Arabic error "استُخدم من قبل" (already used).
+model CouponRedemption {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  couponId String @map("coupon_id")
+  /// Unique: at most one coupon per order in V1 (not stackable).
+  orderId  String @unique @map("order_id")
+
+  /// The CLEANED phone (`checkoutSchema`'s phone field), never the raw input — so the per-phone
+  /// limit cannot be defeated by formatting the same number two different ways.
+  customerPhone  String @map("customer_phone")
+  discountAgorot Int    @map("discount_agorot")
+
+  redeemedAt DateTime @default(now()) @map("redeemed_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  coupon Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, couponId])
+  @@index([tenantId, customerPhone])
+  @@map("coupon_redemptions")
+}
+
+/// The cart order's own timeline: every status change, manual edit, internal note and
+/// cancellation — what the merchant detail screen's "full history" panel reads. `buy_now`
+/// orders are untouched by this; their trail is `AuditLog`, exactly as Phase 5 left it.
+model OrderHistoryEntry {
+  id       String           @id @default(cuid())
+  tenantId String           @map("tenant_id")
+  orderId  String           @map("order_id")
+  kind     OrderHistoryKind
+
+  /// 'customer' for a self-service edit/cancel (no session, no user id); 'owner' | 'staff' |
+  /// 'super_admin' for a merchant or admin action.
+  actorRole   String  @map("actor_role")
+  actorUserId String? @map("actor_user_id")
+
+  /// Merchant-visible free text: a cancellation reason, an internal note, a manual-edit summary.
+  note String?
+
+  before Json?
+  after  Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, orderId, createdAt])
+  @@map("order_history_entries")
+}
+
+// =============================================================================
+// Phase 9 — delivery. Q22: a GLOBAL carrier catalogue the platform negotiates, plus a
+// TENANT-OWNED zone table that is what actually prices a checkout.
+//
+// Two objects on purpose. A delivery company and its rate card are the platform's asset — the
+// same «شركة التوصيل» serves forty merchants and its price list changes once, centrally. What a
+// given shop charges its own customer is a different number, owned by that shop, and it is the
+// only number a checkout may read. `seedZonesFromCarrier` COPIES rates across; it does not link
+// them, because a platform rate change that silently repriced forty live checkouts overnight is
+// an outage, not a feature.
+// =============================================================================
+
+/// GLOBAL (prisma/GLOBAL_TABLES.md). A delivery company the platform has an arrangement with.
+model Carrier {
+  id   String @id @default(cuid())
+  key  String @unique
+  /// Arabic display name — this is merchant-facing copy, not an identifier.
+  name String
+
+  phone   String?
+  website String?
+  notes   String?
+
+  /// Hidden carriers stay assigned to whoever already has them and simply stop being offered —
+  /// the same shape `Plan.hidden` uses for the demo plan, for the same reason.
+  hidden Boolean @default(false)
+  sort   Int     @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  rates       CarrierRate[]
+  assignments TenantCarrier[]
+
+  @@index([hidden, sort])
+  @@map("carriers")
+}
+
+/// GLOBAL. One row per (carrier, zone name) — the platform's negotiated rate card.
+model CarrierRate {
+  id        String @id @default(cuid())
+  carrierId String @map("carrier_id")
+
+  /// Free-text Arabic zone name, e.g. «المثلث ووادي عارة». Matched to a merchant's zone by name
+  /// only at seed time, and never afterwards.
+  zoneName String @map("zone_name")
+  /// Agorot.
+  feeAgorot Int @map("fee_agorot")
+  /// «خلال يوم» / «2–3 أيام» — a human string, not a number of hours. The merchant shows it
+  /// verbatim, so making it structured would only mean rebuilding the string at render time.
+  etaLabel String? @map("eta_label")
+  /// The towns this rate covers, used to seed a merchant's zone in one click.
+  towns String[] @default([])
+  sort  Int      @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  carrier Carrier @relation(fields: [carrierId], references: [id], onDelete: Cascade)
+
+  @@unique([carrierId, zoneName])
+  @@index([carrierId, sort])
+  @@map("carrier_rates")
+}
+
+/// Tenant-owned: which carriers this merchant may see and use. Feature `carriers`.
+model TenantCarrier {
+  id        String @id @default(cuid())
+  tenantId  String @map("tenant_id")
+  carrierId String @map("carrier_id")
+
+  /// The merchant's own note — an account number with the carrier, a contact name.
+  reference String?
+  enabled   Boolean @default(true)
+  sort      Int     @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Restrict, not Cascade: deleting a carrier that forty merchants are assigned to should fail
+  /// loudly. Hide it instead — that is what `Carrier.hidden` is for.
+  carrier Carrier @relation(fields: [carrierId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, carrierId])
+  @@index([tenantId, sort])
+  @@map("tenant_carriers")
+}
+
+/// Tenant-owned. «تجمّع» — a group of towns that share one price and one ETA. This is the table a
+/// checkout reads, and the only one.
+model DeliveryZone {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+
+  name      String
+  feeAgorot Int    @map("fee_agorot")
+  etaLabel  String? @map("eta_label")
+  enabled   Boolean @default(true)
+  sort      Int     @default(0)
+
+  /// Which carrier's rate card this zone was copied from, for the merchant's own reference.
+  /// A plain nullable id, NOT a foreign key: the copy is a snapshot and must survive the carrier
+  /// being retired.
+  seededFromCarrierId String? @map("seeded_from_carrier_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  towns  DeliveryZoneTown[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, sort])
+  @@map("delivery_zones")
+}
+
+/// One town in one zone. `normalised` is the matching key and is computed ONLY by
+/// `normaliseTownName()` in src/server/delivery — never by hand, never in SQL. It strips the ال
+/// prefix, folds أإآا, ة→ه, ى→ي, removes tatweel and collapses whitespace, so a customer typing
+/// «الطيره» matches the merchant's «الطيرة».
+///
+/// The unique index is on (tenantId, normalised), NOT (zoneId, normalised): one town may belong to
+/// exactly one zone per tenant, or the same address would price two different ways depending on
+/// which row the query happened to read first.
+model DeliveryZoneTown {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  zoneId   String @map("zone_id")
+
+  /// As the merchant typed it — this is what the storefront displays.
+  name String
+  /// The match key. Never displayed.
+  normalised String @map("normalised")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  zone   DeliveryZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, normalised])
+  @@index([tenantId, zoneId, name])
+  @@map("delivery_zone_towns")
+}
+
+/// Tenant-owned invoicing and tax settings, feature `tax_invoicing`, capability `tax_settings`.
+///
+/// Holds NO credential of any kind. The reference shop states the rule this model enforces: an API
+/// key or webhook secret for an invoicing provider lives in server environment variables, never in
+/// a database column a dashboard form can write and never in the repo (invariant 7). This row
+/// records only what the merchant must tell their customers and their accountant.
+model TaxSettings {
+  id       String @id @default(cuid())
+  tenantId String @unique @map("tenant_id")
+
+  /// ח.פ / עוסק מורשה — the registered business number, shown on the business-identity page.
+  businessNumber String? @map("business_number")
+  legalName      String? @map("legal_name")
+
+  /// מע"מ as basis points (1750 = 17.50%), never a float: the same reason prices are agorot.
+  /// Null = not configured, and the storefront then says nothing about tax rather than guessing.
+  vatRateBasisPoints Int? @map("vat_rate_basis_points")
+
+  /// True = displayed prices already include VAT, which is the norm for a consumer shop here.
+  pricesIncludeVat Boolean @default(true) @map("prices_include_vat")
+
+  /// A provider NAME only (Green Invoice / EZcount / iCount / Rivhit). Free text, so adding a
+  /// provider is a seed change and not a migration.
+  invoiceProvider String? @map("invoice_provider")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("tax_settings")
+}
+
+// =============================================================================
+// Phase 9 — customers. Feature `customers_crm`.
+// =============================================================================
+
+/// DERIVED from orders, never independently collected. Keyed on the phone number an order already
+/// stores, so this table introduces no new class of personal data — it is an index over data the
+/// tenant already holds, and it dies in the purge cascade with everything else.
+///
+/// The aggregate columns are maintained by `upsertCustomerFromOrder` inside the order transaction.
+/// They are a cache of a query, and `recomputeCustomerTotals` can rebuild any row from its orders,
+/// which is the property that makes them safe to keep.
+model Customer {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+
+  /// E.164 where possible, normalised by `normalisePhone()`. The identity column.
+  phone String
+  name  String?
+  /// Last delivery area seen on an order — the reference shop's «المنطقة» column.
+  area  String?
+
+  ordersCount     Int @default(0) @map("orders_count")
+  totalSpentAgorot Int @default(0) @map("total_spent_agorot")
+
+  firstOrderAt DateTime? @map("first_order_at")
+  lastOrderAt  DateTime? @map("last_order_at")
+
+  /// «موافقة تسويقية» — an explicit opt-in, defaulting to FALSE. A customer who bought something
+  /// has not thereby agreed to be marketed to, and this column must never be set as a side effect
+  /// of an order.
+  marketingConsent   Boolean   @default(false) @map("marketing_consent")
+  marketingConsentAt DateTime? @map("marketing_consent_at")
+
+  notes String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, phone])
+  @@index([tenantId, lastOrderAt])
+  @@index([tenantId, totalSpentAgorot])
+  @@map("customers")
+}
+
+// =============================================================================
+// Phase 9 — first-party analytics. Q20: consent-gated, aggregated, no PII.
+//
+// Four tables, one shape: a short-lived raw table and three daily rollups. The dashboard reads
+// ONLY the rollups. `visitorKey` is HMAC(secret, ip + userAgent + yyyy-mm-dd) — salted with the
+// date so it cannot be joined across days, which is exactly what makes it a counting device
+// rather than an identifier. No IP, no user agent, no path parameter is ever stored.
+// =============================================================================
+
+model AnalyticsEvent {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+
+  kind AnalyticsEventKind
+
+  /// Storefront path, already stripped of query string and normalised (`/products/[slug]` becomes
+  /// `/products/:slug`). Bounded cardinality is the whole point.
+  path String
+
+  /// For `section_view`: the section anchor from src/templates/section-anchors.ts, validated
+  /// against the tenant's own section rows before insert. For `product_view`: the product slug.
+  /// For `search`: null — the term lives in `searchTerm`.
+  target String?
+
+  /// Milliseconds the section was actually on screen, from an IntersectionObserver. Only
+  /// `section_view` sets it. Clamped server-side: a tab left open overnight is not a 9-hour read.
+  dwellMs Int? @map("dwell_ms")
+
+  /// Trimmed, length-capped, normalised search term. Rendered as TEXT in the merchant's report —
+  /// this column is visitor input and is treated as hostile.
+  searchTerm String? @map("search_term")
+  /// Whether that search returned nothing. The most actionable number in the whole report.
+  resultCount Int? @map("result_count")
+
+  /// Daily-salted, non-reversible, non-joinable across days. See the block comment above.
+  visitorKey String @map("visitor_key")
+  /// 'mobile' | 'desktop' — coarse on purpose. Not a device fingerprint.
+  deviceKind String? @map("device_kind")
+
+  occurredAt DateTime @default(now()) @map("occurred_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// Serves the nightly rollup's own range scan; the raw rows are pruned at 30 days by
+  /// `pruneExpiredRecords`, so this table never becomes the big one.
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, kind, occurredAt])
+  @@map("analytics_events")
+}
+
+/// One row per tenant per day per path. `visitors` is a distinct count of `visitorKey` computed at
+/// rollup time — it cannot be recomputed later, because the raw rows are gone by then and that is
+/// deliberate.
+model AnalyticsDaily {
+  id       String   @id @default(cuid())
+  tenantId String   @map("tenant_id")
+  day      DateTime @db.Date
+  path     String
+
+  visitors     Int @default(0)
+  pageviews    Int @default(0)
+  productViews Int @default(0) @map("product_views")
+  whatsappClicks Int @default(0) @map("whatsapp_clicks")
+  addToCarts   Int @default(0) @map("add_to_carts")
+  checkoutStarts Int @default(0) @map("checkout_starts")
+  orders       Int @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, day, path])
+  @@index([tenantId, day])
+  @@map("analytics_daily")
+}
+
+/// «في اي قسم زاره و كم من الوقت جلس فيه» — the section-attention rollup.
+model SectionDwellDaily {
+  id       String   @id @default(cuid())
+  tenantId String   @map("tenant_id")
+  day      DateTime @db.Date
+  /// Section anchor, e.g. `products`, `about`, `location`.
+  section  String
+
+  views       Int @default(0)
+  /// Sum of clamped dwell across all views that day. Average is a division at read time, never a
+  /// stored float that drifts out of step with its own numerator.
+  totalDwellMs Int @default(0) @map("total_dwell_ms")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, day, section])
+  @@index([tenantId, day])
+  @@map("section_dwell_daily")
+}
+
+/// «عرض عمليات بحث الزبائن» — what customers looked for, and whether the shop had it.
+model SearchQueryDaily {
+  id       String   @id @default(cuid())
+  tenantId String   @map("tenant_id")
+  day      DateTime @db.Date
+  term     String
+
+  searches Int @default(0)
+  /// How many of those searches returned nothing. `searches > 0 AND zeroResults = searches` is the
+  /// merchant's shopping list.
+  zeroResults Int @default(0) @map("zero_results")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, day, term])
+  @@index([tenantId, day])
+  @@index([tenantId, zeroResults])
+  @@map("search_query_daily")
+}
+
+// =============================================================================
+// Phase 10 — per-tenant backups and the standalone bundle (Q24, Q25)
+// =============================================================================
+
+/// One artifact: everything this tenant owns, taken by the PLATFORM OWNER (Q26 — there is no
+/// merchant surface for this, no feature key on any plan, and nothing about it renders on app.*).
+///
+/// TENANT-OWNED, which is the whole design and not a filing decision. The rows die in the purge
+/// cascade and the objects die with `deleteByPrefix(tenants/{id}/)` — so a merchant who was told
+/// their data is destroyed does not have a copy of their catalogue outliving the promise inside a
+/// table invented after it was made. The consequence is stated rather than worked around: a backup
+/// cannot be used to resurrect a purged tenant. That is the platform DUMP's job (Q10), and the
+/// restore runbook's, not this feature's.
+model TenantBackup {
+  id       String             @id @default(cuid())
+  tenantId String             @map("tenant_id")
+  kind     TenantBackupKind   @default(backup)
+  status   TenantBackupStatus @default(pending)
+
+  /// Null until the artifact is written. Always under `tenants/{id}/_backups/`.
+  key       String?
+  sizeBytes Int?    @map("size_bytes")
+
+  /// The migration directory name the artifact was taken at, e.g. `20260821000000_phase10_backups`.
+  /// A restore refuses anything but an exact match: loading a row shape from a different schema is
+  /// how a "restore" silently drops a column that has since become load-bearing.
+  schemaVersion String  @map("schema_version")
+  /// The build's git SHA when known — diagnostic only, never a gate.
+  appCommit     String? @map("app_commit")
+
+  /// jsonb: row counts per table, media count and bytes. What the operator sees before restoring,
+  /// and what makes "it restored but the shop is empty" a question with an answer.
+  contents Json?
+
+  /// Operator's own words. Not shown to the merchant — there is no merchant surface.
+  note String?
+
+  /// Set when the job fails, so a missing artifact is never silently indistinguishable from one
+  /// that was never requested.
+  error String?
+
+  createdById String?   @map("created_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  completedAt DateTime? @map("completed_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
+  @@map("tenant_backups")
+}
+
+/// GLOBAL (see prisma/GLOBAL_TABLES.md) and deliberately a SINGLETON: a platform-wide constant
+/// set by the super admin, applying uniformly to every tenant. It has no tenant dimension at
+/// all, so it sits outside the plan-default/per-tenant-override axes (invariant 2) rather than
+/// bending them to fit — those axes are for the "how much of this feature" question, not "the
+/// same ceiling for everyone regardless of plan" one. Adding the NEXT platform-wide constant is
+/// a nullable column here, never a new table.
+model PlatformSettings {
+  /// Always the literal "singleton" — the CHECK in migration 0004 makes a second row
+  /// unrepresentable, not merely undesired.
+  id String @id @default("singleton")
+
+  /// The agency credit bar on every storefront footer ("صمّم وبُرمج بواسطة إتقان تك").
+  /// OWNER-ONLY on both axes, deliberately: the toggle and the link live on this singleton and are
+  /// edited from the /plans panel — no feature key, no capability, nothing a merchant can see or
+  /// ask about from their dashboard. Off by default so a fresh deployment never advertises anyone.
+  brandingBarEnabled Boolean @default(false) @map("branding_bar_enabled")
+  /// The displayed name. Data, not code, so it is a column rather than an i18n string — the
+  /// surrounding sentence IS i18n (storefront.json `footer.credit`).
+  brandingBarName    String? @map("branding_bar_name")
+  /// Where the name links. http(s) enforced at the write (zod), not here.
+  brandingBarUrl     String? @map("branding_bar_url")
+
+  /// Caps what any tenant's `OrderSettings.editWindowMinutes` may be set to (Phase 8).
+  orderEditWindowMaxMinutes Int @default(60) @map("order_edit_window_max_minutes")
+
+  // --- Phase 9. Three more platform-wide constants, as nullable/defaulted columns exactly as the
+  // docblock above instructs — not three new tables.
+  /// Fallback for `Product.lowStockThreshold` when a product does not set its own.
+  lowStockThresholdDefault Int @default(3) @map("low_stock_threshold_default")
+
+  /// How long raw `AnalyticsEvent` rows survive before `pruneExpiredRecords` deletes them. The
+  /// rollups are permanent; the raw rows are not, and Q20 promises 30 days.
+  analyticsRawRetentionDays Int @default(30) @map("analytics_raw_retention_days")
+
+  /// Ceiling applied to every reported `dwellMs` before it is stored. A tab left open overnight is
+  /// not a nine-hour read of the about section, and without a clamp one such tab dominates a
+  /// month of averages.
+  analyticsMaxDwellMs Int @default(120000) @map("analytics_max_dwell_ms")
+
+  updatedById String?  @map("updated_by_id")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_settings")
 }
 
 // =============================================================================

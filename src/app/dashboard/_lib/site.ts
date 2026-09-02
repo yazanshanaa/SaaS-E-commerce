@@ -164,12 +164,20 @@ export const detailsSchema = z.object({
   whatsapp: optionalWhatsappField,
   email: optionalText(160),
   hours: optionalText(400),
-  logoMediaId: z
-    .string()
-    .trim()
-    .transform((value) => (value === '' ? null : value))
-    .nullable()
-    .default(null),
+  /**
+   * Phase 9: `logoMediaId` is GONE from this form, and its removal is paired with the hidden input
+   * in `src/app/dashboard/settings/page.tsx`. The two must move together.
+   *
+   * The field was `.nullable().default(null)`, which is the dangerous default: unlike every
+   * `optionalText` field above it, an ABSENT field parses as `null` rather than as undefined. So
+   * deleting the input while leaving this in the schema would blank the shop's logo on the first
+   * ordinary save of its own name — silently, and with no way for the merchant to connect the two.
+   *
+   * The logo, the tab icon and the share image now live on `/content/branding`, behind the
+   * `logo_upload` feature and the `logo` capability, and are written by `saveBranding`. Nothing on
+   * this form touches them, so there is nothing to carry through. `SiteDetails.logoMediaId` stays on
+   * the READ type: this form no longer uses it, and the admin's site-content tab does.
+   */
 });
 
 export async function saveDetails(ctx: MerchantContext, raw: unknown): Promise<ActionState | null> {
@@ -177,13 +185,6 @@ export async function saveDetails(ctx: MerchantContext, raw: unknown): Promise<A
   if (!parsed.success) return invalid(parsed.error);
 
   const input = parsed.data;
-
-  const logo = input.logoMediaId
-    ? await ctx.db.media.findFirst({
-        where: { id: input.logoMediaId, tenantId: ctx.tenantId, status: 'ready' },
-        select: { id: true },
-      })
-    : null;
 
   await ctx.db.site.update({
     where: { tenantId: ctx.tenantId },
@@ -196,7 +197,6 @@ export async function saveDetails(ctx: MerchantContext, raw: unknown): Promise<A
       whatsapp: input.whatsapp ?? null,
       email: input.email ?? null,
       hours: input.hours ?? null,
-      logoMediaId: logo?.id ?? null,
     },
   });
 
@@ -328,10 +328,29 @@ export function mapPayloadFrom(input: {
 // Announcement bar — capability `announcement_bar`
 // -----------------------------------------------------------------------------
 
+/**
+ * Phase 9: `text` moved from 200 to 160 characters.
+ *
+ * Three definitions of this one bar disagreed — this file and `capability-payloads.ts` said 200, the
+ * shared `announcementBarSchema` in `@/shared/site-contract` said 160 — and only 160 has a reason
+ * written beside it: the strip spans every page, it is real text rather than an image so it reaches
+ * search results, and 200 characters of Arabic wraps to four lines on a 360px viewport. The two
+ * stragglers moved to the considered number.
+ *
+ * The reachable case is a merchant who already saved 180 characters here. Their bar still renders
+ * exactly as before — nothing truncates on read — and both this form and `/content/strips` now refuse
+ * to re-save it until it is shortened, saying so through `dashboard:errors.textTooLong`, which is
+ * true and actionable. Silent truncation on save was rejected: cutting a merchant's sentence
+ * mid-word without telling them is the worse failure.
+ *
+ * Note that this schema still owns the bar's five TEXT columns and `/content/strips` owns only its
+ * colour. Two forms posting the same five columns is how a field gets blanked by a form that did not
+ * render it.
+ */
 export const announcementBarSchema = z
   .object({
     enabled: z.boolean(),
-    text: optionalText(200),
+    text: optionalText(160),
     link: optionalUrlField,
     startsAt: optionalDateField,
     endsAt: optionalDateField,

@@ -129,6 +129,35 @@ export function SiteFooter({
           ))}
           <span>{st('footer.rights', { year: String(year), name: site.name })}</span>
         </nav>
+
+        {/*
+          The agency credit (2026-08-21, owner-directed). PLATFORM state, not the merchant's: the
+          toggle, the name and the link live on the settings singleton, edited from the admin panel
+          only — no dashboard surface, no capability, nothing a merchant can switch. `context.credit`
+          is null whenever the owner has it off, and null renders NOTHING: no bar, no empty strip.
+
+          Styled entirely through tokens (`.sf-credit` in storefront.css), so the line takes each
+          template's own muted text and link colours — which are the two tokens `deriveColorTokens`
+          already guards to AA against every surface they can land on. That is what "matches the
+          site's colours" means here without a single per-tenant setting.
+        */}
+        {context.credit ? (
+          <p className="sf-credit">
+            {st('footer.credit')}{' '}
+            {/* The class is load-bearing: the shell's `.sf-root a:not([class])` forces unclassed
+                links to inherit, at a specificity `.sf-credit a` cannot beat — so an unclassed
+                anchor here rendered muted instead of in `--t-link`. Classing it is that rule's
+                own designed escape hatch, not a workaround. */}
+            <a
+              className="sf-credit__link"
+              href={context.credit.url}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              {context.credit.name}
+            </a>
+          </p>
+        ) : null}
       </div>
     </footer>
   );

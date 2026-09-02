@@ -108,7 +108,15 @@ export interface ResolvedColors {
   primary: string;
   secondary: string;
   background: string;
-  surface: string;
+  /**
+   * `null` means "the merchant chose no surface" — and that absence is MEANINGFUL, not a gap to
+   * paper over (pre-launch fix, 2026-08-20). The templates derive a tint of the background for it
+   * (`templates/tokens.ts` `defaultSurface`), which is what keeps cards reading as cards. The old
+   * behaviour — defaulting it to the background here — made that derived tint unreachable for
+   * every custom-mode tenant: white cards turned cream and panels stopped being panels.
+   * Presets always carry an explicit, vetted surface.
+   */
+  surface: string | null;
   text: string;
 }
 
@@ -139,14 +147,17 @@ export function resolveColors(selection: ColorSelection): ColorResolution {
           primary: selection.primary,
           secondary: selection.secondary,
           background: selection.background,
-          surface: selection.surface ?? selection.background,
+          // Absent stays absent — the templates derive a usable tint (see ResolvedColors.surface).
+          surface: selection.surface ?? null,
           text: selection.text ?? (isDark(selection.background) ? '#F5F5F5' : '#1A1A1A'),
         };
 
   const adjustments: ColorResolution['adjustments'] = [];
   const colors = { ...base };
 
-  const check = (token: keyof ResolvedColors, against: string, target: number) => {
+  // `surface` is never guarded here — it is either a vetted preset value, an explicit choice the
+  // templates' own usability check rescues (`templates/tokens.ts`), or null.
+  const check = (token: 'text' | 'primary' | 'secondary', against: string, target: number) => {
     const result = ensureContrast(colors[token], against, target);
     if (result.adjusted) {
       adjustments.push({ token, from: colors[token], to: result.color, ratio: result.ratio });

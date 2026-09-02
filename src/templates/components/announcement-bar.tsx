@@ -24,6 +24,17 @@ export interface AnnouncementBarProps {
   link: string | null;
   /** Changes whenever the announcement's content changes. */
   signature: string;
+  /**
+   * Phase 9. The token pair for the merchant's chosen colour, resolved by the loader.
+   *
+   * Passed IN rather than derived: the four pairs and the proof that each clears WCAG AA against the
+   * guarded tokens live in `src/server/content/strips.ts`, and this is a client component that may
+   * not import from `src/server` at all.
+   *
+   * Optional, so the two existing call sites keep compiling; absent means the stylesheet's own
+   * `.sf-bar` colours, which is what shipped before Phase 9.
+   */
+  style?: { background: string; color: string };
   dismissLabel: string;
   regionLabel: string;
 }
@@ -84,6 +95,7 @@ export function AnnouncementBar({
   text,
   link,
   signature,
+  style,
   dismissLabel,
   regionLabel,
 }: AnnouncementBarProps) {
@@ -92,7 +104,7 @@ export function AnnouncementBar({
   if (dismissedSignature === signature) return null;
 
   return (
-    <aside className="sf-bar" aria-label={regionLabel}>
+    <aside className="sf-bar" aria-label={regionLabel} style={style}>
       <div className="sf-shell sf-bar__inner">
         <p className="sf-bar__text">
           {/*

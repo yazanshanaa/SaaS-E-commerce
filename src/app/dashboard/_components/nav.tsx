@@ -1,27 +1,28 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { t } from '@/shared/i18n';
+import type { UiAccentKey, UiTheme } from '@/shared/ui-theme';
+import { KitRail, type KitNavGroup, type KitPaletteSearch } from '../../_components/kit/rail';
+import { ThemeSwitch } from '../../_components/theme-switch';
 
 /**
- * The rail.
+ * The merchant rail (Phase 11, Track 11.F): sixteen flat links became الرئيسية plus five groups,
+ * each item with a glyph, on the shared kit chrome — the drawer, the collapse and the command
+ * palette all arrive from `KitRail`, which `admin/_components/nav.tsx` consumes identically.
  *
- * Two consequences of how this platform routes, identical to A1's and for the same reasons:
+ * THE ITEM LIST IS STILL BUILT BY THE SERVER and passed in — `navItems(ctx)` in `layout.tsx`
+ * remains the single gate, asking `merchantCan` per entry exactly as the routes do. This
+ * component only ARRANGES what it was given: the grouping map below carries KEYS, and a key the
+ * server withheld simply leaves its slot empty (a group left with no items never renders its
+ * heading). Filtering here instead would ship a staff member an inventory of the screens that
+ * are not theirs — the rule this file has carried since B2.
  *
- *   1. every `href` is the PUBLIC path (`/products`), never the internal rewrite target
- *      (`/dashboard/products`). proxy.ts owns the prefix and the URL bar never shows it;
- *   2. `usePathname()` returns either form depending on whether the value came from the server
- *      render (which sees the rewritten path) or the client router (which sees the address
- *      bar), so it is normalised before anything is compared. Getting this wrong does not break
- *      navigation — it silently highlights nothing, which is the kind of bug that survives
- *      review because everything still works.
- *
- * The item list is built by the SERVER and passed in. Filtering it here would mean shipping the
- * full list to a browser and hiding parts of it, which tells a staff member exactly which
- * screens exist and are not theirs — and would be a nav that disagrees with what the routes
- * actually allow.
+ * The grouping is Q29's answer, verbatim from the phase plan: it adds no key and drops none —
+ * the one addition of the whole track, `billing`, is 11.H's screen and arrives through the
+ * server list like every other entry (owner-only, so a staff session never receives it).
  */
 
 export interface NavItem {
@@ -29,15 +30,21 @@ export interface NavItem {
   key: string;
 }
 
-function publicPath(pathname: string): string {
-  const stripped = pathname.replace(/^\/dashboard(?=\/|$)/, '');
-  return stripped === '' ? '/' : stripped;
-}
+/** key → group. Order inside each array is the render order. */
+const GROUPS: Array<{ labelKey: string | null; keys: string[] }> = [
+  { labelKey: null, keys: ['home'] },
+  { labelKey: 'groupStore', keys: ['products', 'coupons', 'customers'] },
+  { labelKey: 'groupOrders', keys: ['orders', 'delivery', 'tax'] },
+  { labelKey: 'groupSite', keys: ['appearance', 'sections', 'content', 'media'] },
+  { labelKey: 'groupMarketing', keys: ['notifications', 'analytics', 'insights'] },
+  { labelKey: 'groupAccount', keys: ['settings', 'staff', 'billing'] },
+];
 
-function isActive(current: string, href: string): boolean {
-  if (href === '/') return current === '/';
-  return current === href || current.startsWith(`${href}/`);
-}
+/** The screens whose own list pages already take `?search=` — the palette's deep rows. */
+const SEARCHABLE: Record<string, string> = {
+  orders: '/orders?search=',
+  customers: '/customers?search=',
+};
 
 export function DashboardNav({
   items,
@@ -45,14 +52,19 @@ export function DashboardNav({
   roleLabel,
   siteName,
   storefrontUrl,
+  theme,
+  accent,
+  railCollapsed,
 }: {
   items: NavItem[];
   userName: string;
   roleLabel: string;
   siteName: string;
   storefrontUrl: string;
+  theme: UiTheme;
+  accent: UiAccentKey | null;
+  railCollapsed: boolean;
 }) {
-  const pathname = publicPath(usePathname() ?? '/');
   const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
 
@@ -73,42 +85,80 @@ export function DashboardNav({
     }
   }
 
+  const byKey = new Map(items.map((item) => [item.key, item]));
+  const grouped = new Set<string>();
+
+  const groups: KitNavGroup[] = GROUPS.map((group) => ({
+    label: group.labelKey ? t('dashboard', `nav.${group.labelKey}`) : null,
+    items: group.keys.flatMap((key) => {
+      const item = byKey.get(key);
+      if (!item) return [];
+      grouped.add(key);
+      return [{ href: item.href, label: t('dashboard', `nav.${item.key}`), icon: item.key }];
+    }),
+  }));
+
+  // A key the map does not know yet (a future phase's screen) still renders, ungrouped at the
+  // end, rather than silently vanishing from the nav on the day it ships.
+  const leftovers = items.filter((item) => !grouped.has(item.key));
+  if (leftovers.length > 0) {
+    groups.push({
+      label: null,
+      items: leftovers.map((item) => ({
+        href: item.href,
+        label: t('dashboard', `nav.${item.key}`),
+        icon: item.key,
+      })),
+    });
+  }
+
+  const paletteSearches: KitPaletteSearch[] = items.flatMap((item) => {
+    const base = SEARCHABLE[item.key];
+    return base ? [{ label: t('dashboard', `nav.searchIn.${item.key}`), hrefBase: base }] : [];
+  });
+
   return (
-    <nav className="sbd-rail" aria-label={t('dashboard', 'nav.sectionLabel')}>
-      <Link className="sbd-brand" href="/">
-        {siteName}
-        <small>{t('dashboard', 'title')}</small>
-      </Link>
-
-      <div className="sbd-nav">
-        {items.map((item) => (
-          <Link
-            key={item.href}
-            className="sbd-nav-link"
-            href={item.href}
-            aria-current={isActive(pathname, item.href) ? 'page' : undefined}
+    <KitRail
+      pathPrefix="/dashboard"
+      collapsedInitial={railCollapsed}
+      collapseCookie="sb-rail"
+      groups={groups}
+      paletteSearches={paletteSearches}
+      labels={{
+        navLabel: t('dashboard', 'nav.sectionLabel'),
+        openMenu: t('dashboard', 'nav.openMenu'),
+        closeMenu: t('dashboard', 'nav.closeMenu'),
+        collapse: t('dashboard', 'nav.collapse'),
+        expand: t('dashboard', 'nav.expand'),
+        palette: t('dashboard', 'nav.palette'),
+        paletteInput: t('dashboard', 'nav.paletteInput'),
+        paletteEmpty: t('dashboard', 'nav.paletteEmpty'),
+      }}
+      brand={
+        <Link href="/">
+          {siteName}
+          <small>{t('dashboard', 'title')}</small>
+        </Link>
+      }
+      foot={
+        <>
+          <ThemeSwitch initialTheme={theme} initialAccent={accent} />
+          <a className="sbd-btn sbd-btn--sm" href={storefrontUrl} rel="noreferrer noopener">
+            {t('dashboard', 'shell.visitSite')}
+          </a>
+          <span>
+            {t('dashboard', 'shell.signedInAs', { name: userName })} · {roleLabel}
+          </span>
+          <button
+            type="button"
+            className="sbd-btn sbd-btn--sm"
+            onClick={signOut}
+            disabled={signingOut}
           >
-            {t('dashboard', `nav.${item.key}`)}
-          </Link>
-        ))}
-      </div>
-
-      <div className="sbd-rail-foot">
-        <a className="sbd-btn sbd-btn--sm" href={storefrontUrl} rel="noreferrer noopener">
-          {t('dashboard', 'shell.visitSite')}
-        </a>
-        <span>
-          {t('dashboard', 'shell.signedInAs', { name: userName })} · {roleLabel}
-        </span>
-        <button
-          type="button"
-          className="sbd-btn sbd-btn--sm"
-          onClick={signOut}
-          disabled={signingOut}
-        >
-          {t('dashboard', 'shell.signOut')}
-        </button>
-      </div>
-    </nav>
+            {t('dashboard', 'shell.signOut')}
+          </button>
+        </>
+      }
+    />
   );
 }

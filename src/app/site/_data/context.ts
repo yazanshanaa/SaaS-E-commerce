@@ -1,8 +1,10 @@
 import { cache } from 'react';
 import { unstable_cache } from 'next/cache';
 import { getEnv } from '@/env';
-import { PUBLIC_ACTOR, tenantDb } from '@/server/db';
+import { fullWeek, isOpenNow, stripStyle, type StripColor } from '@/server/content';
+import { PUBLIC_ACTOR, publicDb, tenantDb } from '@/server/db';
 import { can, isCapabilityVisible } from '@/server/entitlements';
+import { getBrandingBar } from '@/server/platform-settings';
 import { readEnabledGateway } from '@/server/payments';
 import { pushPublicKey } from '@/server/push';
 import {
@@ -22,19 +24,29 @@ import {
   CUSTOM_HTML_FEATURE_KEY,
   type StorefrontAnnouncement,
   type StorefrontAnnouncementBar,
+  type StorefrontBanner,
   type StorefrontCategory,
   type StorefrontContext,
   type StorefrontImage,
+  type StorefrontOpeningDay,
   type StorefrontProduct,
   type StorefrontSection,
   type StorefrontSite,
   type StorefrontSocialLink,
+  type StorefrontStoreStat,
   type StorefrontTestimonial,
+  type StorefrontTrustBadge,
   type TemplateDefinition,
 } from '@/templates';
 import { STOREFRONT_REVALIDATE_SECONDS, storefrontTag } from './cache';
 import { toStorefrontImage, type MediaRow } from './media';
-import { countProducts, countProductsByCategoryId, queryProducts } from './products';
+import {
+  countProducts,
+  countProductsByCategoryId,
+  queryBestSellers,
+  queryNewArrivals,
+  queryProducts,
+} from './products';
 
 /**
  * The one place a storefront talks to the database.
@@ -97,9 +109,16 @@ export const loadStorefrontContext = cache(loadStorefrontContextUncached);
 async function loadStorefrontContextUncached(
   surface: RequestSurface,
 ): Promise<StorefrontContext> {
-  const [source, access] = await Promise.all([
+  const [source, access, credit] = await Promise.all([
     cachedTenantSource(surface.tenantId),
     resolveAccess(surface.tenantId, surface.isDemo),
+    /**
+     * The agency credit bar — PLATFORM state, one row for every shop, so it deliberately does not
+     * live inside the per-tenant cache: the owner's toggle must land on the next page view of
+     * every storefront, not after each tenant's five-minute entry happens to expire. Its own
+     * 60-second Redis entry (invalidated on save) is what keeps this from being a query per view.
+     */
+    getBrandingBar(publicDb()),
   ]);
   const env = getEnv();
 
@@ -124,12 +143,13 @@ async function loadStorefrontContextUncached(
      * be reached.
      */
     pushPublicKey: access.push ? pushPublicKey() : null,
+    credit,
   };
 }
 
 type CachedTenantData = Omit<
   StorefrontContext,
-  'tenantId' | 'slug' | 'hostname' | 'origin' | 'isDemo' | 'pushPublicKey'
+  'tenantId' | 'slug' | 'hostname' | 'origin' | 'isDemo' | 'pushPublicKey' | 'credit'
 >;
 
 function cachedTenantSource(tenantId: string): Promise<TenantSource> {
@@ -177,11 +197,25 @@ interface StorefrontAccess {
    * storefront IMMEDIATELY, and that only holds while the answer is resolved per request.
    */
   paymentGateway: boolean;
+  /** Phase 8. The FEATURE only, same split as `paymentGateway` above and for the same reason:
+   *  toggling `cart` must close the storefront's cart on the very next page view. */
+  cart: boolean;
   announcementBar: boolean;
   socialLinks: boolean;
   announcementsBoard: boolean;
   mapLocation: boolean;
   colors: boolean;
+
+  // --- Phase 9. Availability (axis a) ---------------------------------------------------------
+  bannersSlider: boolean;
+  homepageExtras: boolean;
+  searchInsights: boolean;
+  visitorAnalytics: boolean;
+  // --- Phase 9. The visibility half of axis (b) -----------------------------------------------
+  banners: boolean;
+  trustBadges: boolean;
+  openingHours: boolean;
+  storeStats: boolean;
 }
 
 /**
@@ -200,11 +234,20 @@ async function resolveAccess(tenantId: string, isDemo: boolean): Promise<Storefr
     pwa,
     push,
     paymentGateway,
+    cart,
     announcementBar,
     socialLinks,
     announcementsBoard,
     mapLocation,
     colors,
+    bannersSlider,
+    homepageExtras,
+    searchInsights,
+    visitorAnalytics,
+    banners,
+    trustBadges,
+    openingHours,
+    storeStats,
   ] = await Promise.all([
     can(tenantId, 'whatsapp_orders'),
     can(tenantId, 'analytics'),
@@ -212,11 +255,23 @@ async function resolveAccess(tenantId: string, isDemo: boolean): Promise<Storefr
     can(tenantId, 'pwa'),
     can(tenantId, 'push_notifications'),
     can(tenantId, 'payment_gateway'),
+    can(tenantId, 'cart'),
     isCapabilityVisible(tenantId, 'announcement_bar'),
     isCapabilityVisible(tenantId, 'social_links'),
     isCapabilityVisible(tenantId, 'announcements_board'),
     isCapabilityVisible(tenantId, 'map_location'),
     isCapabilityVisible(tenantId, 'colors'),
+    // Phase 9. Eight more resolutions, in the SAME `Promise.all` and for the same reason every
+    // entry above is here rather than in the cached unit: an admin toggle has to be reflected on
+    // the very next page view, in either direction.
+    can(tenantId, 'banners_slider'),
+    can(tenantId, 'homepage_extras'),
+    can(tenantId, 'search_insights'),
+    can(tenantId, 'visitor_analytics'),
+    isCapabilityVisible(tenantId, 'banners'),
+    isCapabilityVisible(tenantId, 'trust_badges'),
+    isCapabilityVisible(tenantId, 'opening_hours'),
+    isCapabilityVisible(tenantId, 'store_stats'),
   ]);
 
   return {
@@ -233,11 +288,28 @@ async function resolveAccess(tenantId: string, isDemo: boolean): Promise<Storefr
      * ROUTE re-asks the same question for itself.
      */
     paymentGateway: paymentGateway === true && !isDemo,
+    /** Same demo refusal as `paymentGateway` — belt and braces alongside the seed's own
+     *  `cart: false` on the demo plan (docs/DECISIONS.md). */
+    cart: cart === true && !isDemo,
     announcementBar,
     socialLinks,
     announcementsBoard,
     mapLocation,
     colors,
+
+    bannersSlider: bannersSlider === true,
+    homepageExtras: homepageExtras === true,
+    /**
+     * A DEMO NEVER MEASURES — the same refusal `paymentGateway` makes, and the beacon route re-asks
+     * it for itself. `searchInsights` deliberately does NOT fold the demo in: a demo shop may
+     * legitimately show a working search box to a prospect, and it must never count anyone.
+     */
+    searchInsights: searchInsights === true,
+    visitorAnalytics: visitorAnalytics === true && !isDemo,
+    banners,
+    trustBadges,
+    openingHours,
+    storeStats,
   };
 }
 
@@ -280,6 +352,24 @@ interface TenantSource {
    * makes the acceptance criterion — a feature toggle closing checkout immediately — hold.
    */
   gateway: { provider: string; instructions: string | null } | null;
+
+  // --- Phase 9. Content, JSON-safe --------------------------------------------------------------
+  //
+  // Everything here is read UNCONDITIONALLY and gated at composition, which is the split this file
+  // already documents at length: the content half is cached for five minutes, the access half never
+  // is. The cost of reading a hidden capability's rows is one query on a cache miss; the cost of
+  // caching the verdict is a toggle that takes five minutes to take effect on the surface it sells.
+  announcementBarColor: StripColor;
+  banners: ScheduledBanner[];
+  homeStrip: ScheduledStrip | null;
+  trustBadges: StorefrontTrustBadge[];
+  storeStats: StorefrontStoreStat[];
+  openingHours: StorefrontOpeningDay[];
+  hoursNote: string | null;
+  /** The merchant's own switch. Combined with `search_insights` into `flags.search` on composition. */
+  searchEnabled: boolean;
+  newArrivals: StorefrontProduct[];
+  bestSellers: StorefrontProduct[];
 }
 
 /**
@@ -308,7 +398,14 @@ type Scheduled<T> = T & {
 };
 
 type ScheduledAnnouncement = Scheduled<StorefrontAnnouncement>;
-type ScheduledBar = Scheduled<StorefrontAnnouncementBar>;
+/**
+ * The stored bar WITHOUT its resolved style: the colour is a token pair that depends on the active
+ * template, and the template is chosen at composition. Caching the pair would freeze one template's
+ * palette into a bar that another template renders.
+ */
+type ScheduledBar = Scheduled<Omit<StorefrontAnnouncementBar, 'style'>>;
+type ScheduledBanner = Scheduled<StorefrontBanner>;
+type ScheduledStrip = Scheduled<{ text: string; link: string | null; color: StripColor }>;
 
 function isLive(item: { startsAtMs: number | null; endsAtMs: number | null }, now: Date): boolean {
   return isWithinSchedule(
@@ -355,6 +452,16 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
         announcementBarLink: true,
         announcementBarStartsAt: true,
         announcementBarEndsAt: true,
+        // Phase 9.
+        announcementBarColor: true,
+        homeStripEnabled: true,
+        homeStripText: true,
+        homeStripLink: true,
+        homeStripStartsAt: true,
+        homeStripEndsAt: true,
+        homeStripColor: true,
+        hoursNote: true,
+        searchEnabled: true,
       },
     }),
     db.themeSettings.findUnique({
@@ -381,6 +488,10 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
     testimonialRows,
     pageRow,
     gatewayRow,
+    bannerRows,
+    trustBadgeRows,
+    storeStatRows,
+    openingHoursRows,
   ] = await Promise.all([
     db.socialLink.findMany({
       where: { tenantId, enabled: true },
@@ -431,6 +542,46 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
      * storefront, both of which the customer is about to be shown anyway.
      */
     readEnabledGateway(db, tenantId),
+    /**
+     * Phase 9. Every PUBLISHED banner, not only the live ones — the schedule is decided per request
+     * (see `SCHEDULE` above), so a slide that goes live in an hour must already have its image
+     * resolved in the cached entry.
+     *
+     * The imageless and alt-less rows are dropped HERE, in the `where`, because they can never
+     * render: `Banner.imageMediaId` is `SetNull` and invariant 4 requires Arabic alt text on an
+     * image this size. Filtering them out at the query means `context.banners.length` is a truthful
+     * answer to "is there a board", which is what the section reads to decide whether to exist.
+     */
+    db.banner.findMany({
+      where: { tenantId, published: true, imageMediaId: { not: null }, alt: { not: null } },
+      select: {
+        id: true,
+        imageMediaId: true,
+        alt: true,
+        title: true,
+        subtitle: true,
+        ctaLabel: true,
+        ctaHref: true,
+        startsAt: true,
+        endsAt: true,
+      },
+      orderBy: { sort: 'asc' },
+    }),
+    db.trustBadge.findMany({
+      where: { tenantId, published: true },
+      select: { id: true, icon: true, title: true, subtitle: true },
+      orderBy: { sort: 'asc' },
+    }),
+    db.storeStat.findMany({
+      where: { tenantId, published: true },
+      select: { id: true, value: true, label: true },
+      orderBy: { sort: 'asc' },
+    }),
+    db.openingHours.findMany({
+      where: { tenantId },
+      select: { weekday: true, closed: true, opensAt: true, closesAt: true },
+      orderBy: { weekday: 'asc' },
+    }),
   ]);
 
   /**
@@ -458,11 +609,26 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
    */
   const pinned = pinnedCategoryLimits(storedSections);
   const productsByCategory: Record<string, StorefrontProduct[]> = {};
-  await Promise.all(
-    [...pinned].map(async ([categoryKey, take]) => {
-      productsByCategory[categoryKey] = await queryProducts(tenantId, { categoryKey, take });
-    }),
-  );
+
+  /**
+   * Phase 9. `new_arrivals` and `best_sellers` get their OWN reads, for the reason the pinned
+   * categories above get theirs: `products` is a 60-row slice in merchant order, and a window or a
+   * ranking filtered out of a slice is neither. The windows come from the page's own section
+   * configs — widest wins, exactly as `pinnedCategoryLimits` takes the larger of two limits — so a
+   * page with neither section runs neither query.
+   */
+  const arrivals = windowFor(storedSections, 'new_arrivals', { days: 7, take: 8 });
+  const sellers = windowFor(storedSections, 'best_sellers', { days: 90, take: 4 });
+
+  const [, newArrivals, bestSellers] = await Promise.all([
+    Promise.all(
+      [...pinned].map(async ([categoryKey, take]) => {
+        productsByCategory[categoryKey] = await queryProducts(tenantId, { categoryKey, take });
+      }),
+    ),
+    arrivals ? queryNewArrivals(tenantId, arrivals) : Promise.resolve([]),
+    sellers ? queryBestSellers(tenantId, sellers) : Promise.resolve([]),
+  ]);
 
   // Media referenced BY ID from anywhere: one query instead of one per section.
   const referencedMediaIds = new Set<string>();
@@ -476,6 +642,11 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
   // card that goes live in an hour must already have its image resolved in the cached entry.
   for (const announcement of announcementRows) {
     if (announcement.imageMediaId) referencedMediaIds.add(announcement.imageMediaId);
+  }
+  // A banner's image is the LCP element on the homepage. It has to come out of the same cached read
+  // as everything else, or the first paint waits for a second round trip.
+  for (const banner of bannerRows) {
+    if (banner.imageMediaId) referencedMediaIds.add(banner.imageMediaId);
   }
   for (const section of storedSections) {
     for (const id of mediaIdsInConfig(section.config)) referencedMediaIds.add(id);
@@ -607,6 +778,31 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
     gateway: gatewayRow
       ? { provider: gatewayRow.provider, instructions: gatewayRow.instructions }
       : null,
+
+    announcementBarColor: siteRow?.announcementBarColor ?? 'dark',
+    banners: bannerRows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      subtitle: row.subtitle,
+      ctaLabel: row.ctaLabel,
+      ctaHref: row.ctaHref,
+      // The `where` above guarantees both ids are present; `?? null` covers the one case it cannot
+      // — a media row that is not `ready`, which `mediaById` simply does not contain. A slide with
+      // no resolvable image is dropped at render rather than drawn as a coloured rectangle.
+      image: row.imageMediaId ? (mediaById[row.imageMediaId] ?? null) : null,
+      startsAtMs: row.startsAt?.getTime() ?? null,
+      endsAtMs: row.endsAt?.getTime() ?? null,
+    })),
+    homeStrip: buildHomeStrip(siteRow),
+    trustBadges: trustBadgeRows,
+    storeStats: storeStatRows,
+    // `fullWeek` pads to seven closed-by-default rows, because a four-row week renders as "shut on
+    // Tuesday" rather than as "Tuesday was never filled in".
+    openingHours: fullWeek(openingHoursRows),
+    hoursNote: siteRow?.hoursNote ?? null,
+    searchEnabled: siteRow?.searchEnabled ?? false,
+    newArrivals,
+    bestSellers,
   };
 }
 
@@ -635,7 +831,48 @@ function composeTenantData(source: TenantSource, access: StorefrontAccess): Cach
       ? strip(source.announcementBar)
       : null;
 
-  const hiddenSectionTypes: SectionType[] = access.mapLocation ? [] : ['map'];
+  /**
+   * Phase 9. Both strips answer to the SAME capability, `announcement_bar`, and there is no
+   * `home_strip` key anywhere in `src/shared/features.ts`. Inventing one in this file would put a
+   * gate here that nothing on the admin side can open — the same call Track A recorded for
+   * `compareAtPriceAgorot`. They are one thing in two places.
+   */
+  const banners =
+    access.bannersSlider && access.banners
+      ? source.banners.filter((banner) => isLive(banner, now)).map(strip)
+      : [];
+
+  const homeStrip =
+    access.announcementBar && source.homeStrip && isLive(source.homeStrip, now)
+      ? (() => {
+          const { color, ...rest } = strip(source.homeStrip);
+          return { ...rest, style: stripStyle(color) };
+        })()
+      : null;
+
+  const extras = access.homepageExtras;
+  const trustBadges = extras && access.trustBadges ? source.trustBadges : [];
+  const storeStats = extras && access.storeStats ? source.storeStats : [];
+  const openingHours = extras && access.openingHours ? source.openingHours : [];
+
+  /**
+   * Phase 9 hides its five new blocks through the SAME mechanism `map` already uses, rather than by
+   * emptying their data: `SectionList` applies this list on every route that renders sections, so a
+   * route added later cannot forget — which is the bug the `map` comment below records, and which
+   * cost Phase 6 a hidden map still rendering on the business-identity page.
+   *
+   * `search_bar` is here for a different reason than the other four: a search box that cannot search
+   * is worse than no search box, and `/p/{slug}` loads its own `Page` row and would otherwise render
+   * one.
+   */
+  const hiddenSectionTypes: SectionType[] = [
+    ...(access.mapLocation ? [] : (['map'] as const)),
+    ...(access.bannersSlider && access.banners ? [] : (['banner_slider'] as const)),
+    ...(extras && access.trustBadges ? [] : (['trust_badges'] as const)),
+    ...(extras && access.openingHours ? [] : (['opening_hours'] as const)),
+    ...(extras && access.storeStats ? [] : (['store_stats'] as const)),
+    ...(access.searchInsights && source.searchEnabled ? [] : (['search_bar'] as const)),
+  ];
 
   /**
    * Phase 5. FOUR conjuncts, and all four must hold before a single input appears on a storefront:
@@ -691,9 +928,16 @@ function composeTenantData(source: TenantSource, access: StorefrontAccess): Cach
       pwa: access.pwa && source.site.pwaEnabled,
       push: access.push,
       payments: checkout !== null,
+      cart: access.cart,
+      // Phase 9. Same two-questions-one-boolean shape as `pwa`: the plan has to include search and
+      // the merchant has to have switched it on.
+      search: access.searchInsights && source.searchEnabled,
+      visitorAnalytics: access.visitorAnalytics,
     },
     checkout,
-    announcementBar,
+    announcementBar: announcementBar
+      ? { ...announcementBar, style: stripStyle(source.announcementBarColor) }
+      : null,
     socialLinks,
     categories: source.categories,
     products: source.products,
@@ -712,6 +956,26 @@ function composeTenantData(source: TenantSource, access: StorefrontAccess): Cach
      */
     sections: sections.filter((section) => !hiddenSectionTypes.includes(section.type)),
     hiddenSectionTypes,
+
+    homeStrip,
+    banners,
+    trustBadges,
+    storeStats,
+    openingHours,
+    hoursNote: source.hoursNote,
+    /**
+     * Fresh on every request, like the schedules above and for the same reason: an «مفتوح الآن» pill
+     * decided when the cache entry was BUILT is wrong for up to five minutes, and Next serves a
+     * stale entry while it revalidates. `openingHoursConfig.showOpenNow` is off by default precisely
+     * because a wrong pill is worse than none.
+     *
+     * Asked of `openingHours` rather than of `source.openingHours`: a shop whose hours an admin has
+     * hidden must not answer the question at all, and `isOpenNow` returns null for an empty week —
+     * which is «ما في أوقات محفوظة», a different sentence from «مغلق».
+     */
+    openNow: isOpenNow(openingHours, now),
+    newArrivals: source.newArrivals,
+    bestSellers: source.bestSellers,
   };
 }
 
@@ -737,6 +1001,68 @@ function pinnedCategoryLimits(sections: StorefrontSection[]): Map<string, number
   }
 
   return pinned;
+}
+
+/**
+ * Phase 9. The widest `{ days, take }` any section of one type asks for on this page, or null when
+ * the page has none.
+ *
+ * Null rather than a default pair, because the caller uses it to decide whether to run the query at
+ * all: a shop with no `best_sellers` block must not pay for a `groupBy` over its order items on
+ * every cache miss. Widest wins for the same reason `pinnedCategoryLimits` takes the larger of two
+ * limits — two blocks of one type share one read.
+ */
+function windowFor(
+  sections: StorefrontSection[],
+  type: SectionType,
+  fallback: { days: number; take: number },
+): { days: number; take: number } | null {
+  let found = false;
+  let days = 0;
+  let take = 0;
+
+  for (const section of sections) {
+    if (section.type !== type) continue;
+    found = true;
+    const configDays = section.config.days;
+    const configLimit = section.config.limit;
+    days = Math.max(days, typeof configDays === 'number' ? configDays : fallback.days);
+    take = Math.max(take, typeof configLimit === 'number' ? configLimit : fallback.take);
+  }
+
+  return found ? { days, take } : null;
+}
+
+type HomeStripRowShape = {
+  homeStripEnabled: boolean;
+  homeStripText: string | null;
+  homeStripLink: string | null;
+  homeStripStartsAt: Date | null;
+  homeStripEndsAt: Date | null;
+  homeStripColor: string;
+} | null;
+
+/**
+ * The mid-homepage strip, built exactly the way `buildAnnouncementBar` builds the bar: enabled plus
+ * non-empty text, bounds as epoch milliseconds so they survive `unstable_cache`.
+ *
+ * No `signature`, and that is the one real difference between the two strips: the bar is dismissible
+ * and needs a stable fingerprint for its localStorage key, while the strip sits in the flow of the
+ * page and has nothing to dismiss.
+ */
+function buildHomeStrip(site: HomeStripRowShape): ScheduledStrip | null {
+  if (!site?.homeStripEnabled) return null;
+
+  const text = site.homeStripText?.trim();
+  if (!text) return null;
+
+  return {
+    text,
+    link: site.homeStripLink?.trim() || null,
+    color: site.homeStripColor as StripColor,
+    startsAtMs: site.homeStripStartsAt?.getTime() ?? null,
+    endsAtMs: site.homeStripEndsAt?.getTime() ?? null,
+  };
 }
 
 /** Ids a section config can reference. One place, so adding a field cannot be forgotten. */

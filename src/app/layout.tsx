@@ -1,5 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import { DIRECTION, LOCALE, t } from '@/shared/i18n';
+// Fonts BEFORE base styles: `globals.css` names these families in `--sb-font`, and until this
+// import existed the two private surfaces resolved none of them and fell back to Segoe UI/Tahoma.
+// The declarations are platform-wide on purpose — see the header of `fonts.css`.
+import './fonts.css';
 import './globals.css';
 
 /**
@@ -31,12 +35,32 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#a63d0b',
+  /*
+   * The mobile browser chrome around the page. Was the clay brand colour, which now appears
+   * nowhere on the private surfaces — a bright orange bar above a dark green app reads as a
+   * rendering fault. Two values so the bar matches whichever ground is actually painted:
+   * «مرصد»'s dark paper (the default) and its light paper.
+   */
+  themeColor: [
+    { media: '(prefers-color-scheme: dark)', color: '#0f1513' },
+    { media: '(prefers-color-scheme: light)', color: '#eef2f0' },
+  ],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang={LOCALE} dir={DIRECTION}>
+      {/*
+       * NO FONT PRELOADS HERE. They used to be, and the comment that sat with them said they were
+       * for "every private surface" — but this layout is shared by all three and is synchronous by
+       * design, so it cannot tell them apart. Every storefront therefore preloaded the two chrome
+       * faces it never paints, on top of its own template face: three preloads where
+       * `templates/shell.tsx` promises one, on the Fast 3G budget CLAUDE.md holds storefronts to.
+       *
+       * They now live in `_components/chrome-font-preload.tsx`, rendered by the admin and
+       * dashboard layouts. React hoists `<link>` into `<head>` from anywhere in the tree, so the
+       * hint lands in the same place and can no longer reach a surface that does not use it.
+       */}
       <body>
         <a href="#main" className="sb-skip-link">
           {t('common', 'a11y.skipToContent')}

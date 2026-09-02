@@ -1,0 +1,108 @@
+/*
+ * The appearance studio (Phase 11, Track 11.D) — the template card grid, the live preview frame
+ * and the contrast verdicts. Route-scoped: only the appearance screen imports it. Everything here
+ * dresses `sbd-*` bones with the `--sbx-*` bridge tokens (`--sbx-panel` / `--sbx-rule` /
+ * `--sbx-ink-soft` / `--sbx-accent`, mapped per surface at the top of `dashboard.css`), so
+ * light/dark and the five accents arrive for free — and 11.G's admin picker can reuse the card
+ * classes against the same bridge without a second stylesheet.
+ */
+
+/* ------------------------------------------------------ the template cards -- */
+
+/*
+ * MOVED TO THE KIT (`src/app/kit.css`, `.sbk-look-*`): the admin's template pickers reuse the
+ * same card grid (Track 11.G — «it becomes the same component, not a second one»), and a class
+ * that two surfaces read has to live where both stylesheets reach. This file keeps only what is
+ * exclusively the merchant studio's: the preview frame and the contrast verdicts below.
+ */
+
+/* ------------------------------------------------------------- the preview -- */
+
+.sbd-preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sbd-preview-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.sbd-preview-widths {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/*
+ * The frame. The iframe keeps the REAL device width and is scaled to fit — a 390px page squeezed
+ * by layout would be a different layout, while a 390px page scaled is a phone at arm's length.
+ * `transform-origin` is the top INLINE START, which in RTL is the top right.
+ */
+.sbd-preview-frame {
+  border: 1px solid var(--sbx-rule);
+  border-radius: 10px;
+  background: var(--sbx-panel);
+  overflow: hidden;
+}
+
+.sbd-preview-frame iframe {
+  display: block;
+  border: 0;
+  inline-size: var(--pv-width, 100%);
+  block-size: var(--pv-height, 720px);
+  transform: scale(var(--pv-scale, 1));
+  transform-origin: top right;
+}
+
+.sbd-preview-note {
+  color: var(--sbx-ink-soft);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/* ------------------------------------------------------ the contrast panel -- */
+
+.sbd-contrast {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--sbx-rule);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--sbx-panel);
+}
+
+.sbd-contrast__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  font-size: 0.9rem;
+}
+
+/* The sample chip paints the ACTUAL pair being judged — the verdict a merchant can see. */
+.sbd-contrast__sample {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 64px;
+  min-block-size: 32px;
+  border-radius: 6px;
+  border: 1px solid var(--sbx-rule);
+  padding-inline: 8px;
+  font-weight: 700;
+}
+
+.sbd-contrast__list {
+  margin: 0;
+  padding-inline-start: 1.2em;
+  color: var(--sbx-ink-soft);
+  font-size: 0.85rem;
+  display: grid;
+  gap: 4px;
+}

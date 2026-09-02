@@ -25,6 +25,16 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: false,
   },
 
+  /**
+   * `next dev` refuses cross-origin requests to `/_next/*` by default (Origin/Referer host not
+   * recognised) — a guard against a public DNS name pointing at a developer's loopback address
+   * reading their dev server. That is exactly the platform's own dev shape: every surface is a
+   * subdomain of DOMAIN resolved to 127.0.0.1, so without this the admin/app/storefront pages
+   * load as bare HTML with every script 403'd — React never hydrates and every button is dead.
+   * `*.${DOMAIN}` covers admin.*, app.* and every storefront slug in one entry.
+   */
+  ...(process.env.DOMAIN ? { allowedDevOrigins: [`*.${process.env.DOMAIN}`] } : {}),
+
   images: {
     // Media is always served through the CDN in front of R2 — never from the app server.
     remotePatterns: process.env.CDN_PUBLIC_BASE_URL
@@ -62,7 +72,13 @@ const nextConfig: NextConfig = {
         headers: [
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          { key: 'X-Frame-Options', value: 'DENY' },
+          /**
+           * X-Frame-Options is deliberately gone (Phase 11, Q37): framing is governed by
+           * `frame-ancestors` alone, assembled per request in the proxy — which is the only way
+           * the live preview's one-path exception can exist, because `headers()` APPENDS rather
+           * than replaces and would have shipped DENY beside SAMEORIGIN. Reasoning on
+           * `CONSTANT_SECURITY_HEADERS` in `src/server/http/security-headers.ts`.
+           */
           {
             key: 'Permissions-Policy',
             value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()',

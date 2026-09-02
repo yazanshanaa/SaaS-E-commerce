@@ -136,8 +136,17 @@ test.describe('from an account being opened to a merchant running their shop', (
 
     await signInAsMerchant(page);
 
-    // The dashboard knows WHICH shop — the thing a session with no active tenant could not do.
-    await expect(page.getByText(MERCHANT.shop).first()).toBeVisible();
+    /**
+     * The dashboard knows WHICH shop — the thing a session with no active tenant could not do.
+     *
+     * `.filter({ visible: true })` and not `.first()`, because Phase 11's kit renders the brand
+     * TWICE by design: a top bar below 48rem and the sticky rail above it, with CSS hiding
+     * whichever does not apply (`_components/kit/rail.tsx`, and the comment on its top bar says
+     * so). `.first()` takes DOM ORDER, which is the top bar — hidden at every viewport this suite
+     * runs at. The assertion was reading the copy the merchant cannot see and reporting the
+     * dashboard as broken while it was working.
+     */
+    await expect(page.getByText(MERCHANT.shop).filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByRole('heading', { name: 'خطوات تجهيز المتجر' })).toBeVisible();
 
     /**

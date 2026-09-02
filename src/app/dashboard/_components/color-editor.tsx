@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { COLOR_PRESETS, type ColorMode } from '@/shared/site-contract';
 import { t } from '@/shared/i18n';
 
@@ -11,47 +10,40 @@ import { t } from '@/shared/i18n';
  * the free picker. The mode is decided on the server from `color_mode` — an availability-axis
  * feature — and is passed in; this component never asks which plan anyone is on.
  *
- * THE PREVIEW UPDATES LIVE, and it is not decoration: the AA contrast guard runs on the server
- * and may MOVE a colour the merchant chose. Seeing text on the chosen background before pressing
- * save is what makes that adjustment feel like help rather than the platform overruling them —
- * and the server says afterwards, in words, exactly which token it moved and where to.
+ * PHASE 11 (Track 11.D) MADE IT CONTROLLED, and deleted its mock preview. The state moved up
+ * into the appearance studio, which feeds the same draft to three consumers at once: this
+ * editor, the LIVE preview iframe (the tenant's real storefront — the thing the mock was a
+ * stand-in for), and the contrast verdicts, which run the real `resolveColors` guard
+ * client-side so the merchant sees what would move BEFORE saving instead of in a message
+ * afterwards. The mock's hardcoded `color: '#fff'` button label — the exact bug `readableOn`
+ * exists to prevent, one surface over — died with it.
  *
  * A native `<input type="color">` rather than a picker component: it is the OS picker, it works
  * on a phone, it is keyboard accessible for free, and the paired text input means a merchant who
- * was given a hex code by a designer can type it.
+ * was given a hex code by a designer can type it. The TEXT input is the one that submits.
  */
+
+export const CUSTOM_FIELDS = ['primary', 'secondary', 'background', 'surface', 'text'] as const;
+export type CustomField = (typeof CUSTOM_FIELDS)[number];
+export type CustomColors = Record<CustomField, string>;
 
 export interface ColorEditorProps {
   mode: ColorMode;
-  presetKey: string | null;
-  colors: {
-    primary: string;
-    secondary: string;
-    background: string;
-    surface: string | null;
-    text: string | null;
-  };
+  presetKey: string;
+  custom: CustomColors;
+  onPresetChange: (presetKey: string) => void;
+  onCustomChange: (field: CustomField, value: string) => void;
   disabled?: boolean;
 }
 
-const CUSTOM_FIELDS = ['primary', 'secondary', 'background', 'surface', 'text'] as const;
-type CustomField = (typeof CUSTOM_FIELDS)[number];
-
-export function ColorEditor({ mode, presetKey, colors, disabled }: ColorEditorProps) {
-  const [selectedPreset, setSelectedPreset] = useState(presetKey ?? COLOR_PRESETS[0]!.key);
-  const [custom, setCustom] = useState<Record<CustomField, string>>({
-    primary: colors.primary,
-    secondary: colors.secondary,
-    background: colors.background,
-    surface: colors.surface ?? colors.background,
-    text: colors.text ?? '#1a1a1a',
-  });
-
-  const preview =
-    mode === 'preset'
-      ? (COLOR_PRESETS.find((set) => set.key === selectedPreset) ?? COLOR_PRESETS[0]!)
-      : custom;
-
+export function ColorEditor({
+  mode,
+  presetKey,
+  custom,
+  onPresetChange,
+  onCustomChange,
+  disabled,
+}: ColorEditorProps) {
   return (
     <>
       <input type="hidden" name="mode" value={mode} />
@@ -68,8 +60,8 @@ export function ColorEditor({ mode, presetKey, colors, disabled }: ColorEditorPr
                   type="radio"
                   name="presetKey"
                   value={set.key}
-                  checked={selectedPreset === set.key}
-                  onChange={() => setSelectedPreset(set.key)}
+                  checked={presetKey === set.key}
+                  onChange={() => onPresetChange(set.key)}
                 />
                 <span>{set.name}</span>
                 <span className="sbd-swatches" aria-hidden="true">
@@ -96,10 +88,10 @@ export function ColorEditor({ mode, presetKey, colors, disabled }: ColorEditorPr
                   <input
                     id={`color-${field}`}
                     type="color"
-                    value={custom[field]}
-                    onChange={(event) =>
-                      setCustom((current) => ({ ...current, [field]: event.target.value }))
-                    }
+                    // A colour input cannot be empty; while `surface` is on automatic the swatch
+                    // shows the background it will be derived from. Picking from it opts in.
+                    value={custom[field] || custom.background}
+                    onChange={(event) => onCustomChange(field, event.target.value)}
                     aria-describedby={`color-text-${field}`}
                   />
                   {/*
@@ -112,32 +104,22 @@ export function ColorEditor({ mode, presetKey, colors, disabled }: ColorEditorPr
                     id={`color-text-${field}`}
                     name={field}
                     value={custom[field]}
-                    onChange={(event) =>
-                      setCustom((current) => ({ ...current, [field]: event.target.value }))
-                    }
+                    onChange={(event) => onCustomChange(field, event.target.value)}
                     inputMode="text"
                     spellCheck={false}
+                    placeholder={
+                      field === 'surface' ? t('dashboard', 'appearance.surfaceAuto') : undefined
+                    }
                   />
                 </div>
+                {field === 'surface' ? (
+                  <span className="sbd-hint">{t('dashboard', 'appearance.surfaceAutoHint')}</span>
+                ) : null}
               </div>
             ))}
           </div>
         </fieldset>
       )}
-
-      <div
-        className="sbd-preview"
-        style={{ background: preview.background, color: preview.text ?? undefined }}
-      >
-        <h3 style={{ color: preview.primary }}>{t('dashboard', 'appearance.previewHeading')}</h3>
-        <p>{t('dashboard', 'appearance.previewBody')}</p>
-        <span
-          className="sbd-btn"
-          style={{ background: preview.primary, borderColor: preview.primary, color: '#fff' }}
-        >
-          {t('dashboard', 'appearance.previewButton')}
-        </span>
-      </div>
     </>
   );
 }

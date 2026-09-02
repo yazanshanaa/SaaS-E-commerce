@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { HeadingMark } from '../components/ornaments';
 
 /**
  * The section wrapper every block shares: the anchor, the shell, and exactly one `h2`.
@@ -24,6 +25,13 @@ export function SectionBlock({ anchor, title, lead, children, className }: Secti
         {title ? (
           <div className="sf-block__head">
             <h2 className="sf-block__title">{title}</h2>
+            {/*
+              Phase 11's heading mark — rendered for every template, DISPLAYED by the one whose
+              `data-mark` names a variant (storefront.css). Identical markup everywhere is what
+              keeps a template swap a class swap; `aria-hidden` inside the component is what keeps
+              the ornament out of the accessibility tree.
+            */}
+            <HeadingMark />
             {lead ? <p className="sf-block__lead">{lead}</p> : null}
           </div>
         ) : null}

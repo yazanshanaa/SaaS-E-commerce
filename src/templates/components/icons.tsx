@@ -90,6 +90,63 @@ export function ClockIcon(props: IconProps) {
 }
 
 /**
+ * Phase 9 — the trust row's five glyphs, moved here from `sections/trust-badges.tsx`.
+ *
+ * They were drawn there against a duplicated copy of `Svg` because this file belonged to no track,
+ * and `TrustBadge.icon` defaults to `"check"` — so the platform shipped a default icon with no
+ * picture behind it, and a merchant who added a badge without choosing a glyph got a blank.
+ *
+ * The set is closed and the keys are `TRUST_ICON_KEYS` in `src/server/content/trust-badges.ts`;
+ * `tests/unit/phase9-content.test.ts` asserts every one of them resolves to a function, so this move
+ * cannot silently lose one and a future addition cannot be half-made.
+ */
+export function CheckIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="m4.5 12.5 5 5 10-11" />
+    </Svg>
+  );
+}
+
+export function TruckIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 7h10v9H3zM13 10h4l3 3v3h-7z" />
+      <circle cx="7" cy="18" r="1.8" />
+      <circle cx="17" cy="18" r="1.8" />
+    </Svg>
+  );
+}
+
+export function ShieldIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 3.5l7 2.5v5.5c0 4.3-3 7.4-7 9-4-1.6-7-4.7-7-9V6Z" />
+      <path d="m8.8 12 2.2 2.2 4.2-4.4" />
+    </Svg>
+  );
+}
+
+export function BoxIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 8.5 12 5l8 3.5v7L12 19l-8-3.5Z" />
+      <path d="M4 8.5 12 12l8-3.5M12 12v7" />
+    </Svg>
+  );
+}
+
+export function WalletIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3.5" y="6.5" width="17" height="11" rx="2.5" />
+      <path d="M3.5 10.5h17" />
+      <circle cx="16.5" cy="14" r="1.2" fill="currentColor" stroke="none" />
+    </Svg>
+  );
+}
+
+/**
  * Social glyphs.
  *
  * Deliberately simplified marks rather than reproductions of each company's logo: a storefront

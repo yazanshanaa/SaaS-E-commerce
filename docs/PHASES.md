@@ -8,6 +8,16 @@ All product copy produced by these phases: **Arabic only, RTL**.
 
 Track progress in `TODO.md`. One phase per session. `/clear` between phases.
 
+> **Phases 9 onward have their own build specs, and this document does not restate them.** The
+> conventions below (folder ownership per track, gates before merge, schema only in the main session,
+> a line in `docs/DECISIONS.md`) apply to all of them:
+>
+> | Phase | Spec | Subject |
+> |---|---|---|
+> | 9 | `docs/PHASE-9.md` + `PHASE-9-track-*-handoff.md` | Merchant depth: catalogue, delivery, first-party analytics, template refresh |
+> | 10 | `docs/PHASE-10.md` | Owner backups surface, per-tenant backup/restore, standalone export |
+> | 11 | `docs/PHASE-11.md` | Templates that look designed, dashboards that feel easy |
+
 ---
 
 ## Rules that apply to every phase

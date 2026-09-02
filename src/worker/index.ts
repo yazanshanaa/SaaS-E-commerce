@@ -6,6 +6,7 @@ import { logger } from '@/server/logger';
 import { registerMediaStorage } from '@/server/media/storage';
 import { scheduleMediaCleanup } from '@/server/media/schedule';
 import { startSentry } from '@/server/observability/sentry';
+import { isSingleTenant, singleTenantId } from '@/server/single-tenant';
 import { getEnv } from '@/env';
 
 /**
@@ -59,14 +60,32 @@ const workers = QUEUE_NAMES.map((name) => createWorker(name));
 async function registerRepeatables(): Promise<void> {
   const env = getEnv();
 
-  await queue('lifecycle').add(
-    'sweep-subscriptions',
-    systemJob('sweep-subscriptions'),
-    {
-      repeat: { pattern: env.LIFECYCLE_SWEEP_CRON, tz: 'Asia/Jerusalem' },
-      jobId: 'lifecycle-sweep',
-    },
-  );
+  /**
+   * SINGLE-TENANT MODE (Q25) — the billing sweeps are not scheduled at all.
+   *
+   * A standalone deployment has no subscription to expire, nobody to remind and nothing to purge:
+   * the merchant owns the server. Registering the sweep anyway would mean a nightly job that reads
+   * `currentPeriodEnd` on a row nobody maintains and, on the day it happened to be in the past,
+   * SUSPENDS the shop — closing a storefront the platform has no business closing.
+   *
+   * The other repeatables stay. Webhook dispatch, the analytics rollup, the record prune and the
+   * media orphan sweep are all about the shop's own data and are exactly as useful here.
+   */
+  if (isSingleTenant()) {
+    logger().info(
+      { tenantId: singleTenantId() },
+      'single-tenant mode: subscription sweeps and reminders are not scheduled',
+    );
+  } else {
+    await queue('lifecycle').add(
+      'sweep-subscriptions',
+      systemJob('sweep-subscriptions'),
+      {
+        repeat: { pattern: env.LIFECYCLE_SWEEP_CRON, tz: 'Asia/Jerusalem' },
+        jobId: 'lifecycle-sweep',
+      },
+    );
+  }
 
   await queue('webhooks').add('dispatch', systemJob('dispatch'), {
     repeat: { every: 30_000 },
@@ -83,6 +102,22 @@ async function registerRepeatables(): Promise<void> {
    * but a sweep whose input is being written underneath it is a bad habit to establish in the one
    * job whose whole purpose is deleting evidence on a schedule.
    */
+  /**
+   * Phase 9 — the analytics rollup, at 02:00 Asia/Jerusalem.
+   *
+   * BEFORE `prune-records` at 04:00, and the order is load-bearing rather than tidy: the prune
+   * deletes raw `analytics_events` at 30 days, and a rollup that ran after it would find the last
+   * day's rows already gone. Two hours of slack for a slow night.
+   *
+   * Also EARLIER than the 03:00 lifecycle sweep on purpose — that pass can suspend a tenant, and a
+   * suspended shop's last day of traffic is still worth rolling up. It is the merchant's own record
+   * of what happened, and it is the only one that survives.
+   */
+  await queue('lifecycle').add('sweep-analytics', systemJob('sweep-analytics'), {
+    repeat: { pattern: '0 2 * * *', tz: 'Asia/Jerusalem' },
+    jobId: 'analytics-sweep',
+  });
+
   await queue('lifecycle').add('prune-records', systemJob('prune-records'), {
     repeat: { pattern: '0 4 * * *', tz: 'Asia/Jerusalem' },
     jobId: 'records-prune',

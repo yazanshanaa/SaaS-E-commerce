@@ -2,6 +2,7 @@ import { formatAgorot } from '@/shared/i18n';
 import { st } from '../i18n';
 import type { TemplateDefinition } from '../types';
 import type { StorefrontProduct } from '../view-model';
+import { AddToCart } from './add-to-cart';
 import { MediaImage } from './media-image';
 
 /**
@@ -29,6 +30,9 @@ export interface ProductCardProps {
    * customer will quote back at the merchant.
    */
   showPrice?: boolean;
+  /** Phase 8. Absent or `enabled: false` renders the card exactly as it always has — byte for
+   *  byte, no new markup at all. */
+  cart?: { tenantId: string; enabled: boolean };
 }
 
 export function ProductCard({
@@ -36,6 +40,7 @@ export function ProductCard({
   template,
   priority = false,
   showPrice = true,
+  cart,
 }: ProductCardProps) {
   const variant = template.layout.productCard;
   const price = formatAgorot(product.priceAgorot);
@@ -77,6 +82,30 @@ export function ProductCard({
           )}
         </div>
       </a>
+
+      {/*
+        A SIBLING of the anchor, never nested inside it — "one anchor per card, wrapping
+        everything" (this file's own rule) stays true for the part that navigates; the
+        add-to-cart button is a second, genuinely separate interactive element, not a second link
+        pretending to be one.
+      */}
+      {cart?.enabled && product.available ? (
+        <div className="sf-card__cart">
+          <AddToCart
+            tenantId={cart.tenantId}
+            productSlug={product.slug}
+            labels={{
+              add: st('cart.add'),
+              added: st('cart.added'),
+              quantity: st('order.quantity'),
+              increase: st('order.increase'),
+              decrease: st('order.decrease'),
+              viewCart: st('cart.viewCart'),
+              outOfStock: st('order.outOfStock'),
+            }}
+          />
+        </div>
+      ) : null}
     </article>
   );
 }

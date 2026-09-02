@@ -1,4 +1,4 @@
-export { emitEvent, type EmitOptions } from './emit';
+export { emitEvent, emitPlatformEvent, type EmitOptions, type PlatformEmitOptions } from './emit';
 export { dispatchPendingWebhooks, type DispatchResult } from './dispatcher';
 export {
   EVENT_TYPES,

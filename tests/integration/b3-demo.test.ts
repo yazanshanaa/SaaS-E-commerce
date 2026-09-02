@@ -205,9 +205,12 @@ describe('creating a demo from a frozen pack', () => {
     /**
      * Colours through the contrast guard — and stored as the PRESET the pack's three happen to be.
      *
-     * `clothing` is exactly the vetted `laylī` set, so the row carries all five tokens. Had it been
-     * written as a custom selection, `resolveColors` would have filled `surface` from `background`
-     * and every panel on the demo would sit flush against the page it is meant to lift off.
+     * `clothing` is exactly the vetted `laylī` set, so the row carries all five tokens — including
+     * an explicit `surface`, which is the whole reason a pack is stored as a preset rather than as
+     * a custom selection. A custom selection leaves `surface` UNSET (2026-08-20: it used to be
+     * filled from `background`, which made the templates' derived tint unreachable), and the
+     * template then derives a tint of the background for it. Either route gives a panel that lifts
+     * off the page; storing the preset is what keeps the demo's palette identical to the vetted one.
      */
     const theme = tenant!.themeSettings!;
     expect(theme.colorMode).toBe('preset');
@@ -220,7 +223,11 @@ describe('creating a demo from a frozen pack', () => {
 
     // And what A2's loader will re-derive from the row is the same set, guard included.
     const rendered = resolveColors({ mode: 'preset', presetKey: theme.presetKey! }).colors;
-    expect(rendered.surface.toLowerCase()).toBe(theme.surface!.toLowerCase());
+    // A PRESET always carries an explicit surface. Asserted rather than assumed, because
+    // `ResolvedColors.surface` became nullable for the custom path and this is the guarantee the
+    // demo build relies on.
+    expect(rendered.surface, 'a preset must resolve an explicit surface').not.toBeNull();
+    expect(rendered.surface!.toLowerCase()).toBe(theme.surface!.toLowerCase());
     expect(contrastRatio(rendered.text, rendered.background)).toBeGreaterThanOrEqual(AA_NORMAL);
 
     const [categories, products, sections, testimonials, media, images, links] = await Promise.all([

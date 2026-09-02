@@ -70,12 +70,21 @@ jobs:
       # `encrypt: true` -> `ServerSideEncryption: AES256`, and minio answers SSE-S3 with
       # NotImplemented unless a KMS key is configured. Without it the artifact never gets written
       # and the failure looks like a bug in the export rather than in the fixture.
+      #
+      # THE KEY MUST DECODE TO EXACTLY 32 BYTES, and the literal that used to sit here decoded to
+      # 35. minio died on boot with `kms: invalid key length 35`, the health loop then spent a
+      # minute failing to connect, and the step exited 1 — BEFORE `pnpm test` ever ran. So every
+      # scheduled run reported a red `typecheck · lint · test` job in which typecheck and lint had
+      # both PASSED and not one of the suite's tests had executed. A red job nobody read, hiding an
+      # untested tree. Deriving the value from a 32-character string is what stops anyone having to
+      # count base64 padding by hand again.
       - name: start minio
         run: |
+          KMS_KEY="souq-ci-key:$(printf 'souq-bartaa-ci-kms-key-32-bytes!' | base64 -w 0)"
           docker run -d --name minio -p 9000:9000 \
             -e MINIO_ROOT_USER=souqtestaccess \
             -e MINIO_ROOT_PASSWORD=souqtestsecret \
-            -e MINIO_KMS_SECRET_KEY=souq-ci-key:QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE= \
+            -e MINIO_KMS_SECRET_KEY="$KMS_KEY" \
             minio/minio:latest server /data
           for attempt in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null; then

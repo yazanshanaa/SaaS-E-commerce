@@ -75,6 +75,43 @@ const ALLOWED_LATIN = new Set([
   'Sentry',
   /** The transport, named in the security clause because a reader looking for it expects it. */
   'HTTPS',
+  /**
+   * The URL SCHEMES, lowercase, as a person types them into a field.
+   *
+   * `HTTPS` above is the protocol named in a legal clause; these two are the literal prefix the
+   * platform validates a link against and tells the operator to start with. Same allowance, and
+   * lowercase because the Set is case-sensitive and the copy is about what goes in the box.
+   */
+  'https',
+  'http',
+]);
+
+/**
+ * Keys whose VALUE contains a literal command, path or filename — exempt from the stranded-word
+ * scan, by key rather than by word.
+ *
+ * The alternative was to add `list`, `show`, `into`, `capture`, `stamp`, `purge`, `replay`,
+ * `restore` and `docs` to `ALLOWED_LATIN`, and that would have been the wrong trade: those are
+ * ordinary English words, and allowing them GLOBALLY means the next person who writes «اضغط show»
+ * in an unrelated string sails through the gate this file exists to be. Exempting six named keys
+ * costs nothing anywhere else.
+ *
+ * What is exempt is the operator runbook in `admin.json`: shell commands (`restore.sh show
+ * <stamp>`, `pnpm purge:replay`) and a documentation path (`docs/DEPLOY.md`). Translating them
+ * would leave a super admin — mid-incident, restoring a database — typing a command that does not
+ * exist. That is the same reasoning CLAUDE.md already makes for CNAME and DNS above, applied to
+ * strings rather than to vocabulary.
+ *
+ * These are the ONLY six. `backups.restore.steps.verify` and `.record` carry no command and are
+ * scanned like everything else, which is the point: the exemption is per string, not per screen.
+ */
+const LITERAL_COMMAND_KEYS = new Set([
+  'admin.json:backups.lifecycle.fix',
+  'admin.json:backups.restore.steps.capture',
+  'admin.json:backups.restore.steps.list',
+  'admin.json:backups.restore.steps.show',
+  'admin.json:backups.restore.steps.into',
+  'admin.json:backups.restore.steps.replay',
 ]);
 
 function collectStrings(node: unknown, trail: string[] = []): Array<[string, string]> {
@@ -101,9 +138,36 @@ describe('the message catalogue', () => {
   it('has a namespace file per surface', () => {
     const files = messageFiles().map((f) => path.basename(f, '.json')).sort();
     expect(files).toEqual(
-      // `legal` joined in Phase 6 — the generated policy copy, kept apart from the storefront's
-      // labels because it is paragraphs rather than UI strings. See src/shared/i18n/index.ts.
-      ['admin', 'billing', 'common', 'dashboard', 'demo', 'legal', 'media', 'storefront'].sort(),
+      [
+        // `legal` joined in Phase 6 — the generated policy copy, kept apart from the storefront's
+        // labels because it is paragraphs rather than UI strings. See src/shared/i18n/index.ts.
+        //
+        // Note that `legal` is deliberately OUTSIDE the `NAMESPACES` allow-lists in
+        // `src/app/{dashboard,admin}/_components/messages.ts`: it is rendered as page copy by
+        // `src/server/legal`, never returned as a message key by a server action, so letting a
+        // banner resolve a paragraph of a privacy policy would be a widening with no caller.
+        'admin',
+        'billing',
+        'common',
+        'dashboard',
+        'demo',
+        'legal',
+        'media',
+        'storefront',
+        // Phase 9's five per-domain catalogues. Five FILES rather than five blocks inside
+        // dashboard.json (src/shared/i18n/index.ts explains why): five parallel tracks appending to
+        // one forty-kilobyte file is five merge conflicts, and each of these is a domain with both a
+        // dashboard half and a storefront half.
+        'catalogue',
+        'content',
+        'insights',
+        'delivery',
+        'customers',
+        // Phase 11 (Track 11.D). The appearance studio and the live `/preview` share one
+        // catalogue: the picker copy, the contrast verdicts and the preview's Arabic sample
+        // fixture are the same vocabulary, and none of it belongs in dashboard.json.
+        'appearance',
+      ].sort(),
     );
   });
 
@@ -140,6 +204,8 @@ describe('the message catalogue', () => {
       const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
       for (const [key, value] of collectStrings(parsed)) {
         if (!ARABIC.test(value)) continue;
+        // A shell command or a file path the operator must type verbatim — see the note on the set.
+        if (LITERAL_COMMAND_KEYS.has(`${path.basename(file)}:${key}`)) continue;
         // `{name}` placeholders are English identifiers by design — code is English, copy is
         // Arabic. They are removed before the scan so the gate measures COPY, not parameters.
         const copy = value.replace(/\{\w+\}/g, '');

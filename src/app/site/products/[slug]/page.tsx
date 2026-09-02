@@ -2,25 +2,40 @@ import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { getEnv } from '@/env';
-import { formatAgorot, t } from '@/shared/i18n';
+import { formatAgorot, formatNumber, t } from '@/shared/i18n';
 import { CHECKOUT_MAX_QUANTITY } from '@/server/orders/schema';
+import { isSizeGuideEmpty, querySizeGuideFor } from '@/server/catalogue';
+import { PUBLIC_ACTOR, tenantDb } from '@/server/db';
+import { canBool } from '@/server/entitlements';
+import { parseSectionConfig, type SectionConfig } from '@/shared/site-contract';
+import { beaconDecision } from '@/server/analytics';
 import {
+  AddToCart,
   analyticsDecision,
   breadcrumbJsonLd,
   buildOrderUrl,
   CheckoutForm,
   JsonLdScript,
   MediaImage,
-  ProductCard,
   productJsonLd,
   StorefrontShell,
   WhatsappOrder,
   normaliseWhatsappNumber,
 } from '@/templates';
+import { CareDetails } from '@/templates/components/care-details';
+import { PriceWithDiscount } from '@/templates/components/discount-badge';
+import { SizeGuide } from '@/templates/components/size-guide';
+import { VariantPicker } from '@/templates/components/variant-picker';
+import { RelatedProductsSection } from '@/templates/sections/related-products';
 import { CONSENT_COOKIE, readConsentCookie } from '../../_data/consent';
 import { loadStorefrontContext } from '../../_data/context';
 import { storefrontMetadata } from '../../_data/metadata';
-import { queryProductBySlug, queryProducts } from '../../_data/products';
+import {
+  queryProductBySlug,
+  queryProductDetail,
+  queryRelatedProducts,
+  variantChoices,
+} from '../../_data/products';
 import { requireStorefront } from '../../_data/surface';
 
 /**
@@ -78,14 +93,54 @@ export default async function ProductPage({ params }: PageProps) {
 
   const { slug } = await params;
   const context = await loadStorefrontContext(surface);
-  const product = await queryProductBySlug(context.tenantId, slug);
-  if (!product) notFound();
+  const detail = await queryProductDetail(context.tenantId, slug);
+  if (!detail) notFound();
 
-  const related = product.categoryKey
-    ? (await queryProducts(context.tenantId, { categoryKey: product.categoryKey, take: 5 })).filter(
-        (entry) => entry.id !== product.id,
+  const product = detail.product;
+
+  /**
+   * `related_products` is rendered HERE, on the one route where it means anything.
+   *
+   * The section is also reachable through `SectionList` — a merchant can drag it onto their
+   * homepage — and there it renders nothing at all, because no product is passed. That is the
+   * section type's stated contract (src/shared/site-contract/sections.ts), and this call site is the
+   * other half of it: the config is parsed from `{}` so the block gets its own defaults rather than
+   * this page inventing a limit the merchant cannot change.
+   */
+  const relatedConfig = parseSectionConfig('related_products', {}) as SectionConfig<'related_products'>;
+  const related = await queryRelatedProducts(
+    context.tenantId,
+    { id: product.id, categoryKey: product.categoryKey },
+    { limit: relatedConfig.limit, sameCategoryFirst: relatedConfig.sameCategoryFirst },
+  );
+
+  /**
+   * The size chart, behind axis (a) only.
+   *
+   * The CAPABILITY (`size_guide`, axis (b)) decides who may EDIT it and says nothing about
+   * rendering — `editable_by = admin` still renders on the storefront, which is the contract
+   * `src/shared/features.ts` spells out on the `logo` capability and which holds for all eight. So
+   * this page asks the feature and nothing else.
+   */
+  const sizeGuide = (await canBool(context.tenantId, 'size_guide'))
+    ? await querySizeGuideFor(
+        tenantDb(context.tenantId, PUBLIC_ACTOR),
+        context.tenantId,
+        detail.categoryId,
       )
-    : [];
+    : null;
+
+  const choices = variantChoices(detail);
+
+  /**
+   * ONE availability answer for the whole page.
+   *
+   * `product.available` is the merchant's switch and `detail.stock.inStock` is the count; a product
+   * needs both. Computing it once here is what stops the badge, the buy control and the WhatsApp
+   * fallback from disagreeing — which they would the first time someone added a stock check to two
+   * of the three.
+   */
+  const sellable = product.available && detail.stock.inStock;
 
   const consent = readConsentCookie((await cookies()).get(CONSENT_COOKIE)?.value);
   const analytics = analyticsDecision({
@@ -120,7 +175,7 @@ export default async function ProductPage({ params }: PageProps) {
    * Built only when the form will actually render.
    */
   const priceLabels: Record<number, string> = {};
-  if (context.flags.payments && product.available) {
+  if (context.flags.payments && sellable) {
     for (let quantity = 1; quantity <= CHECKOUT_MAX_QUANTITY; quantity += 1) {
       priceLabels[quantity] = formatAgorot(product.priceAgorot * quantity);
     }
@@ -134,6 +189,19 @@ export default async function ProductPage({ params }: PageProps) {
       context={context}
       analytics={analytics}
       consentAnswered={consent.answered}
+      /*
+        Phase 9. Both gates — the feature and the consent cookie — resolved by the page, because
+        only the page holds the cookie. `path` is the route's own shape rather than
+        `location.pathname`, which would report the proxy's internal `/site/…` rewrite.
+      */
+      beacon={{
+        enabled: beaconDecision({
+          featureEnabled: context.flags.visitorAnalytics,
+          consentGranted: consent.granted,
+        }).enabled,
+        path: `/products/${product.slug}`,
+        productSlug: product.slug,
+      }}
       current="products"
     >
       {context.isDemo ? null : (
@@ -189,11 +257,47 @@ export default async function ProductPage({ params }: PageProps) {
               <h1 className="sf-block__title">{product.name}</h1>
 
               <p className="sf-actions" style={{ marginBlockStart: 'var(--t-space-md)' }}>
-                <span className="sf-price">{price}</span>
-                <span className={product.available ? 'sf-badge' : 'sf-badge sf-badge--off'}>
-                  {t('storefront', product.available ? 'order.inStock' : 'order.outOfStock')}
+                {/* Price, former price and «−19%» — the badge draws itself only when
+                    `compareAtPriceAgorot` is strictly greater (see `discountPercent`). */}
+                <PriceWithDiscount
+                  priceAgorot={product.priceAgorot}
+                  compareAtPriceAgorot={detail.compareAtPriceAgorot}
+                />
+                <span className={sellable ? 'sf-badge' : 'sf-badge sf-badge--off'}>
+                  {t('storefront', sellable ? 'order.inStock' : 'order.outOfStock')}
                 </span>
+                {/*
+                  «باقي 2» only when the count is both tracked and meaningful — and only when it is
+                  LOW enough to matter. A shop with 400 shirts printing the number turns a scarcity
+                  cue into an inventory disclosure, and «باقي 400» persuades nobody.
+                */}
+                {detail.stock.policy === 'track_and_block' &&
+                detail.stock.quantity !== null &&
+                detail.stock.quantity > 0 &&
+                detail.stock.quantity <= LOW_STOCK_HINT ? (
+                  <span className="sf-badge">
+                    {t('catalogue', 'stock.left', {
+                      count: formatNumber(detail.stock.quantity),
+                    })}
+                  </span>
+                ) : null}
               </p>
+
+              {/*
+                THE PICKER SITS ABOVE THE BUY CONTROL, not inside it.
+
+                It cannot be inside: `AddToCart` and `CheckoutForm` are client components owned by
+                Phase 8 and neither accepts a variant yet, so a radio group nested in their markup
+                would post a `variantId` nothing reads. Above them it does the job it can do today —
+                telling a shopper which sizes and colours exist and which are gone, with prices where
+                they differ — and the one-line prop each of those two components needs is recorded in
+                docs/PHASE-9-track-a-handoff.md.
+              */}
+              {choices.length > 0 ? (
+                <div style={{ marginBlockStart: 'var(--t-space-lg)' }}>
+                  <VariantPicker choices={choices} productPriceAgorot={product.priceAgorot} />
+                </div>
+              ) : null}
 
               {product.description ? (
                 <div className="sf-prose" style={{ marginBlockStart: 'var(--t-space-lg)' }}>
@@ -216,23 +320,83 @@ export default async function ProductPage({ params }: PageProps) {
                     <dd>{product.sku}</dd>
                   </div>
                 ) : null}
+                {/*
+                  Tags are LINKS back into the filtered catalogue, not decoration — the same plain
+                  hrefs the filter row on `/products` uses, so a shopper who likes «قطن» can see the
+                  rest of it without the shop needing a search box.
+                */}
+                {detail.tags.length > 0 ? (
+                  <div>
+                    <dt>{t('catalogue', 'tags.label')}</dt>
+                    <dd>
+                      <span className="sf-chips">
+                        {detail.tags.map((tag) => (
+                          <a
+                            key={tag}
+                            className="sf-btn sf-btn--ghost"
+                            href={`/products?tag=${encodeURIComponent(tag)}`}
+                          >
+                            {tag}
+                          </a>
+                        ))}
+                      </span>
+                    </dd>
+                  </div>
+                ) : null}
               </dl>
 
               {/*
-                CHECKOUT FIRST, WHATSAPP SECOND — and only when `flags.payments` is true.
+                Two disclosures, both native `<details>` and both closed by default: the fabric and
+                care block, and the size chart. Order is deliberate — care detail belongs to THIS
+                product, the size chart is a reference table for the whole department, so the
+                specific one comes first.
+              */}
+              <div className="sf-actions" style={{ marginBlockStart: 'var(--t-space-lg)' }}>
+                <CareDetails careInstructions={detail.careInstructions} />
+                {sizeGuide && !isSizeGuideEmpty(sizeGuide) ? (
+                  <SizeGuide
+                    columns={sizeGuide.columns}
+                    rows={sizeGuide.entries.map((entry) => ({
+                      id: entry.id,
+                      label: entry.label,
+                      cells: entry.cells,
+                    }))}
+                    note={sizeGuide.note}
+                  />
+                ) : null}
+              </div>
 
-                Those four server-resolved conjuncts (see `_data/context.ts`) are the entire
-                difference from V1. When any of them is false this block is byte-identical to what
-                it always was: the WhatsApp button or one of three honest refusals, and not a
-                single input on the page. That is Q5, still literally true for every tenant that
-                has not opted in, and `a2-storefront.spec.ts` asserts it by counting form controls.
+              {/*
+                CART FIRST (Phase 8), THEN CHECKOUT, THEN WHATSAPP — each branch requiring the
+                one before it to be off.
 
-                When checkout IS on, the WhatsApp link stays below it. A customer who would rather
-                talk to a person than fill a form is the normal case in Bartaa, not an edge one,
-                and removing the button would lose that order to protect nothing.
+                `flags.cart` is the entire difference Phase 8 adds: when it is false, everything
+                below is byte-identical to what it was before this phase — the exact same
+                `flags.payments` / `flags.whatsappOrders` three-way split, unchanged.
+
+                CHECKOUT (buy_now) is unaffected by cart being on for a DIFFERENT tenant, and a
+                tenant with BOTH somehow on gets the cart control — the newer, more general
+                mechanism — rather than two competing forms on one product.
               */}
               <div style={{ marginBlockStart: 'var(--t-space-xl)' }}>
-                {context.flags.payments && product.available ? (
+                {context.flags.cart ? (
+                  <AddToCart
+                    tenantId={context.tenantId}
+                    productSlug={product.slug}
+                    showQuantity
+                    disabled={!sellable}
+                    maxQuantity={CHECKOUT_MAX_QUANTITY}
+                    labels={{
+                      add: t('storefront', 'cart.add'),
+                      added: t('storefront', 'cart.added'),
+                      quantity: t('storefront', 'order.quantity'),
+                      increase: t('storefront', 'order.increase'),
+                      decrease: t('storefront', 'order.decrease'),
+                      viewCart: t('storefront', 'cart.viewCart'),
+                      outOfStock: t('storefront', 'order.outOfStock'),
+                    }}
+                  />
+                ) : context.flags.payments && sellable ? (
                   <>
                     <CheckoutForm
                       productSlug={product.slug}
@@ -278,7 +442,7 @@ export default async function ProductPage({ params }: PageProps) {
                       </p>
                     ) : null}
                   </>
-                ) : context.flags.whatsappOrders && number && product.available ? (
+                ) : context.flags.whatsappOrders && number && sellable ? (
                   <WhatsappOrder
                     number={number}
                     messageTemplate={messageTemplate}
@@ -295,7 +459,7 @@ export default async function ProductPage({ params }: PageProps) {
                   /* Same three-way split as the contact block: out of stock, ordering switched
                      off, or a stored number we cannot dial — and in the last case, print it. */
                   <p className="sf-note">
-                    {!product.available
+                    {!sellable
                       ? t('storefront', 'order.outOfStock')
                       : context.flags.whatsappOrders && context.site.whatsapp
                         ? t('storefront', 'order.numberNotUsable', {
@@ -310,20 +474,31 @@ export default async function ProductPage({ params }: PageProps) {
         </div>
       </section>
 
-      {related.length > 0 ? (
-        <section className="sf-block">
-          <div className="sf-shell">
-            <div className="sf-block__head">
-              <h2 className="sf-block__title">{t('storefront', 'products.moreFrom')}</h2>
-            </div>
-            <div className="sf-grid">
-              {related.slice(0, 4).map((entry) => (
-                <ProductCard key={entry.id} product={entry} template={context.template} />
-              ))}
-            </div>
-          </div>
-        </section>
-      ) : null}
+      {/*
+        The hand-rolled "منتجات ثانية من نفس القسم" block that used to live here is now the
+        `related_products` SECTION, which is the same markup with three differences that matter: it
+        goes through `SectionBlock` (so its heading is an `h2` at the same level as every other
+        block, which is what keeps the outline free of axe findings), it picks its column count from
+        the number of items rather than leaving a quarter-empty row under the buy button, and it is
+        one component instead of two copies — the storefront and the merchant's own arrangement now
+        render the same thing.
+      */}
+      <RelatedProductsSection
+        context={context}
+        config={relatedConfig}
+        product={product}
+        products={related}
+      />
     </StorefrontShell>
   );
 }
+
+/**
+ * Above this remaining count, the number is not shown.
+ *
+ * Scarcity is only informative when it is scarce: «باقي 2» changes a decision and «باقي 400» is an
+ * inventory disclosure the merchant did not ask to publish. Five is deliberately NOT the low-stock
+ * threshold from `PlatformSettings` — that number is the merchant's reorder alarm, and reusing it
+ * here would mean a shop that reorders at forty tells every visitor exactly how many it holds.
+ */
+const LOW_STOCK_HINT = 5;

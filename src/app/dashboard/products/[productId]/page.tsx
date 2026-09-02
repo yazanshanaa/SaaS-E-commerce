@@ -1,12 +1,20 @@
 import { notFound } from 'next/navigation';
 import { listMedia } from '@/server/media';
 import { t } from '@/shared/i18n';
-import { getProduct, listCategories } from '../../_lib/products';
+import { catalogueFeatureFlags, getProduct, listCategories } from '../../_lib/products';
+import { loadVariantPanel } from '../../_lib/variants';
 import { param, requireMerchantPage } from '../../_components/guard';
 import { ActionForm } from '../../_components/action-form';
 import { Empty, Field, Notice, PageHead, Panel, Select, Tag, TextInput } from '../../_components/ui';
 import { ProductForm } from '../_form';
-import { attachImageAction, deleteProductAction, detachImageAction, makePrimaryAction } from '../actions';
+import { VariantMatrix } from '../_variant-matrix';
+import {
+  attachImageAction,
+  deleteProductAction,
+  detachImageAction,
+  makePrimaryAction,
+  setArchivedAction,
+} from '../actions';
 
 /**
  * One product: its fields, and its photographs.
@@ -34,9 +42,11 @@ export default async function ProductPage({
   const product = await getProduct(ctx, productId);
   if (!product) notFound();
 
-  const [categories, library] = await Promise.all([
+  const [categories, library, flags, variantPanel] = await Promise.all([
     listCategories(ctx),
     listMedia(ctx.tenantId, { status: 'ready', limit: 100 }),
+    catalogueFeatureFlags(ctx),
+    loadVariantPanel(ctx, productId),
   ]);
 
   const attached = new Set(product.images.map((image) => image.mediaId));
@@ -52,9 +62,24 @@ export default async function ProductPage({
         <ProductForm
           product={product}
           categories={categories}
+          flags={flags}
           submitLabel={t('dashboard', 'actions.saveChanges')}
         />
       </Panel>
+
+      {/*
+        ABSENT, not disabled, when the plan has no `variants` — the acceptance criterion
+        `settings/advanced/page.tsx` states and the one this whole surface follows. `loadVariantPanel`
+        already resolved the flag; the check is repeated here so the panel and its data cannot
+        disagree about whether the feature is on.
+      */}
+      {variantPanel.enabled ? (
+        <VariantMatrix
+          productId={product.id}
+          panel={variantPanel}
+          productPriceAgorot={product.priceAgorot}
+        />
+      ) : null}
 
       <Panel title={t('dashboard', 'products.fields.images')}>
         {product.images.length === 0 ? (
@@ -132,6 +157,40 @@ export default async function ProductPage({
             </div>
           </ActionForm>
         )}
+      </Panel>
+
+      {/*
+        ARCHIVE FIRST, DELETE SECOND, and the order on the page is the recommendation.
+
+        Deleting a product that has ever been sold is refused by `deleteProduct` — `OrderItem
+        .productId` is `SetNull`, so the delete would succeed and quietly cut every order line
+        loose from the product it was. Archiving is the answer, so it is offered here as its own
+        panel above the danger zone rather than being buried in the row of a list the merchant may
+        never scroll.
+      */}
+      <Panel title={t('catalogue', 'status.label')} note={t('catalogue', 'status.archiveHint')}>
+        <p className="sbd-kv">
+          {t('catalogue', 'status.label')}
+          <Tag
+            label={t('catalogue', `status.${product.status}`)}
+            tone={product.status === 'published' ? 'ok' : 'muted'}
+          />
+        </p>
+
+        <form action={setArchivedAction}>
+          <input type="hidden" name="productId" value={product.id} />
+          <input
+            type="hidden"
+            name="archived"
+            value={product.status === 'archived' ? '' : 'on'}
+          />
+          <button type="submit" className="sbd-btn">
+            {t(
+              'catalogue',
+              product.status === 'archived' ? 'status.unarchive' : 'status.archive',
+            )}
+          </button>
+        </form>
       </Panel>
 
       <Panel title={t('common', 'actions.delete')} note={t('dashboard', 'products.deleteConfirm')} tone="danger">

@@ -53,6 +53,11 @@ const LEGALLY_VISIBLE_FEATURES: readonly FeatureKey[] = [
   'analytics',
   'push_notifications',
   'payment_gateway',
+  /** Phase 8. Cart checkout collects a customer's name, phone and delivery address on its own —
+   *  independent of `payment_gateway` — so the privacy copy's `collectsOrders` predicate must
+   *  resync the moment this flips (src/server/legal/facts.ts). `coupons` is deliberately absent:
+   *  it changes no collected field. */
+  'cart',
 ];
 
 /**
@@ -115,6 +120,32 @@ export const FEATURE_KINDS: Record<FeatureKey, FeatureKind> = {
   data_export: 'boolean',
   change_requests_per_month: 'nullableInteger',
   priority_support: 'boolean',
+  cart: 'boolean',
+  coupons: 'boolean',
+
+  /**
+   * Phase 9's thirteen. All plain booleans, and that is the whole design: every one of them is
+   * "does this shop have this capability at all", never "how many" — the phase deliberately added no
+   * new numeric plan limit. The counts that do exist (60 variants, 6 banners, 10 tags, 4 badges) are
+   * per-product or per-shop guards chosen in code by the tracks that own them, not plan tiers, so
+   * they stay out of this table where an operator could set one shop's banner cap to 400.
+   *
+   * `carriers` gates the ASSIGNMENT surface only. The catalogue itself is global (Q22) and belongs to
+   * the platform, so nothing a tenant is entitled to reaches it.
+   */
+  variants: 'boolean',
+  stock_tracking: 'boolean',
+  size_guide: 'boolean',
+  banners_slider: 'boolean',
+  customers_crm: 'boolean',
+  delivery_zones: 'boolean',
+  carriers: 'boolean',
+  tax_invoicing: 'boolean',
+  visitor_analytics: 'boolean',
+  search_insights: 'boolean',
+  logo_upload: 'boolean',
+  product_tags: 'boolean',
+  homepage_extras: 'boolean',
 };
 
 export type StoredFeatureValue = boolean | number | null | string | string[];

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { publicDb, superAdminDb, type Actor } from '@/server/db';
 import { hashIp } from '@/server/crypto';
+import { emitPlatformEvent } from '@/server/events';
 import { addDays } from '@/server/time';
 import { getEnv } from '@/env';
 import { logger } from '@/server/logger';
@@ -86,6 +87,32 @@ export async function submitDemoRequest(input: unknown, ip: string | null): Prom
 
   // The prefix is the only field safe to log: everything else identifies the prospect.
   logger().info({ requestedPrefix: data.requestedPrefix }, 'demo request received');
+
+  /**
+   * The out-of-band notification a sales lead was missing (pre-launch fix, 2026-08-20):
+   * `demo_request.received` was declared in Phase 1 and never emitted anywhere, so a prospect
+   * filling this form produced a row and silence — the owner learned about it only by opening
+   * the inbox unprompted.
+   *
+   * PLATFORM-scoped (no tenant exists yet, which is the whole point of a request) and PII-FREE:
+   * the prefix and the pack, never the WhatsApp number or address — the payload lands in the
+   * global `webhook_deliveries` table and in n8n's execution history, and the n8n workflow's job
+   * is «في طلب ديمو جديد» plus a link to the inbox, not the prospect's file.
+   *
+   * BEST EFFORT: the prospect's submission is already committed, and it must not fail because
+   * the notification could not be queued. The inbox count on `/demos` is the fallback either way.
+   */
+  try {
+    await emitPlatformEvent(publicDb(), {
+      type: 'demo_request.received',
+      payload: { requestedPrefix: data.requestedPrefix, packKey: data.packKey ?? null },
+    });
+  } catch (error) {
+    logger().error(
+      { requestedPrefix: data.requestedPrefix, error: (error as Error).message },
+      'demo_request.received could not be emitted — the inbox count is the only signal',
+    );
+  }
 }
 
 /** Super admin only — the SELECT policy refuses every other actor. */

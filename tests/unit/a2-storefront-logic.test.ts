@@ -46,6 +46,8 @@ function storefrontContext(overrides: Partial<StorefrontContext> = {}): Storefro
     origin: 'https://warsheh.souqbartaa.test',
     isDemo: false,
     pushPublicKey: null,
+    // The platform's credit bar is off unless the owner turns it on (src/server/platform-settings.ts).
+    credit: null,
     // Phase 5: this fixture has no gateway, so the storefront is the Q5 one — checkout never draws.
     checkout: null,
     template,
@@ -85,6 +87,12 @@ function storefrontContext(overrides: Partial<StorefrontContext> = {}): Storefro
       pwa: false,
       push: false,
       payments: false,
+      cart: false,
+      // Phase 9. The two new flags default OFF in every fixture, which is the shape that matters
+      // here: these tests assert what a storefront renders WITHOUT the new features, so the fixture
+      // has to be able to say so.
+      search: false,
+      visitorAnalytics: false,
     },
     announcementBar: null,
     socialLinks: [],
@@ -98,6 +106,24 @@ function storefrontContext(overrides: Partial<StorefrontContext> = {}): Storefro
     mediaById: {},
     sections: [],
     hiddenSectionTypes: [],
+    /*
+      Phase 9's content, all EMPTY — and spelled out rather than left to the `...overrides` spread,
+      which is what let the fixture drift in the first place: the spread of a `Partial` stops
+      TypeScript checking this object for completeness, so a field added to the view model is missing
+      at runtime with nothing to say so.
+
+      Empty is also the case worth having as the default. It is the shape of a shop that has none of
+      Phase 9's content, which is the state every one of these blocks has to degrade to.
+    */
+    homeStrip: null,
+    banners: [],
+    trustBadges: [],
+    storeStats: [],
+    openingHours: [],
+    hoursNote: null,
+    openNow: null,
+    newArrivals: [],
+    bestSellers: [],
     ...overrides,
   };
 }

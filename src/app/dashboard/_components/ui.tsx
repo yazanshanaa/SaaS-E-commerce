@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { formatAgorot } from '@/shared/i18n';
+import { formatAgorot, type MessageParams } from '@/shared/i18n';
+import { Sparkline } from '@/app/_components/kit/sparkline';
 import { resolveMessage } from './messages';
 
 /**
@@ -37,6 +38,7 @@ export function Panel({
   actions,
   children,
   tone,
+  bloom,
 }: {
   title?: string;
   note?: string;
@@ -44,6 +46,12 @@ export function Panel({
   children: React.ReactNode;
   /** `locked` marks content this plan hands to the platform owner — see LockedNotice. */
   tone?: 'locked' | 'danger';
+  /**
+   * «مرصد» signature element #2 — the corner bloom (`kit.css`, `[data-bloom]`). At most one per
+   * screen: it says "this one is why you came here", and a page where everything blooms says
+   * nothing. Replaces the shadow, which is `none` in dark mode by policy.
+   */
+  bloom?: boolean;
 }) {
   const className =
     tone === 'locked'
@@ -53,7 +61,7 @@ export function Panel({
         : 'sbd-panel';
 
   return (
-    <section className={className}>
+    <section className={className} data-bloom={bloom ? 'true' : undefined}>
       {title || actions ? (
         <div className="sbd-panel-head">
           {title ? <h2 className="sbd-panel-title">{title}</h2> : <span />}
@@ -71,12 +79,27 @@ export function Panel({
  *
  * One-click controls do not go through `ActionForm` — they redirect back to the page — so their
  * outcome arrives as a query parameter and is resolved here through the same key vocabulary.
+ *
+ * Phase 9 added `params`, which is what let Track D's own `delivery/notice.tsx` be deleted rather
+ * than kept: «البلدة {town} موجودة أصلاً ضمن {zone}» is the one redirect message on this surface that
+ * has to name something, and without interpolation the merchant read the braces. The values are the
+ * merchant's own text echoed back to them, rendered as a React child and therefore escaped; the
+ * action caps their length before they reach the URL. Use `noticeKey()` to build the key so a crafted
+ * link cannot choose which message appears.
  */
-export function Notice({ okKey, errorKey }: { okKey?: string; errorKey?: string }) {
+export function Notice({
+  okKey,
+  errorKey,
+  params,
+}: {
+  okKey?: string;
+  errorKey?: string;
+  params?: MessageParams;
+}) {
   if (errorKey) {
     return (
       <div className="sbd-notice sbd-notice--error" role="alert">
-        {resolveMessage(errorKey)}
+        {resolveMessage(errorKey, params)}
       </div>
     );
   }
@@ -84,7 +107,7 @@ export function Notice({ okKey, errorKey }: { okKey?: string; errorKey?: string 
   if (okKey) {
     return (
       <div className="sbd-notice sbd-notice--ok" role="status">
-        {resolveMessage(okKey)}
+        {resolveMessage(okKey, params)}
       </div>
     );
   }
@@ -92,8 +115,30 @@ export function Notice({ okKey, errorKey }: { okKey?: string; errorKey?: string 
   return null;
 }
 
-export function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="sbd-empty">{children}</p>;
+/**
+ * Phase 11 (Track 11.F): an empty state may NAME THE NEXT STEP and link to it. «ما في منتجات
+ * بعد» with nothing under it is a dead end; the same sentence over «أضف أول منتج» is an
+ * onboarding step. Additive — every existing call site keeps rendering exactly as before.
+ */
+export function Empty({
+  children,
+  actionHref,
+  actionLabel,
+}: {
+  children: React.ReactNode;
+  actionHref?: string;
+  actionLabel?: string;
+}) {
+  return (
+    <div className="sbd-empty">
+      <p>{children}</p>
+      {actionHref && actionLabel ? (
+        <Link className="sbd-btn sbd-btn--primary sbk-empty-action" href={actionHref}>
+          {actionLabel}
+        </Link>
+      ) : null}
+    </div>
+  );
 }
 
 export function Field({
@@ -291,16 +336,31 @@ export function Stat({
   value,
   note,
   meterPercent,
+  trend,
 }: {
   label: string;
   value: string;
   note?: string;
   meterPercent?: number;
+  /**
+   * A REAL daily series for this metric, oldest first — «مرصد» signature element #1.
+   *
+   * Optional and deliberately unforgiving: a `Stat` with no series shows no line. There is no
+   * placeholder, no smoothed guess and no flat stub, because a chart is a claim about what
+   * happened and a decorative one is a false claim. Only screens that already compute a series
+   * pass it — today that is «سلوك الزوار», whose `analytics_daily` rollup produces exactly this
+   * shape (`DailyPoint[]` in `src/server/analytics/report.ts`).
+   *
+   * A total and its trend must come from the SAME query. Passing a series from a different
+   * window than the value above it is the failure this prop is easiest to misuse for.
+   */
+  trend?: readonly number[];
 }) {
   return (
     <div className="sbd-stat">
       <dt>{label}</dt>
       <dd>{value}</dd>
+      {trend ? <Sparkline values={trend} /> : null}
       {note ? <span className="sbd-hint">{note}</span> : null}
       {typeof meterPercent === 'number' ? (
         <div

@@ -90,9 +90,36 @@ export function selfServeExportsPrefix(tenantId: string): string {
   return `${exportsPrefix(tenantId)}tmp/`;
 }
 
-/** True for keys A3's orphan cleanup must SKIP: they have no Media row by design. */
+/**
+ * Phase 10. Per-tenant backup artifacts — one archive of everything the tenant owns, taken by the
+ * platform owner and restorable into the same tenant (Q24), plus the standalone bundle built from
+ * one (Q25).
+ *
+ * UNDER THE TENANT PREFIX on purpose, exactly like `_exports/`: the purge's `deleteByPrefix` then
+ * sweeps a tenant's backups by construction rather than by anybody remembering to, which is what
+ * keeps Q18's "after a purge nothing live survives" true of a feature invented three phases later.
+ * A separate top-level `backups/` prefix would have quietly created retention the deletion promise
+ * does not cover.
+ */
+export function backupsPrefix(tenantId: string): string {
+  return `${tenantPrefix(tenantId)}_backups/`;
+}
+
+/**
+ * True for keys A3's orphan cleanup must SKIP: they have no Media row by design.
+ *
+ * BOTH artifact prefixes, and that is the whole reason this predicate is shared rather than a
+ * string typed at each call site — `_backups/` joined `_exports/` in Phase 10 by editing ONE
+ * function, so the sweep, the CDN refusal and the dev-media route all learned about it together.
+ * A sweep that did not know would delete a merchant's backup the night it was taken.
+ */
 export function isExportKey(key: string): boolean {
-  return /^tenants\/[^/]+\/_exports\//.test(key);
+  return /^tenants\/[^/]+\/(_exports|_backups)\//.test(key);
+}
+
+/** Specifically a Phase 10 backup/standalone artifact. `isExportKey` covers both families. */
+export function isBackupKey(key: string): boolean {
+  return /^tenants\/[^/]+\/_backups\//.test(key);
 }
 
 export function isMediaKey(key: string): boolean {

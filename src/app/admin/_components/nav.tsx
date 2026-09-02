@@ -1,58 +1,64 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { t } from '@/shared/i18n';
+import type { UiAccentKey, UiTheme } from '@/shared/ui-theme';
+import { KitRail, type KitNavGroup } from '../../_components/kit/rail';
+import { ThemeSwitch } from '../../_components/theme-switch';
 
 /**
- * The rail.
+ * The admin rail (Phase 11, Track 11.G): ten flat links became الرئيسية plus three groups, on
+ * the SAME kit chrome the merchant rail consumes (`src/app/_components/kit/rail.tsx`) — same
+ * drawer, same collapse, same palette, same breakpoints; the ledger keeps its own density and
+ * 4px radius through the `--sbx-*` bridge values `admin.css` maps.
  *
- * Two things here are consequences of how this platform routes:
- *
- *   1. Every `href` is the PUBLIC path (`/accounts`), never the internal rewrite target
- *      (`/admin/accounts`). proxy.ts owns the prefix and the URL bar never shows it.
- *   2. `usePathname()` can hand back either form depending on whether the value came from the
- *      server render (which sees the rewritten path) or the client router (which sees the
- *      address bar), so it is normalised before anything is compared. Getting this wrong does
- *      not break navigation — it silently highlights nothing, which is the kind of bug that
- *      survives review because everything still works.
+ * The list stays hardcoded exactly as A1 built it — every admin session sees every screen, so
+ * there is no per-item gate to consult — and the grouping is Q29's, verbatim from the plan:
+ * الحسابات is the per-tenant work, العروض is the platform's own catalogue, الرقابة is "show me
+ * what happened and prove it". Nothing added, nothing dropped.
  */
 
-const ITEMS = [
-  { href: '/', key: 'overview' },
-  { href: '/accounts', key: 'accounts' },
-  // B1's screens, wired in at the merge: `nav.tsx` and `messages/ar/admin.json` are A1's, so the
-  // track that built /lifecycle could not give itself a way in. Next to /accounts because that is
-  // where an operator already is when they need the call list or the deletion deadline.
-  { href: '/lifecycle', key: 'lifecycle' },
-  // B3's screens, wired in at the same wall for the same reason. `/demos` is the pack picker and
-  // the list; the request inbox hangs off it at `/demos/requests`, and `isActive` already lights
-  // the parent for both because it matches on the `${href}/` prefix.
-  { href: '/demos', key: 'demos' },
-  { href: '/change-requests', key: 'changeRequests' },
-  { href: '/plans', key: 'plans' },
-  /**
-   * Phase 6. Next to `/audit` because both answer the same kind of question — "show me what
-   * happened and prove it" — and because an operator opening one has usually been asked something
-   * that will send them to the other.
-   */
-  { href: '/privacy', key: 'privacy' },
-  { href: '/audit', key: 'audit' },
-] as const;
+const GROUPS: Array<{ labelKey: string | null; items: Array<{ href: string; key: string }> }> = [
+  { labelKey: null, items: [{ href: '/', key: 'overview' }] },
+  {
+    labelKey: 'groupAccounts',
+    items: [
+      { href: '/accounts', key: 'accounts' },
+      { href: '/lifecycle', key: 'lifecycle' },
+      { href: '/change-requests', key: 'changeRequests' },
+    ],
+  },
+  {
+    labelKey: 'groupOffering',
+    items: [
+      { href: '/demos', key: 'demos' },
+      { href: '/plans', key: 'plans' },
+      { href: '/carriers', key: 'carriers' },
+    ],
+  },
+  {
+    labelKey: 'groupOversight',
+    items: [
+      { href: '/audit', key: 'audit' },
+      { href: '/privacy', key: 'privacy' },
+      { href: '/backups', key: 'backups' },
+    ],
+  },
+];
 
-function publicPath(pathname: string): string {
-  const stripped = pathname.replace(/^\/admin(?=\/|$)/, '');
-  return stripped === '' ? '/' : stripped;
-}
-
-function isActive(current: string, href: string): boolean {
-  if (href === '/') return current === '/';
-  return current === href || current.startsWith(`${href}/`);
-}
-
-export function AdminNav({ userName }: { userName: string }) {
-  const pathname = publicPath(usePathname() ?? '/');
+export function AdminNav({
+  userName,
+  theme,
+  accent,
+  railCollapsed,
+}: {
+  userName: string;
+  theme: UiTheme;
+  accent: UiAccentKey | null;
+  railCollapsed: boolean;
+}) {
   const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
 
@@ -73,36 +79,49 @@ export function AdminNav({ userName }: { userName: string }) {
     }
   }
 
+  const groups: KitNavGroup[] = GROUPS.map((group) => ({
+    label: group.labelKey ? t('admin', `nav.${group.labelKey}`) : null,
+    items: group.items.map((item) => ({
+      href: item.href,
+      label: t('admin', `nav.${item.key}`),
+      icon: item.key,
+    })),
+  }));
+
   return (
-    <nav className="sba-rail" aria-label={t('admin', 'shell.sectionLabel')}>
-      <Link className="sba-brand" href="/">
-        {t('admin', 'title')}
-      </Link>
-
-      <div className="sba-nav">
-        {ITEMS.map((item) => (
-          <Link
-            key={item.href}
-            className="sba-nav-link"
-            href={item.href}
-            aria-current={isActive(pathname, item.href) ? 'page' : undefined}
+    <KitRail
+      pathPrefix="/admin"
+      collapsedInitial={railCollapsed}
+      collapseCookie="sb-rail"
+      groups={groups}
+      // The accounts screen's own search (`/accounts?q=`) — the one admin list an operator
+      // reaches for by name.
+      paletteSearches={[{ label: t('admin', 'nav.searchAccounts'), hrefBase: '/accounts?q=' }]}
+      labels={{
+        navLabel: t('admin', 'shell.sectionLabel'),
+        openMenu: t('admin', 'shell.openMenu'),
+        closeMenu: t('admin', 'shell.closeMenu'),
+        collapse: t('admin', 'shell.collapse'),
+        expand: t('admin', 'shell.expand'),
+        palette: t('admin', 'shell.palette'),
+        paletteInput: t('admin', 'shell.paletteInput'),
+        paletteEmpty: t('admin', 'shell.paletteEmpty'),
+      }}
+      brand={<Link href="/">{t('admin', 'title')}</Link>}
+      foot={
+        <>
+          <ThemeSwitch initialTheme={theme} initialAccent={accent} />
+          <span>{t('admin', 'shell.signedInAs', { name: userName })}</span>
+          <button
+            type="button"
+            className="sba-btn sba-btn--sm"
+            onClick={signOut}
+            disabled={signingOut}
           >
-            {t('admin', `nav.${item.key}`)}
-          </Link>
-        ))}
-      </div>
-
-      <div className="sba-rail-foot">
-        <span>{t('admin', 'shell.signedInAs', { name: userName })}</span>
-        <button
-          type="button"
-          className="sba-btn sba-btn--sm"
-          onClick={signOut}
-          disabled={signingOut}
-        >
-          {t('admin', 'shell.signOut')}
-        </button>
-      </div>
-    </nav>
+            {t('admin', 'shell.signOut')}
+          </button>
+        </>
+      }
+    />
   );
 }

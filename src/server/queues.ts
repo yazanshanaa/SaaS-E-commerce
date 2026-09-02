@@ -56,6 +56,28 @@ const REGISTRY: Record<QueueName, Record<string, () => Promise<ProcessorModule>>
     // Phase 6
     'sync-compliance': () => import('./jobs/sync-compliance'),
     'prune-records': () => import('./jobs/prune-records'),
+    /**
+     * Phase 9 / Track C. The pair is invariant 8 in miniature: `sweep-analytics` is a SystemJob
+     * that runs as `app_system` — which holds SELECT and nothing else on tenant tables — so all it
+     * may do is enumerate the tenant ids with events for the day and fan out. `rollup-analytics` is
+     * a TenantJob, carries `tenantId` in its payload, and writes the rollup as `app_web` inside
+     * `withTenantTxn`. A sweep that wrote a rollup itself would be a cross-tenant write from the one
+     * role that exists to be unable to make one.
+     *
+     * Until these two lines existed, an enqueued rollup failed loudly with «No processor registered
+     * for lifecycle/rollup-analytics» rather than silently dropping a day. That was the intended
+     * failure mode, and it is worth keeping in mind: the rollups are the ONLY surviving record, since
+     * the raw events are pruned at 30 days and the visitor key is salted per day so nothing can be
+     * recomputed from them afterwards.
+     */
+    'sweep-analytics': () => import('./analytics/processors/sweep-analytics'),
+    'rollup-analytics': () => import('./analytics/processors/rollup-analytics'),
+    /**
+     * The other half of the same rule. `prune-records` runs as `app_system`, which may READ
+     * `analytics_events` to find who still has rows older than the window but may not delete from
+     * it, so it fans out to this TenantJob — which runs as `app_web` with the RLS context set.
+     */
+    'prune-analytics': () => import('./jobs/prune-analytics'),
   },
   notifications: {
     'send-mail': () => import('./jobs/send-mail'),
@@ -70,6 +92,14 @@ const REGISTRY: Record<QueueName, Record<string, () => Promise<ProcessorModule>>
   demo: {
     // B3
     'build-demo': () => import('./demo/processors/build-demo'),
+  },
+  backup: {
+    // Phase 10 (Q24, Q25). Two TenantJobs and one SystemJob — `restore-tenant-backup` must own its
+    // own transaction, so it cannot run inside the one a TenantJob is wrapped in. BACKUP_JOBS in
+    // ./jobs/contract carries the full reasoning.
+    'build-tenant-backup': () => import('./tenant-backup/processors/build-tenant-backup'),
+    'restore-tenant-backup': () => import('./tenant-backup/processors/restore-tenant-backup'),
+    'build-standalone-export': () => import('./tenant-backup/processors/build-standalone-export'),
   },
 };
 
@@ -121,6 +151,15 @@ export async function enqueue(
  * quiesce commits, so this is defence in depth rather than the only layer — but leaving them
  * queued means five doomed attempts with backoff per job, and a `jobsDropped` count that under-
  * reports what the purge actually found.
+ *
+ * BOTH LEVELS OF THE ENVELOPE ARE CHECKED — corrected in Phase 10, and it had been half-broken
+ * since B1. `enqueue()` stores the whole envelope as the BullMQ job's `data`. A TenantJob carries
+ * `tenantId` at the TOP of that envelope, so the original check found those. A SystemJob carries it
+ * one level down, inside `data` — which is exactly where `suspend-tenant`, `purge-tenant` and now
+ * `restore-tenant-backup` put it, because all three must own their own transaction. So the three
+ * jobs most worth draining were the three this function silently skipped: a queued suspension
+ * export writes a full catalogue ZIP into the prefix a purge is about to sweep, and a queued
+ * restore would rewrite a tenant mid-deletion.
  */
 export async function removeTenantJobs(tenantId: string): Promise<number> {
   let removed = 0;
@@ -129,8 +168,11 @@ export async function removeTenantJobs(tenantId: string): Promise<number> {
     const q = queue(name);
     const jobs = await q.getJobs(['waiting', 'delayed', 'prioritized', 'paused']);
     for (const job of jobs) {
-      const data = job.data as { tenantId?: unknown } | undefined;
-      if (data?.tenantId === tenantId) {
+      const envelope = job.data as
+        | { tenantId?: unknown; data?: { tenantId?: unknown } }
+        | undefined;
+
+      if (envelope?.tenantId === tenantId || envelope?.data?.tenantId === tenantId) {
         await job.remove();
         removed += 1;
       }

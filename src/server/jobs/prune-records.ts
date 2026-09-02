@@ -1,7 +1,8 @@
 import { withSystemTxn } from '@/server/db';
 import { getEnv } from '@/env';
 import { logger } from '@/server/logger';
-import type { SystemJob } from '@/server/jobs/contract';
+import { enqueue, tenantJob } from '@/server/queues';
+import { ANALYTICS_JOBS, type SystemJob } from '@/server/jobs/contract';
 
 /**
  * Phase 6 — the retention sweep for the records that OUTLIVE a tenant.
@@ -39,6 +40,11 @@ export interface PruneCounts {
   platformAuditLogs: number;
   webhookDeliveries: number;
   dsrRequests: number;
+  /**
+   * Phase 9. NOT a count of deleted rows — a count of tenants HANDED OFF, because this job cannot
+   * delete them itself. See `fanOutAnalyticsPrune` below.
+   */
+  analyticsTenants: number;
 }
 
 export interface PruneOptions {
@@ -106,12 +112,78 @@ export async function pruneExpiredRecords(options: PruneOptions = {}): Promise<P
     };
   });
 
+  const analyticsTenants = await fanOutAnalyticsPrune(now);
+
   const total =
-    counts.tombstones + counts.platformAuditLogs + counts.webhookDeliveries + counts.dsrRequests;
+    counts.tombstones +
+    counts.platformAuditLogs +
+    counts.webhookDeliveries +
+    counts.dsrRequests +
+    analyticsTenants;
 
-  if (total > 0) logger().info({ ...counts }, 'expired global records pruned');
+  const result = { ...counts, analyticsTenants };
+  if (total > 0) logger().info({ ...result }, 'expired global records pruned');
 
-  return counts;
+  return result;
+}
+
+/**
+ * Phase 9 / Q20 — the 30-day raw `analytics_events` prune, as a FAN-OUT rather than a delete.
+ *
+ * `analytics_events` is TENANT-OWNED and `app_system` holds SELECT on it and nothing else. The
+ * Phase 9 migration says so in as many words and calls the temptation out by name: "the temptation
+ * to *just let app_system write the rollups, it's only counters* would hand a cross-tenant write
+ * path to the one role that exists not to have one." Deleting is a write. So this pass does the two
+ * things `app_system` may do — read the window from `platform_settings` and enumerate tenant ids —
+ * and each tenant's rows are deleted by a TenantJob running as `app_web` inside `withTenantTxn`,
+ * which is invariant 8 exactly.
+ *
+ * Rejected: granting `app_system` DELETE on `analytics_events` in a follow-up migration, which
+ * Track C offered as its option (b) and recommended against itself.
+ *
+ * It fans out from HERE rather than from `sweep-analytics`, which was Track C's option (a). The
+ * sweep enumerates tenants that had events on the target DAY; a shop that stopped trading two months
+ * ago has no events yesterday, is never swept, and would keep its raw rows for ever — which is the
+ * one case a retention job exists for. This pass asks the opposite question: who still has rows
+ * older than the window.
+ *
+ * The window is `platform_settings.analytics_raw_retention_days` (default 30). Unlike the other
+ * three windows in this job it is a platform-wide CONSTANT rather than an env var, so it is read
+ * from the database and an operator can change it without a deploy.
+ *
+ * The three rollup tables are NOT pruned and never will be: they are the permanent record, and
+ * `analytics_daily.visitors` cannot be recomputed from anything once these rows are gone —
+ * `visitor_key` is salted per day precisely so it cannot be joined across days. That is why the
+ * rollup runs at 02:00 and this at 04:00 (`src/worker/index.ts`).
+ */
+async function fanOutAnalyticsPrune(now: Date): Promise<number> {
+  const { cutoff, tenantIds } = await withSystemTxn(async (tx) => {
+    const settings = await tx.platformSettings.findUnique({
+      where: { id: 'singleton' },
+      select: { analyticsRawRetentionDays: true },
+    });
+
+    const analyticsCutoff = daysAgo(now, settings?.analyticsRawRetentionDays ?? 30);
+
+    // `distinct` over an indexed column rather than a `groupBy`: the answer is a list of ids and
+    // nothing else, and a day of one tenant's events must not cross the wire to produce it.
+    const rows = await tx.analyticsEvent.findMany({
+      where: { occurredAt: { lt: analyticsCutoff } },
+      select: { tenantId: true },
+      distinct: ['tenantId'],
+    });
+
+    return { cutoff: analyticsCutoff, tenantIds: rows.map((row) => row.tenantId) };
+  });
+
+  for (const tenantId of tenantIds) {
+    await enqueue(
+      'lifecycle',
+      tenantJob(tenantId, ANALYTICS_JOBS.prune, { before: cutoff.toISOString() }),
+    );
+  }
+
+  return tenantIds.length;
 }
 
 /**

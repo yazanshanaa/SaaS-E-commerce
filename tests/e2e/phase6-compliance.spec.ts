@@ -66,7 +66,22 @@ test.describe('security headers on the wire', () => {
       expect(csp).toContain("form-action 'self'");
 
       expect(headers['x-content-type-options']).toBe('nosniff');
-      expect(headers['x-frame-options']).toBe('DENY');
+      /**
+       * `X-Frame-Options` IS ABSENT ON PURPOSE — Q37, decided by the owner on 2026-08-28, and
+       * spelled out at length in `CONSTANT_SECURITY_HEADERS`. Framing is governed by
+       * `frame-ancestors` alone (asserted above), which CSP3 defines as superseding this header
+       * when both are present, and which is the only one of the two that can express the single
+       * exception Track 11.D needs: the live preview iframe.
+       *
+       * This line used to read `.toBe('DENY')`. Q37 removed the header from the product and
+       * updated `tests/unit/phase6-security-headers.test.ts`; this e2e case was the copy nobody
+       * updated, and it had been failing on both surfaces ever since — unread, because the suite
+       * could not run.
+       *
+       * Asserted ABSENT rather than deleted: a header re-added by a well-meaning future change
+       * would ship two framing rules whose interaction is exactly what Q37 rejected.
+       */
+      expect(headers['x-frame-options']).toBeUndefined();
       expect(headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
       expect(headers['permissions-policy']).toContain('geolocation=()');
     });
