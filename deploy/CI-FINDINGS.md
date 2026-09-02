@@ -212,7 +212,39 @@ The assertion was also weaker than its own comment. It fetched `/appearance` —
 test had just been driving — and checked for a 200, which proves the studio renders and says
 nothing about what was *saved*. It now asks the storefront whether the draft leaked into it.
 
-The other nine are open. None of them was reachable before today, because the suite had never run.
+### The two font preloads — also fixed
+
+`src/app/layout.tsx` preloaded two chrome faces under a comment saying they were for "every private
+surface". That layout is shared by all three surfaces and is synchronous by design, so it could not
+tell them apart: every storefront preloaded the admin/dashboard faces it never paints, on top of its
+own template face. Three where `templates/shell.tsx` promises one — and its header says about
+exactly this case, *"Preloading three families would spend the Fast 3G budget on two fonts nobody
+will see."*
+
+Moved to `_components/chrome-font-preload.tsx`, rendered by the admin and dashboard layouts. Five
+render sites and the split between them is the point: both admin branches (the login page is the
+first thing an admin paints) and both authenticated dashboard branches get it; the dashboard's
+`preview` branch does **not**, because that one renders the storefront shell and would rebuild the
+same bug on the one route Phase 11 added.
+
+### The remaining trio — three hypotheses checked and discarded
+
+`b2-dashboard:100` and `phase11-design-dashboards:167` (×2) all fail with *element(s) not found*
+after «افتح الحساب». Ruled out by reading the code rather than guessing:
+
+- **Not the template picker.** 11.G replaced `/accounts/new`'s `<select>` with cards; the default
+  survived the change — `defaultChecked={key === TEMPLATE_KEYS[0]}` is there.
+- **Not a missing heading role.** `Panel` still renders `<h2 className="sbd-panel-title">`, so
+  `getByRole('heading', …)` would match if the page rendered at all.
+- **Not the button.** `a1-admin.spec.ts` clicks the same button through the same form and passes.
+
+What distinguishes the failing ones from `a1-admin` is `plan = pro` (not `basic`) and
+`#sendPasswordLink-on`. That is a lead, not a diagnosis. The annotations give a test's START line,
+not its failing assertion, so the next step is the failing line numbers from the run in flight —
+not another guess.
+
+`phase6-compliance:56` (a header reading `undefined` on both `admin.*` and `app.*`) and
+`phase7-critical-paths:656` are untouched.
 
 ## 5. Verification of the fixes in this document
 

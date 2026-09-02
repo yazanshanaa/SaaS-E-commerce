@@ -1,31 +1,22 @@
-Stop preloading the chrome fonts on storefronts
+Assert X-Frame-Options is ABSENT, which is what Q37 decided
 
-`src/app/layout.tsx` preloaded two faces with a comment saying they were needed
-"on every private surface". They are - but that layout is shared by all three
-surfaces and is synchronous by design, so it cannot tell them apart. Every
-storefront preloaded the admin/dashboard faces it never paints, on top of its
-own template face from `templates/shell.tsx`, whose header says about exactly
-this: "Preloading three families would spend the Fast 3G budget on two fonts
-nobody will see."
+`phase6-compliance.spec.ts` asserted `x-frame-options: DENY` on both private
+surfaces. Q37 - decided by the owner on 2026-08-28 - removed that header from
+the product on purpose. `CONSTANT_SECURITY_HEADERS` carries the full reasoning:
+framing is governed by `frame-ancestors` alone, CSP3 defines it as superseding
+the header when both are present, and it is the only one of the two that can
+express the single exception Track 11.D needs - the live preview iframe.
+Next's `headers()` APPENDS rather than replaces, so a per-path `SAMEORIGIN`
+would have shipped both values and the browser would take the stricter one.
 
-Three preloads where the shell promises one. `tests/e2e/a2-storefront.spec.ts`
-pins it twice - `Expected length: 1, Received length: 3` - and both cases had
-been red since the storefront budget was written, on a suite that had never run
-anywhere it could be read.
+Q37 updated `tests/unit/phase6-security-headers.test.ts`. This e2e case was the
+copy nobody updated, and it had been failing on both surfaces ever since -
+unread, because the suite could not run anywhere.
 
-The two links move into `_components/chrome-font-preload.tsx`, rendered by the
-admin and dashboard layouts. React hoists `<link>` into `<head>` from anywhere
-in the tree, so the hint lands in the same place and can no longer reach a
-surface that does not use it.
+Asserted ABSENT rather than deleted. A header re-added by a well-meaning future
+change would ship two framing rules whose interaction is exactly what Q37
+rejected, and nothing else would catch it; `frame-ancestors 'none'` is already
+asserted four lines above, so the coverage this replaces is not lost.
 
-Five render sites, and the split between them is the point: both admin branches
-(the login page is the first thing an admin ever paints) and both authenticated
-dashboard branches get it. The dashboard's `preview` branch does NOT - that one
-renders the storefront shell, and giving it the chrome faces would rebuild the
-same bug on the one route Phase 11 added.
-
-This is CLAUDE.md's budget, not a test detail: LCP under 2.5s on Fast 3G, fonts
-subset and preloaded. Two unused Arabic faces on the critical path cost a real
-phone in Bartaa real time.
-
-typecheck and lint green locally.
+Fourth of the ten first-run e2e failures. The previous three are confirmed green
+on CI: both font-preload cases and the Node-side DNS lookup.
