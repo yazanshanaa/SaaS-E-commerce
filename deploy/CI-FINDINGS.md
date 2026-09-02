@@ -136,7 +136,11 @@ exited with exit code 1`) while executing that test's exact query. Consistent wi
 instability `GATES.cmd` documents — but this is the test that pins **invariant 1**, and "probably
 environmental" is not a verdict. It has to be re-run on Linux before anyone calls it clean.
 
-## 4. One HIGH advisory, deliberately not fixed here
+## 4. One HIGH advisory — FIXED, and verified
+
+> Superseded below: this section first said the advisory needed a machine and was left open. It got
+> one. Kept as written, with the outcome appended, because the reasoning about *why* an override
+> rather than an upgrade is what makes the fix reviewable.
 
 ```
 high   DeepmergeTS has stack exhaustion when merging
@@ -158,6 +162,28 @@ pnpm up prisma @prisma/client        # preferred: take the fix upstream
 Reachability, before anyone treats it as an emergency: a stack exhaustion in a deep-merge helper
 inside Prisma's *config* loader, over configuration this repository controls — not over tenant
 input. Fix it; it is not an open door.
+
+**Outcome.** `pnpm up` was the wrong tool: `prisma` and `@prisma/client` are pinned to an exact
+`6.19.3`, so it moves nothing, and `--latest` jumps to Prisma 7 — which removes the
+`package.json#prisma` block this repo still uses and that `migrate status` already warns about.
+That is a migration, and it does not belong in an advisory fix. The transitive dependency was
+pinned instead:
+
+```json
+"pnpm": { "overrides": { "deepmerge-ts": ">=8.0.0" } }
+```
+
+Forcing a major version on a dependency Prisma pinned itself could have broken its config loader,
+so `FIX-ADVISORY.cmd` checks rather than hopes. From `advisory.log`:
+
+```
+BEFORE_EXIT=1      1 high: deepmerge-ts
+INSTALL_EXIT=0
+AFTER_EXIT=0       No known vulnerabilities found
+GENERATE_EXIT=0    the Prisma client still generates
+TYPECHECK_EXIT=0
+2 files changed, 12 insertions(+), 6 deletions(-)   package.json + pnpm-lock.yaml
+```
 
 ## 5. Verification of the fixes in this document
 
