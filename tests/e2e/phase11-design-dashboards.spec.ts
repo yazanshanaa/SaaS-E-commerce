@@ -178,6 +178,16 @@ test.describe('the merchant surface (11.D / 11.F / 11.H)', () => {
     await page.locator('#billingPeriod').selectOption('monthly');
     await page.locator('#sendPasswordLink-on').check();
     await page.getByRole('button', { name: 'افتح الحساب' }).click();
+    /**
+     * The REDIRECT first, then the heading.
+     *
+     * A refused creation re-renders `/accounts/new` with its error; a successful one redirects to
+     * `/accounts/{id}` — the shape `a1-admin.spec.ts` already pins. Asserting the heading alone
+     * means a validation failure spends thirty seconds waiting for a heading that was never going
+     * to render and then reports "element not found", which says nothing about why. This names the
+     * page it actually landed on.
+     */
+    await expect(page).toHaveURL(/\/accounts\/[a-z0-9]+$/);
     await expect(page.getByRole('heading', { name: MERCHANT.shop })).toBeVisible();
 
     const resetLink = await waitForResetLink(MERCHANT.ownerEmail);

@@ -1,22 +1,27 @@
-Assert X-Frame-Options is ABSENT, which is what Q37 decided
+Read the visible brand, and make a refused account creation say so
 
-`phase6-compliance.spec.ts` asserted `x-frame-options: DENY` on both private
-surfaces. Q37 - decided by the owner on 2026-08-28 - removed that header from
-the product on purpose. `CONSTANT_SECURITY_HEADERS` carries the full reasoning:
-framing is governed by `frame-ancestors` alone, CSP3 defines it as superseding
-the header when both are present, and it is the only one of the two that can
-express the single exception Track 11.D needs - the live preview iframe.
-Next's `headers()` APPENDS rather than replaces, so a per-path `SAMEORIGIN`
-would have shipped both values and the browser would take the stricter one.
+Two things, both about tests reading the wrong thing.
 
-Q37 updated `tests/unit/phase6-security-headers.test.ts`. This e2e case was the
-copy nobody updated, and it had been failing on both surfaces ever since -
-unread, because the suite could not run anywhere.
+1. b2-dashboard asserted the shop name with `.first()`. Phase 11's kit renders
+   the brand TWICE by design - a top bar below 48rem and the sticky rail above
+   it, with CSS hiding whichever does not apply; `rail.tsx`'s own comment on the
+   top bar says "Hidden by the kit above 48rem". `.first()` takes DOM ORDER,
+   which is the top bar, and at every viewport this suite runs at that is the
+   hidden copy. The dashboard was working and the test was reading a copy the
+   merchant cannot see. Now filtered to the visible one.
 
-Asserted ABSENT rather than deleted. A header re-added by a well-meaning future
-change would ship two framing rules whose interaction is exactly what Q37
-rejected, and nothing else would catch it; `frame-ancestors 'none'` is already
-asserted four lines above, so the coverage this replaces is not lost.
+2. `phase11:181` and `phase7:313` both assert a heading straight after clicking
+   «افتح الحساب», and both fail with "element not found" - while `a1-admin.spec.ts`
+   does the identical thing and passes. Reading the code did not find the
+   discriminator: same form, same plan (`basic` in phase7), same
+   `sendPasswordLink`, and the heading is `PageHead title={account.name}` in the
+   account layout either way.
 
-Fourth of the ten first-run e2e failures. The previous three are confirmed green
-on CI: both font-preload cases and the Node-side DNS lookup.
+   So rather than guess a fix, the assertion now names the page it landed on. A
+   refused creation re-renders `/accounts/new`; a successful one redirects to
+   `/accounts/{id}`, the shape a1-admin already pins. Asserting the heading
+   alone spends the timeout waiting for something that was never going to
+   render and then reports nothing useful. The next run answers the question
+   instead of repeating it.
+
+Fifth of the ten first-run e2e failures fixed; the sixth is now instrumented.
