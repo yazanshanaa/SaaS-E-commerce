@@ -50,36 +50,17 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang={LOCALE} dir={DIRECTION}>
-      <head>
-        {/*
-         * The two chrome faces, preloaded.
-         *
-         * `@font-face` alone does not start a download until the layout engine matches a glyph to
-         * the family, which on a text-heavy Arabic page lands one round trip AFTER first paint —
-         * so the merchant reads a screenful of fallback and then watches it reflow. These two are
-         * needed by the first painted character on every private surface, so they are fetched in
-         * parallel with the CSS instead of after it.
-         *
-         * Only these two, and only the weights actually used at first paint: a preload the page
-         * does not consume within a few seconds is a console warning and wasted bandwidth on the
-         * 3G budget the storefronts are held to. Template faces stay lazy — the storefront shell
-         * preloads the ACTIVE template's face itself, per tenant, via `fontUrl()`.
-         */}
-        <link
-          rel="preload"
-          as="font"
-          type="font/woff2"
-          crossOrigin="anonymous"
-          href="/fonts/ibm-plex-sans-arabic/ibm-plex-sans-arabic-v15-arabic-regular.woff2"
-        />
-        <link
-          rel="preload"
-          as="font"
-          type="font/woff2"
-          crossOrigin="anonymous"
-          href="/fonts/alexandria/alexandria-v6-arabic-700.woff2"
-        />
-      </head>
+      {/*
+       * NO FONT PRELOADS HERE. They used to be, and the comment that sat with them said they were
+       * for "every private surface" — but this layout is shared by all three and is synchronous by
+       * design, so it cannot tell them apart. Every storefront therefore preloaded the two chrome
+       * faces it never paints, on top of its own template face: three preloads where
+       * `templates/shell.tsx` promises one, on the Fast 3G budget CLAUDE.md holds storefronts to.
+       *
+       * They now live in `_components/chrome-font-preload.tsx`, rendered by the admin and
+       * dashboard layouts. React hoists `<link>` into `<head>` from anywhere in the tree, so the
+       * hint lands in the same place and can no longer reach a surface that does not use it.
+       */}
       <body>
         <a href="#main" className="sb-skip-link">
           {t('common', 'a11y.skipToContent')}

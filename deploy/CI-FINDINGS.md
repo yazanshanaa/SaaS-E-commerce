@@ -185,6 +185,35 @@ TYPECHECK_EXIT=0
 2 files changed, 12 insertions(+), 6 deletions(-)   package.json + pnpm-lock.yaml
 ```
 
+## 4b. The first e2e run — ten failures, one fixed
+
+`build · e2e · axe` had passed on Phase 7 (130 specs). This is its first run on Phase 8–11 code,
+and it is red. The ten annotations, grouped:
+
+| Specs | Symptom | Read |
+|---|---|---|
+| `a2-storefront:682`, `:1017` | `expect(received).toHaveLength(expected)` | font **preload count**. Nine templates now; these tests pin "exactly one preloaded Arabic subset" |
+| `b2-dashboard:100`, `phase11-design-dashboards:167` ×2 | `toBeVisible()` → *element(s) not found* | same shape — an account is opened, the invitation link is followed, the expected element is absent. Probably **one** cause across the three |
+| `phase6-compliance:56` | `toBe(expected)`, `Received: undefined` | a security header is missing on `admin.*`. Q37 moved `X-Frame-Options` into `buildCsp`'s `framable` |
+| `phase11-design-dashboards:213` | `getaddrinfo ENOTFOUND app.souqbartaa.test` | **fixed** — below |
+
+### The one that is fixed, and why it could only fail on CI
+
+`playwright.config.ts` maps the e2e hostnames with Chromium's `--host-resolver-rules`, and its own
+comment says why: so the tests exercise `admin.*`, `app.*` and `{slug}.*` exactly as production
+does, *with no /etc/hosts editing on a developer machine*.
+
+That flag is a **browser** flag. Playwright's `APIRequestContext` is a Node-side HTTP client that
+never sees it. The single `page.request.get()` in the suite therefore did a real DNS lookup and
+died. On a machine with a hosts entry it passes; on a CI runner it cannot. It is a clean example
+of the class this whole document is about — a defect that only exists where nobody had looked.
+
+The assertion was also weaker than its own comment. It fetched `/appearance` — the studio page the
+test had just been driving — and checked for a 200, which proves the studio renders and says
+nothing about what was *saved*. It now asks the storefront whether the draft leaked into it.
+
+The other nine are open. None of them was reachable before today, because the suite had never run.
+
 ## 5. Verification of the fixes in this document
 
 `AGENT-PROBE.cmd`, run on this tree after the three source edits:

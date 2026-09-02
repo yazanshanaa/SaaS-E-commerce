@@ -10,6 +10,7 @@ import {
   type UiAccentKey,
   type UiTheme,
 } from '@/shared/ui-theme';
+import { ChromeFontPreload } from '../_components/chrome-font-preload';
 import { AdminNav } from './_components/nav';
 import './admin.css';
 // Phase 11 (Track 11.G): the shared chrome kit, consumed read-only — see src/app/kit.css.
@@ -67,6 +68,7 @@ export default async function AdminSurfaceLayout({ children }: { children: React
   if (!ctx) {
     return (
       <div data-surface="admin" data-theme={theme} data-accent={accent ?? undefined}>
+        <ChromeFontPreload />
         <main id="main" className="sba-auth">
           {children}
         </main>
@@ -76,6 +78,7 @@ export default async function AdminSurfaceLayout({ children }: { children: React
 
   return (
     <div data-surface="admin" data-theme={theme} data-accent={accent ?? undefined}>
+      <ChromeFontPreload />
       <div className="sbk-shell" data-collapsed={railCollapsed ? 'true' : undefined}>
         <AdminNav
           userName={ctx.session.user.name}

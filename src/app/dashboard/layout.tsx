@@ -13,6 +13,7 @@ import {
   type UiTheme,
 } from '@/shared/ui-theme';
 import { optionalMerchantContext, merchantCan, type MerchantContext } from './_lib/context';
+import { ChromeFontPreload } from '../_components/chrome-font-preload';
 import { DashboardNav, type NavItem } from './_components/nav';
 import { ImpersonationBanner } from './_components/impersonation-banner';
 import './dashboard.css';
@@ -94,6 +95,7 @@ export default async function DashboardSurfaceLayout({ children }: { children: R
   if (!ctx) {
     return (
       <div data-surface="app" data-theme={theme} data-accent={accent ?? undefined}>
+        <ChromeFontPreload />
         <main id="main" className="sbd-auth">
           {children}
         </main>
@@ -112,6 +114,10 @@ export default async function DashboardSurfaceLayout({ children }: { children: R
 
   return (
     <div data-surface="app" data-theme={theme} data-accent={accent ?? undefined}>
+      {/* NOT in the `preview` branch above: that one renders the storefront shell, which preloads
+          its own template face. Two chrome faces on top of it is the three-preload bug this
+          component exists to end. */}
+      <ChromeFontPreload />
       {ctx.isImpersonated ? <ImpersonationBanner tenantName={tenant?.name ?? ''} /> : null}
 
       <div className="sbk-shell" data-collapsed={railCollapsed ? 'true' : undefined}>
