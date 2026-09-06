@@ -40,8 +40,6 @@
 	# already does, and its single write is an idempotent status promotion.
 	on_demand_tls {
 		ask http://web:3000/internal/domain-ask
-		interval 2m
-		burst 5
 	}
 }
 
