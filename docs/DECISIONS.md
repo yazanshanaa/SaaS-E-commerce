@@ -3614,6 +3614,34 @@ through `buildHref` like everything else: a control that resets itself when you 
 beside it reads as broken. The TAG is still dropped on a department change, which is a different
 decision and a deliberate one — «تنزيلات» under «فساتين» is not the set «تنزيلات» under «أحذية».
 
+**AND CI FOUND ONE THE BROWSER COULD NOT — three layers, three different defects, none of which the
+one below it could see.** The unit gate was green and the footer band was invisible; the browser
+found that and was green afterwards; then CI's first-ever e2e run found that 12.A had broken
+`a2-storefront.spec.ts:1000`. That test counted `.sf-grid .sf-card` across the whole home page and
+expected twelve — an assertion that was identical to "the products grid ships twelve" only while the
+products grid was the only block rendering product cards. 12.A put `new_arrivals` and `best_sellers`
+into the default arrangement, so a home page now legally carries three rails.
+
+**The local browser could not have caught it, and that is the useful part.** The demo tenant has no
+products at all, so every product rail was correctly absent from the page that was inspected. Only a
+30-product fixture makes the difference visible, and only CI has one. Three verification layers, each
+blind to what the next one sees: types and units, a rendered page, a seeded fixture at the size the
+acceptance criterion actually names.
+
+The fix scopes the twelve to `#products` — the limit belongs to `products_grid`, so it is asserted
+where it applies — and asserts the page-level bound separately at 12–24. That bound is what the test
+existed to defend ("a 30-product catalogue does not arrive as 30 cards in one document") and it is
+now stricter about it: every number in it is a section `limit` rather than a catalogue size, so it
+stays bounded as a shop grows. Deliberately not a loosening to make the change pass, and
+`lighthouse (best of 3)` passing on the same commit is independent evidence the budget still holds.
+
+**The other six e2e failures are the backlog arriving, not one change breaking seven things.** Every
+Phase 9/10/11 entry in `TODO.md` records its e2e cases as "written, needs the stack"; none had ever
+run. This PR is the first execution of the suite in the project's history. They are recorded
+individually in `TODO.md` with a leading hypothesis and left for a session with the stack — asserting
+a cause for six tests from a log is the same mistake as the "zero structural declarations" line, and
+this phase has already made it once.
+
 **THE BROWSER FOUND A BUG THE WHOLE MACHINE GATE COULD NOT — 2026-09-07 18:1x, first look at a
 rendered storefront.** 1515 passing tests, typecheck and lint clean, and `[data-footer='band']` was
 still wrong: the identity plaque was filled with `--t-surface-alt`, laid on a footer that is already

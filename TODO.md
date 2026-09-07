@@ -1301,7 +1301,32 @@ Order: `12.A → 12.B → 12.C → 12.D`. Owner answers: **start with the defaul
       **`No known vulnerabilities found`, EXITCODE=0**
 - [ ] **Push the lockfile fix** — `BACKUP-AND-PUSH.cmd`. `package.json` + `pnpm-lock.yaml` +
       `FIX-LOCKFILE.cmd` are uncommitted
-- [ ] `CI / build · e2e · axe` was still running when this was written — the browser gate
+- [x] ✅ **`CI / dependency scan` — SUCCESSFUL in 15s** after the override + lockfile push
+- [x] ❌ **`CI / build · e2e · axe` — FAILED after 6m34s: 7 e2e tests.** This is the FIRST TIME the
+      e2e suite has ever executed — every Phase 9/10/11 entry above says "written, needs the stack",
+      and nothing ran it. So a 7-failure result is the backlog arriving, not one change breaking
+      seven things. Split honestly:
+- [x] **ONE of the seven is Phase 12's, and it is a real regression 12.A caused.**
+      `a2-storefront.spec.ts:1000` counted `.sf-grid .sf-card` across the whole home page and
+      expected exactly 12 — which was the same thing as the products grid only while the products
+      grid was the only block rendering product cards. 12.A put `new_arrivals` and `best_sellers`
+      into the default arrangement, so a home page now legally carries three rails. **Invisible
+      locally**: the demo tenant has no products, so the browser check could not have found it —
+      only a 30-product fixture could, and only CI has one
+- [x] Fixed by scoping the 12 to `#products` (the limit belongs to `products_grid`) and asserting
+      the PAGE bound separately at 12–24, which is what the test existed to defend and is now
+      stricter about: every one of those numbers is a section `limit`, not a catalogue size, so it
+      stays bounded as a shop grows. NOT loosened to make the change pass — the perf intent is
+      restated, and `lighthouse (best of 3)` passing is independent evidence the budget still holds
+- [ ] **The other six are NOT in Phase 12's diff and need the stack, not a guess.** Leading
+      hypothesis for two of them: `a2-storefront.spec.ts:710` asserts a product page has ZERO
+      `input, textarea, select` (Q5, no customer PII) and `:727` drives the quantity stepper — both
+      plausibly the 2026-09-06 header rework, which put a search `<input>` into the chrome on every
+      page and was committed without e2e ever running. The rest: `phase5-payments-orders:290`,
+      `phase7-critical-paths:660`, an admin `/accounts/[id]` heading, and
+      `phase11-design-dashboards:304` — the last of which TODO already lists as "written, needs the
+      stack"
+- [ ] **DO NOT MERGE while e2e is red.** Merging starts `deploy.yml`
 >
 > Two of the session's recurring "database" failures turned out to be one bug in `AGENT-RUN.cmd`
 > (it ran the dev stack alongside the suite) and one bug in a test's own SQL (a correlated `EXISTS`
