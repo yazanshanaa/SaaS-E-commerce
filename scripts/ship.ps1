@@ -91,7 +91,11 @@ git diff --cached --quiet
 if ($LASTEXITCODE -eq 0) {
   Write-Host "Nothing to commit; the working tree is already clean." -ForegroundColor Yellow
 } else {
-  git diff --cached --name-only
+  # `--no-pager`, and it is not cosmetic: Git on Windows sends multi-screen output to `less`, which
+  # waits at `(END)` for a keypress. Inside a script that is not a pause, it is a hang -- the run
+  # stops between the file list and the commit with no prompt saying why, and the obvious reading
+  # is that the script crashed. Nothing here is interactive, so nothing here should page.
+  git --no-pager diff --cached --name-only
   Invoke-Step "git commit" { git commit -m $Message }
 }
 
