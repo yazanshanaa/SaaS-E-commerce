@@ -64,6 +64,16 @@ export function StarIcon(props: IconProps) {
   );
 }
 
+/** The header search submit. Same 24-grid, same `currentColor`, same decorative contract. */
+export function SearchIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="10.8" cy="10.8" r="6.3" />
+      <path d="m15.5 15.5 4 4" />
+    </Svg>
+  );
+}
+
 export function CloseIcon(props: IconProps) {
   return (
     <Svg {...props}>

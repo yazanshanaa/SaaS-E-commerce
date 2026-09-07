@@ -792,6 +792,28 @@
   padding: var(--sb-space-3) var(--sb-space-4);
   border-block-end: 1px solid var(--sba-rule);
   background: var(--sba-panel);
+  /*
+    BREATHING ROOM FOR THE RETURN JUMP (2026-09-06).
+
+    Every one-click control in a matrix now redirects to `#row-id` so the operator lands back on the
+    row they clicked instead of at the top of the page — see `admin/_components/return-anchor.ts`.
+    Without a scroll margin the browser puts that row flush against the top edge of the viewport,
+    under the panel heading, which reads as "the page scrolled somewhere random". Six rems is the
+    panel head plus a row, so the clicked row lands with its own context above it.
+  */
+  scroll-margin-block-start: 6rem;
+}
+
+/*
+  The jump is instantaneous by default, which on a long matrix looks like a page replacement. A
+  smooth scroll makes the movement legible as "you were taken back to your row" — and it is dropped
+  entirely for anyone who has asked for reduced motion, for whom a moving page is the problem rather
+  than the fix.
+*/
+@media (prefers-reduced-motion: no-preference) {
+  [data-surface='admin'] {
+    scroll-behavior: smooth;
+  }
 }
 
 .sba-matrix-row:last-child {

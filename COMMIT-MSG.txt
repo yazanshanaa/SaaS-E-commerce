@@ -1,23 +1,26 @@
-Give a deployment a door for its own site blocks, without opening the Caddyfile
+Add fill-env.sh: one paste per key, and no key in the shell history
 
-The launch server already serves a static company site from an nginx that holds
-ports 80 and 443. Caddy has to own those two: on-demand TLS for merchant custom
-domains and the wildcard certificate can only be obtained by the process that
-answers the ACME challenge, so leaving nginx in front and putting Caddy behind
-it would quietly delete the feature the whole `on_demand_tls` block exists for.
+Ten values in `.env` cannot be generated - they need a Cloudflare account, an R2
+subscription, a Resend account, and an age keypair whose secret half must never
+touch this server. The three ways an operator normally fills them are all worse
+than they look:
 
-The migration itself is small - nginx moves to an internal port and Caddy
-reverse-proxies it, its own configuration untouched byte for byte. The part that
-needed a decision was WHERE that site block lives.
+  nano       - navigating by line number in a 376-line file, and one stray
+               keystroke edits a line nobody will notice until a container
+               refuses to start.
+  sed        - the key lands in ~/.bash_history and stays there. It is the kind
+               of leak nobody cleans up because nobody remembers it happened.
+  a template - a file full of secrets sitting on disk waiting to be forgotten.
 
-Not in the Caddyfile. That file is platform code, shipped to every deployment,
-and one machine's company hostname welded into it is a coupling that outlives
-whoever added it. So the Caddyfile gains one `import` of a directory the compose
-mounts, git-ignored except for a placeholder - Caddy refuses to start on an
-import glob matching no files, and a stack that will not boot on a fresh
-checkout because a directory is empty is a bad trade for two lines of comment.
+So: prompts, one at a time, read with `read -s` so nothing echoes and nothing
+reaches the history. A key already set is reported and left alone, which makes
+re-running safe - the operator can fill what they have today and come back.
 
-The placeholder carries the itqantech.io block as a worked example and the
-reasoning above, so the next person to stand a box up does not rediscover it.
+It ends by checking exactly the six values the compose marks `:?` and saying
+whether the stack can boot, rather than leaving that to be discovered by a
+container exiting.
 
-Nothing here changes behaviour on a deployment that has no local blocks.
+The read-only backup pair is prompted for with the reason it is separate from
+the write pair spelled out at the prompt: the write pair can delete every
+historical dump, and the web container is the one process exposed to the
+internet.

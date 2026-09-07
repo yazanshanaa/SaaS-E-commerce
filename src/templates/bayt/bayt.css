@@ -54,7 +54,12 @@
   letter-spacing: 0.06em;
 }
 
-[data-template='bayt'] .sf-catnav {
+/*
+  The band, not the nav (2026-09-06). `.sf-catnav` no longer declares a `border-block-start` of its
+  own — the `.sf-header__cats` strip does — so a bare `-color` here computed and painted nothing,
+  and بيت silently lost its coloured separator.
+*/
+[data-template='bayt'] .sf-header__cats {
   border-block-start-color: var(--t-secondary);
 }
 

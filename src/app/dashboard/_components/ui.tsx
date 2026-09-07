@@ -176,6 +176,7 @@ export function TextInput({
   max,
   inputMode,
   autoComplete,
+  dir,
 }: {
   name: string;
   id?: string;
@@ -189,6 +190,16 @@ export function TextInput({
   max?: string;
   inputMode?: 'text' | 'numeric' | 'decimal' | 'tel' | 'email' | 'url';
   autoComplete?: string;
+  /**
+   * The whole dashboard is RTL, and a handful of these boxes hold text that is not.
+   *
+   * A URL typed into an `rtl` input renders with its punctuation reordered — `https://maps.app.goo.gl/x`
+   * shows its slashes and dots in visually wrong places, the cursor jumps when editing, and a
+   * merchant checking a pasted link against what they copied cannot tell whether it is the same
+   * string. `dir="ltr"` on those fields, or `dir="auto"` where either script is legitimate, fixes it
+   * without touching the label, which stays RTL because it is Arabic.
+   */
+  dir?: 'ltr' | 'rtl' | 'auto';
 }) {
   return (
     <input
@@ -205,6 +216,7 @@ export function TextInput({
       max={max}
       inputMode={inputMode}
       autoComplete={autoComplete}
+      dir={dir}
     />
   );
 }

@@ -67,8 +67,24 @@ function CapabilityRowView({
 }) {
   const overridden = row.visibleOverridden || row.editableByOverridden;
 
+  /**
+   * The row's own id, posted with every form on it and put back on the redirect as a fragment.
+   *
+   * That is the whole of the "the page jumps to the top on every click" fix — see
+   * `admin/_components/return-anchor.ts`. `CapabilityKey` is a closed set of snake_case keys, so it
+   * already satisfies the `[A-Za-z0-9_-]` allow-list `safeAnchor` enforces on the way back.
+   */
+  const anchor = `cap-${row.key}`;
+
   return (
-    <div className={overridden ? 'sba-matrix-row sba-matrix-row--overridden' : 'sba-matrix-row'}>
+    <div
+      id={anchor}
+      /*
+        `scroll-margin-block-start` is what stops the row landing flush under the sticky page head
+        after the jump; it is set once on `.sba-matrix-row` in admin.css rather than per row.
+      */
+      className={overridden ? 'sba-matrix-row sba-matrix-row--overridden' : 'sba-matrix-row'}
+    >
       <div>
         <span className="sba-matrix-name">{t('admin', `capabilities.${row.key}`)}</span>
         <span className="sba-matrix-default">
@@ -86,6 +102,7 @@ function CapabilityRowView({
         <form action={setCapabilityVisibleAction}>
           <input type="hidden" name="tenantId" value={tenantId} />
           <input type="hidden" name="capabilityKey" value={row.key} />
+          <input type="hidden" name="anchor" value={anchor} />
           <SwitchButton
             pressed={row.effectiveVisible}
             label={
@@ -99,6 +116,7 @@ function CapabilityRowView({
         <form action={setCapabilityEditableAction} className="sba-segmented">
           <input type="hidden" name="tenantId" value={tenantId} />
           <input type="hidden" name="capabilityKey" value={row.key} />
+          <input type="hidden" name="anchor" value={anchor} />
           <button
             type="submit"
             name="value"
@@ -120,6 +138,7 @@ function CapabilityRowView({
         {colorMode ? (
           <form action={setColorModeAction} className="sba-inline-form">
             <input type="hidden" name="tenantId" value={tenantId} />
+            <input type="hidden" name="anchor" value={anchor} />
             <label className="sba-label" htmlFor={`colorMode-${tenantId}`}>
               {t('admin', 'permissions.colorModeLabel')}
             </label>
@@ -145,6 +164,7 @@ function CapabilityRowView({
           <form action={clearCapabilityAction}>
             <input type="hidden" name="tenantId" value={tenantId} />
             <input type="hidden" name="capabilityKey" value={row.key} />
+            <input type="hidden" name="anchor" value={anchor} />
             <button type="submit" className="sba-btn sba-btn--sm">
               {t('admin', 'account.resetToPlan')}
             </button>

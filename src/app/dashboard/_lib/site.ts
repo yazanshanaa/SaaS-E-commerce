@@ -54,6 +54,8 @@ export interface SiteDetails {
   whatsapp: string | null;
   email: string | null;
   hours: string | null;
+  /** The merchant half of `flags.search`; the other half is the `search_insights` feature. */
+  searchEnabled: boolean;
   logoMediaId: string | null;
   templateKey: string;
   mapLat: number | null;
@@ -101,6 +103,7 @@ export async function getSiteDetails(ctx: MerchantContext): Promise<SiteDetails 
       whatsapp: true,
       email: true,
       hours: true,
+      searchEnabled: true,
       logoMediaId: true,
       templateKey: true,
       mapLat: true,
@@ -165,6 +168,19 @@ export const detailsSchema = z.object({
   email: optionalText(160),
   hours: optionalText(400),
   /**
+   * «فعّل البحث» — the merchant half of `flags.search` (2026-09-06, owner-directed).
+   *
+   * `Site.searchEnabled` has existed since Phase 9 and defaults to FALSE, and until now nothing in
+   * the product could turn it on: no merchant screen, no admin screen, no seed. So the whole search
+   * feature — the `search_bar` section, the `/search` route, the new header box, and the
+   * zero-result report on `/insights` that `search_insights` sells — was unreachable on every
+   * account on the platform, waiting for a switch that was never built.
+   *
+   * `z.boolean()` fed from `checkbox()`, NOT `optionalText`: an unchecked box posts NOTHING, so a
+   * field that read absence as "leave it alone" could be switched on and never off again.
+   */
+  searchEnabled: z.boolean().default(false),
+  /**
    * Phase 9: `logoMediaId` is GONE from this form, and its removal is paired with the hidden input
    * in `src/app/dashboard/settings/page.tsx`. The two must move together.
    *
@@ -197,6 +213,7 @@ export async function saveDetails(ctx: MerchantContext, raw: unknown): Promise<A
       whatsapp: input.whatsapp ?? null,
       email: input.email ?? null,
       hours: input.hours ?? null,
+      searchEnabled: input.searchEnabled,
     },
   });
 

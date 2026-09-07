@@ -217,7 +217,11 @@
   border-block-start: 1px solid var(--t-border);
 }
 
+/*
+  Corner radius kept, the border dropped (2026-09-06) — same reasoning as neon-souq: the row is now
+  a filled brand-coloured tile per platform, and the ring was drawn for the transparent circle it
+  replaced.
+*/
 [data-template='jihaz'] .sf-social a {
   border-radius: var(--t-radius-md);
-  border-color: var(--t-border);
 }

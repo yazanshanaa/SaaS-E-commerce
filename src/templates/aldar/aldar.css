@@ -50,8 +50,15 @@
   background: var(--t-surface-alt);
 }
 
-[data-template='aldar'] .sf-catnav {
+/*
+  The band, not the nav inside it (2026-09-06). The department chips moved into a dedicated
+  `.sf-header__cats` strip that carries the rule and the background; `.sf-catnav` no longer has a
+  `border-block-start` for this to cancel, so دار — whose whole header premise is «floats on air,
+  not on a rule» (see `.sf-header` above) — had grown one it never asked for.
+*/
+[data-template='aldar'] .sf-header__cats {
   border-block-start: 0;
+  background: transparent;
 }
 
 [data-template='aldar'] .sf-catnav a {
@@ -293,8 +300,20 @@
   border-block-start: 0;
 }
 
+/*
+  THE `background` DECLARATION IS GONE (2026-09-06), and removing it was a contrast fix rather than
+  a taste change.
+
+  The social row now paints each platform in its own brand colour with white ink
+  (`storefront.css` → `.sf-social a { background: var(--brand); color: var(--brand-ink) }`). This
+  override scores (0,2,1) against that rule's (0,1,1) AND this sheet loads after it, so it won on
+  both counts — and it replaced the brand colour with `--t-surface`, دار's near-white #FFFDFB, while
+  leaving `--brand-ink: #fff` in force. Eight white glyphs on a white circle, about 1.02:1.
+
+  The border is kept: on a cream page a saturated pill still reads better with دار's hairline around
+  it, and it changes no colour that the glyph sits on.
+*/
 [data-template='aldar'] .sf-social a {
-  background: var(--t-surface);
   border-color: var(--t-border);
 }
 

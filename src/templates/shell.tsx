@@ -8,6 +8,7 @@ import { DemoWatermark } from './components/demo-watermark';
 import { ServiceWorkerRegistrar } from './components/service-worker';
 import { SiteFooter } from './components/site-footer';
 import { SiteHeader } from './components/site-header';
+import { WhatsappFab } from './components/whatsapp-fab';
 import { st } from './i18n';
 import type { AnalyticsDecision } from './lib/analytics';
 import { legalHref } from './lib/legal';
@@ -278,6 +279,17 @@ export function StorefrontShell({
       ) : null}
 
       {wantsWorker ? <ServiceWorkerRegistrar /> : null}
+
+      {/*
+        THE WHATSAPP BUTTON IS RENDERED BEFORE THE CART, and the order is load-bearing rather than
+        alphabetical: `.sf-wa-fab ~ .sf-cart-fab` in storefront.css is what lifts the cart one row
+        when both are on screen, and a general sibling combinator only looks FORWARD. Swap these two
+        lines and the two circles stack on top of each other in the same corner.
+
+        It returns null on its own when the feature is off or the stored number is not dialable, so
+        there is no condition to duplicate here — see `components/whatsapp-fab.tsx`.
+      */}
+      <WhatsappFab context={context} />
 
       {context.flags.cart ? (
         <CartBadge

@@ -58,6 +58,13 @@ export function SocialLinks({ links: stored }: { links: StorefrontSocialLink[] }
               href={link.url}
               rel="noopener noreferrer nofollow"
               target="_blank"
+              /*
+                The platform key on the ELEMENT, so `storefront.css` can give each mark its own
+                brand colour without this component holding a colour table. A key the stylesheet
+                does not know falls through to `--brand: var(--t-primary)` — the shop's own colour,
+                not grey — which is what lets the platform list grow without a CSS change either.
+              */
+              data-platform={link.platform}
               /* The icon is decorative, so the accessible name has to come from here. */
               aria-label={st('social.openOn', { platform: name })}
               title={name}

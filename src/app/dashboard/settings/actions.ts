@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { canEdit } from '@/server/entitlements';
+import { parseMapLink } from '@/shared/map-url';
 import {
   announcementBarPayloadFrom,
   announcementsBoardPayloadFrom,
@@ -51,7 +52,9 @@ export async function saveDetailsAction(
     whatsapp: text(form, 'whatsapp'),
     email: text(form, 'email'),
     hours: text(form, 'hours'),
-    logoMediaId: text(form, 'logoMediaId'),
+    /* `checkbox`, not `text`: an unchecked box posts nothing at all, and the schema's
+       `z.boolean().default(false)` is what lets search be switched back OFF. */
+    searchEnabled: checkbox(form, 'searchEnabled'),
   });
 
   return state ?? { status: 'ok', messageKey: 'dashboard:settings.saved' };
@@ -86,9 +89,46 @@ export async function saveSocialAction(
 export async function saveMapAction(_state: ActionState, form: FormData): Promise<ActionState> {
   const ctx = await requireMerchantPage('settings');
 
+  /**
+   * THE FORM POSTS A LINK; THE COLUMNS STILL STORE COORDINATES (2026-09-06, owner-directed).
+   *
+   * The screen used to ask for `mapLat` and `mapLng` as two decimal boxes. No shop owner knows their
+   * own latitude — what they have is what «مشاركة» in Google Maps or Waze put on their clipboard —
+   * so the observed outcome was two empty fields and a storefront with no map. `parseMapLink` pulls
+   * the pair out of the pasted link; nothing downstream changes, because `resolveMapTarget` still
+   * reads `mapLat`/`mapLng` exactly as before.
+   *
+   * An EMPTY link box clears the location, which is the only way to undo one. A link we cannot read
+   * is refused with its own sentence rather than silently saving nothing — «I pasted it and it said
+   * saved and there is still no map» is the failure this branch exists to prevent, and the two
+   * reasons get two different messages because the fix differs: a shortened link has to be opened
+   * first, anything else is probably not a map link at all.
+   */
+  const link = text(form, 'mapLink');
+  let lat = '';
+  let lng = '';
+
+  if (link) {
+    const parsed = parseMapLink(link);
+    if (!parsed.ok) {
+      /* Three reasons, three different next steps — see `src/shared/map-url.ts`. */
+      return {
+        status: 'error',
+        messageKey:
+          parsed.reason === 'shortened'
+            ? 'dashboard:errors.mapLinkShortened'
+            : parsed.reason === 'noCoordinates'
+              ? 'dashboard:errors.mapLinkNoCoordinates'
+              : 'dashboard:errors.mapLinkUnreadable',
+      };
+    }
+    lat = String(parsed.lat);
+    lng = String(parsed.lng);
+  }
+
   const raw = {
-    mapLat: text(form, 'mapLat'),
-    mapLng: text(form, 'mapLng'),
+    mapLat: lat,
+    mapLng: lng,
     mapQuery: text(form, 'mapQuery'),
   };
 

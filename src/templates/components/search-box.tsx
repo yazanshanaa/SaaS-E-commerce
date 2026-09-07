@@ -16,6 +16,8 @@
  * i18n layer at the call site, never as a literal in here.
  */
 
+import { SearchIcon } from './icons';
+
 export interface SearchBoxLabels {
   /** The visible `<label>`. Never a placeholder standing in for one — a placeholder disappears. */
   field: string;
@@ -31,18 +33,33 @@ export interface SearchBoxProps {
   defaultValue?: string;
   /** A results page already has an `h1`; the homepage section supplies its own heading. */
   id?: string;
+  /**
+   * The header variant: one row, no visible label, submit reduced to a magnifier.
+   *
+   * The label is still IN THE DOM and still bound to the input — moved off-screen by `.sf-vh`, not
+   * removed. A placeholder is not a label: it disappears the moment someone types, so a visitor who
+   * tabs back to a half-filled box has nothing telling them what it is, and voice control has no
+   * name to address. This is the one place the box has no room for a visible one, which is exactly
+   * the case the visually-hidden pattern exists for — the section variant keeps its label showing.
+   */
+  compact?: boolean;
 }
 
-export function SearchBox({ labels, defaultValue = '', id = 'sf-search' }: SearchBoxProps) {
+export function SearchBox({
+  labels,
+  defaultValue = '',
+  id = 'sf-search',
+  compact = false,
+}: SearchBoxProps) {
   return (
     /*
       `<form role="search">` rather than the newer `<search>` element: it is the landmark every
       screen reader and every axe version already understands, and one element means one landmark —
       wrapping a `role="search"` form in a `<search>` would announce the same region twice.
     */
-    <div className="sf-search">
+    <div className={compact ? 'sf-search sf-search--compact' : 'sf-search'}>
       <form action="/search" method="get" role="search" aria-label={labels.region}>
-        <label className="sf-search__label" htmlFor={id}>
+        <label className={compact ? 'sf-vh' : 'sf-search__label'} htmlFor={id}>
           {labels.field}
         </label>
         <div className="sf-search__row">
@@ -71,8 +88,19 @@ export function SearchBox({ labels, defaultValue = '', id = 'sf-search' }: Searc
             autoComplete="off"
             enterKeyHint="search"
           />
-          <button type="submit" className="sf-btn sf-search__submit">
-            {labels.submit}
+          {/*
+            The compact submit is a magnifier with the label as its accessible name, not an icon
+            with no name: `aria-label` carries the word a screen reader announces and `title`
+            carries the one a mouse user gets on hover. An icon button without both is a control
+            announced as "button".
+          */}
+          <button
+            type="submit"
+            className="sf-btn sf-search__submit"
+            aria-label={compact ? labels.submit : undefined}
+            title={compact ? labels.submit : undefined}
+          >
+            {compact ? <SearchIcon className="sf-search__icon" /> : labels.submit}
           </button>
         </div>
       </form>

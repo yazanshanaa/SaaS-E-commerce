@@ -21,6 +21,7 @@ import {
   optionalDateField,
   optionalText,
   optionalUrlField,
+  optionalWhatsappField,
   type ActionState,
 } from './validation';
 
@@ -46,6 +47,10 @@ export interface SiteContent {
     id: string;
     name: string;
     templateKey: string;
+    /* The three the business-details panel added (2026-09-06). See `saveBusinessDetails`. */
+    tagline: string | null;
+    about: string | null;
+    email: string | null;
     address: string | null;
     phone: string | null;
     whatsapp: string | null;
@@ -90,6 +95,9 @@ export async function getSiteContent(
       id: true,
       name: true,
       templateKey: true,
+      tagline: true,
+      about: true,
+      email: true,
       address: true,
       phone: true,
       whatsapp: true,
@@ -339,6 +347,119 @@ export async function saveSocialLinks(
     before: { links: before },
     after: { links: parsed.data.links.filter((link) => link.url) },
   });
+
+  return null;
+}
+
+// -----------------------------------------------------------------------------
+// Business details
+// -----------------------------------------------------------------------------
+
+/**
+ * The shop's IDENTITY — name, tagline, about, address, phones, email — writable by the operator.
+ *
+ * WHY IT EXISTS (2026-09-06, owner-directed). Every other thing about a shop was reachable from the
+ * admin surface: template, palette, social links, map pin, section order, and thirty feature flags.
+ * The name was not. So the only way for the platform owner to fix a shop's own name — the single
+ * most common thing a merchant phones about, and the one thing they cannot always do themselves
+ * because `settings` is an owner scope and some accounts have staff-only sessions — was to
+ * impersonate them. Impersonation is a support tool and a sales tool (Q17); using it as a data-entry
+ * tool writes the merchant into the audit log as the author of a change the operator made.
+ *
+ * DELIBERATELY NOT HERE: `hours`. It is the free-text field the storefront now treats as a fallback
+ * behind the structured week (`templates/lib/hours-summary.ts`), and adding a THIRD editor for the
+ * same fact — merchant textarea, merchant picker, operator textarea — is the problem this change set
+ * exists to end. The operator edits hours by impersonating into the picker, which is the correct
+ * tool for a fact the merchant owns day to day.
+ *
+ * DELIBERATELY NOT HERE EITHER: `Tenant.name` and `Tenant.slug`. `Site.name` is what the storefront
+ * renders and what a customer reads; the tenant's name is the billing entity and its slug is a live
+ * hostname that certificates, bookmarks and QR codes on a shopfront already point at. Renaming a
+ * shop's WEB ADDRESS is a migration, not a form field, and conflating the two here is how one gets
+ * done by accident while doing the other.
+ */
+export const businessDetailsSchema = z.object({
+  name: z.string().trim().min(2, 'admin:errors.nameTooShort').max(80, 'admin:errors.textTooLong'),
+  tagline: optionalText(120),
+  about: optionalText(2000),
+  address: optionalText(200),
+  phone: optionalText(40),
+  /**
+   * The same international-form rule the merchant's own form enforces. Guessing a country code is
+   * refused platform-wide because Bartaa sits in the Seam Zone and a local `059…` is genuinely
+   * ambiguous — a wrong guess sends a customer's order to a stranger (see templates/lib/whatsapp.ts).
+   */
+  whatsapp: optionalWhatsappField,
+  email: optionalText(160).refine(
+    (value) => value === undefined || /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value),
+    { message: 'admin:errors.invalidEmail' },
+  ),
+});
+
+export async function saveBusinessDetails(
+  ctx: AdminContext,
+  tenantId: string,
+  raw: unknown,
+): Promise<ActionState | null> {
+  const parsed = businessDetailsSchema.safeParse(raw);
+  if (!parsed.success) return invalid(parsed.error);
+
+  const before = await ctx.db.site.findUnique({
+    where: { tenantId },
+    select: {
+      name: true,
+      tagline: true,
+      about: true,
+      address: true,
+      phone: true,
+      whatsapp: true,
+      email: true,
+    },
+  });
+  if (!before) return failure('admin:errors.notFound');
+
+  /**
+   * `?? null` on every optional, and it is the difference between "leave it" and "clear it".
+   *
+   * `optionalText` maps an empty box to `undefined`, and Prisma IGNORES an undefined field — so
+   * without this an operator could never blank a stale phone number: they would delete it, press
+   * save, and watch the old value come back. A form that renders every field every time is a form
+   * whose empty box means empty.
+   */
+  const after = {
+    name: parsed.data.name,
+    tagline: parsed.data.tagline ?? null,
+    about: parsed.data.about ?? null,
+    address: parsed.data.address ?? null,
+    phone: parsed.data.phone ?? null,
+    whatsapp: parsed.data.whatsapp ?? null,
+    email: parsed.data.email ?? null,
+  };
+
+  await ctx.db.site.update({ where: { tenantId }, data: after });
+
+  /*
+    The audited `after` is the object that was WRITTEN, not `parsed.data`. They differ on exactly the
+    interesting case: `optionalText` maps an empty box to `undefined`, which JSON drops — so clearing
+    a phone number would have shown up in the log as an absent key, while `before` carried an
+    explicit `null`. "Field missing from the diff" and "field set to null" are the same picture, and
+    only one of them is what happened.
+  */
+  await auditTenantAction(ctx, tenantId, {
+    action: 'site.details_updated',
+    entityType: 'site',
+    before,
+    after,
+  });
+
+  /**
+   * The storefront caches its tenant data, and the shop's NAME is on every page of it — in the
+   * header, the footer, the page title and the WhatsApp message template. Without this the merchant
+   * is told the change saved and then watches their old name for the length of the cache window,
+   * which is exactly how a correct write gets reported as a bug. The map and appearance writers on
+   * this surface already do the same.
+   */
+  await requestStorefrontRevalidation(tenantId);
 
   return null;
 }

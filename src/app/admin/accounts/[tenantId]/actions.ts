@@ -8,6 +8,7 @@ import {
   getAccount,
   parseFeatureValue,
   provisionAccountAnalytics,
+  saveBusinessDetails,
   saveGatewayCredentials,
   sendOwnerPasswordLink,
   setAccountGatewayEnabled,
@@ -20,6 +21,7 @@ import {
 import { isFeatureKey } from '@/shared/features';
 import { adapterForValue, isGatewayProvider } from '@/server/payments';
 import { requireAdminPage } from '../../_components/guard';
+import { backTo } from '../../_components/return-anchor';
 
 /**
  * Account-level actions.
@@ -30,21 +32,26 @@ import { requireAdminPage } from '../../_components/guard';
  * client JavaScript entirely: a toggle is a submit button in its own tiny form.
  */
 
-function back(tenantId: string, result: { ok?: string; error?: string }): never {
-  const query = result.error
-    ? `?error=${encodeURIComponent(result.error)}`
-    : result.ok
-      ? `?ok=${encodeURIComponent(result.ok)}`
-      : '';
-  redirect(`/accounts/${tenantId}${query}`);
+/**
+ * `anchor` is the id of the matrix row that was clicked. Without it the redirect lands at the top of
+ * a page whose feature matrix is thirty rows long, so flipping the last three switches meant three
+ * round trips to the page heading — see `admin/_components/return-anchor.ts`.
+ */
+function back(
+  tenantId: string,
+  result: { ok?: string; error?: string },
+  anchor?: string | null,
+): never {
+  redirect(backTo(`/accounts/${tenantId}`, result, anchor));
 }
 
 export async function setFeatureAction(form: FormData): Promise<void> {
   const ctx = await requireAdminPage();
   const tenantId = text(form, 'tenantId');
   const featureKey = text(form, 'featureKey');
+  const anchor = text(form, 'anchor');
 
-  if (!isFeatureKey(featureKey)) back(tenantId, { error: 'admin:errors.unknownFeature' });
+  if (!isFeatureKey(featureKey)) back(tenantId, { error: 'admin:errors.unknownFeature' }, anchor);
 
   const parsed = parseFeatureValue(featureKey, {
     boolean: text(form, 'value') === 'on',
@@ -53,11 +60,11 @@ export async function setFeatureAction(form: FormData): Promise<void> {
     unlimited: text(form, 'unlimited') === 'on',
   });
 
-  if (!parsed.ok) back(tenantId, { error: parsed.messageKey });
+  if (!parsed.ok) back(tenantId, { error: parsed.messageKey }, anchor);
 
   const state = await setFeatureOverride(ctx, tenantId, featureKey, parsed.value);
   revalidatePath(`/accounts/${tenantId}`);
-  back(tenantId, state ? { error: state.messageKey } : { ok: 'admin:account.saved' });
+  back(tenantId, state ? { error: state.messageKey } : { ok: 'admin:account.saved' }, anchor);
 }
 
 export async function clearFeatureAction(form: FormData): Promise<void> {
@@ -66,7 +73,52 @@ export async function clearFeatureAction(form: FormData): Promise<void> {
 
   const state = await clearFeatureOverride(ctx, tenantId, text(form, 'featureKey'));
   revalidatePath(`/accounts/${tenantId}`);
-  back(tenantId, state ? { error: state.messageKey } : { ok: 'admin:account.saved' });
+  back(
+    tenantId,
+    state ? { error: state.messageKey } : { ok: 'admin:account.saved' },
+    text(form, 'anchor'),
+  );
+}
+
+/**
+ * «تعديل اسم المتجر ومعلوماته من لوحة تحكم ادمن المنصة» (2026-09-06, owner-directed).
+ *
+ * The operator could change a shop's template, its colours, its social links, its map pin and every
+ * feature flag it owns — but not its NAME, its phone number or its address. Those are on the
+ * merchant's own `/settings` and nowhere else, so the only way to fix a typo in a shop's name during
+ * the phone call that reported it was to impersonate the merchant. That is a support tool being used
+ * as a data-entry tool, and it writes the wrong actor into the audit log.
+ *
+ * A LONG FORM, so it returns `ActionState` for in-place field errors instead of redirecting — the
+ * same reason `saveGatewayAction` above does. The write itself goes through `saveBusinessDetails` in
+ * `src/server/admin`, which is where the validation and the audit entry live; nothing about the
+ * merchant's own path changes, and both call the same service.
+ */
+export async function saveBusinessDetailsAction(
+  _state: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const ctx = await requireAdminPage();
+  const tenantId = text(form, 'tenantId');
+
+  const state = await saveBusinessDetails(ctx, tenantId, {
+    name: text(form, 'name'),
+    tagline: text(form, 'tagline'),
+    about: text(form, 'about'),
+    address: text(form, 'address'),
+    phone: text(form, 'phone'),
+    whatsapp: text(form, 'whatsapp'),
+    email: text(form, 'email'),
+  });
+
+  /*
+    `/content`, because that is the only screen this form lives on — the panel is rendered by
+    `accounts/[tenantId]/content/page.tsx` even though the action sits beside the account overview's
+    own. Every sibling action in `content/actions.ts` revalidates the same path. (`force-dynamic`
+    masks the difference today, which is precisely why the wrong path would go unnoticed.)
+  */
+  revalidatePath(`/accounts/${tenantId}/content`);
+  return state ?? { status: 'ok', messageKey: 'admin:account.saved' };
 }
 
 export async function provisionAnalyticsAction(form: FormData): Promise<void> {

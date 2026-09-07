@@ -31,6 +31,21 @@ const ct = translator('content');
  */
 export const CATEGORY_NAV_CAP = 6;
 
+/**
+ * Would `CategoryNav` draw anything for these categories?
+ *
+ * Exported so the header can decide whether to paint the BAND the chips sit on. The band has a
+ * rule and vertical padding of its own, so wrapping a component that returns null gives every
+ * one-category boutique an empty bordered strip under its header — and `:empty` cannot see it,
+ * because the wrapper still contains the layout shell div.
+ *
+ * The predicate is the first two lines of the component and has to stay that way; it is asserted
+ * against it rather than re-derived.
+ */
+export function hasCategoryNav(categories: StorefrontCategory[]): boolean {
+  return categories.filter((category) => category.productCount > 0).length >= 2;
+}
+
 export interface CategoryNavProps {
   categories: StorefrontCategory[];
   /** Which category page is current, for `aria-current`. */

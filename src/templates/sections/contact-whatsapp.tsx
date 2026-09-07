@@ -1,8 +1,8 @@
 import type { SectionConfig } from '@/shared/site-contract';
 import { ClockIcon, PhoneIcon } from '../components/icons';
-import { SocialLinks } from '../components/social-links';
 import { WhatsappOrder } from '../components/whatsapp-order';
 import { st } from '../i18n';
+import { resolveHoursLine } from '../lib/hours-summary';
 import { normaliseWhatsappNumber } from '../lib/whatsapp';
 import { SECTION_ANCHORS } from '../section-anchors';
 import type { StorefrontContext } from '../view-model';
@@ -30,6 +30,17 @@ export interface ContactSectionProps {
 export function ContactWhatsappSection({ context, config, anchor }: ContactSectionProps) {
   const { site } = context;
   const number = normaliseWhatsappNumber(site.whatsapp);
+
+  /**
+   * The STRUCTURED week first, the free-text box only as a fallback (2026-09-06, owner-directed).
+   *
+   * `Site.hours` is a textarea on `/settings`; the day-and-time picker on `/content/hours` writes
+   * `OpeningHours` rows. Only the textarea ever reached this block, so a merchant who filled in the
+   * picker — the control the platform actually asks them to use — saw their old typed sentence here
+   * regardless. `resolveHoursLine` ranks the two and returns null when neither is filled, which is
+   * what keeps the row from rendering an empty «أوقات الدوام». See `lib/hours-summary.ts`.
+   */
+  const hoursLine = resolveHoursLine(context.openingHours, site.hours);
 
   /**
    * A SHOP-level enquiry, not a product one.
@@ -63,12 +74,12 @@ export function ContactWhatsappSection({ context, config, anchor }: ContactSecti
                 </dd>
               </div>
             ) : null}
-            {site.hours ? (
+            {hoursLine ? (
               <div>
                 <dt>
                   <ClockIcon className="sf-btn__icon" /> {st('contact.hours')}
                 </dt>
-                <dd>{site.hours}</dd>
+                <dd>{hoursLine}</dd>
               </div>
             ) : null}
             {site.address ? (
@@ -124,12 +135,18 @@ export function ContactWhatsappSection({ context, config, anchor }: ContactSecti
             </p>
           )}
 
-          {context.socialLinks.length > 0 ? (
-            <div style={{ marginBlockStart: 'var(--t-space-lg)' }}>
-              <h3 className="sf-block__lead">{st('social.title')}</h3>
-              <SocialLinks links={context.socialLinks} />
-            </div>
-          ) : null}
+          {/*
+            THE SOCIAL ROW WAS HERE AND IS NOW ONLY IN THE FOOTER (2026-09-06, owner-directed).
+
+            It rendered in both places, so the home page carried two identical «تابعنا» rows a few
+            hundred pixels apart — one under the WhatsApp button and one in the footer column below
+            it. A repeated control does not read as emphasis, it reads as a template bug, and the
+            footer's is the canonical one: it is on EVERY route, whereas this section is on the home
+            page only and only while the merchant keeps it in their arrangement.
+
+            `SiteFooter` is the single caller now. If this block ever comes back it has to come back
+            as a MOVE, not a copy.
+          */}
         </div>
       </div>
     </SectionBlock>
