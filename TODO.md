@@ -1272,8 +1272,36 @@ Order: `12.A → 12.B → 12.C → 12.D`. Owner answers: **start with the defaul
 > reaches both selectors (checked through the CSSOM — an area map left under a one-column track
 > silently produces two implicit columns).
 >
-> - [ ] **RE-RUN `AGENT-RUN.cmd`** — the `band` fix landed after the green sweep and is unproven
-> - [ ] 768 and 390 with a real viewport; the nine templates side by side; axe
+> - [ ] 768 and 390 with a real viewport; the nine templates side by side
+
+---
+
+## Pushed, and CI's verdict (2026-09-07 evening)
+
+- [x] **Everything committed and pushed to `origin/phase-8-11`** (`6621fc5`, 38 files, +2,853/−224).
+      Eighteen days of work, five migrations included, that had never left one disk
+- [x] **PR #3 opened** — a push to a branch does NOT start CI on its own; `ci.yml` triggers on
+      `pull_request`, so without a PR the branch sits there ungated. Opened deliberately and NOT
+      merged: merging is what starts `deploy.yml`
+- [x] ✅ **`CI / typecheck · lint · test` — SUCCESSFUL in 2m.** The whole suite, on Linux, on a clean
+      runner. This is the first time the gate has run anywhere other than the Windows box whose
+      embedded Postgres cost this session half a day
+- [x] ✅ **`CI / lighthouse (best of 3)` — SUCCESSFUL in 1m**
+- [x] ❌ **`CI / dependency scan` — FAILED: 4 high advisories, all the same package.** `fast-uri`,
+      patched in `>=3.1.6`, every one of them reached through
+      `@sentry/nextjs > @sentry/webpack-plugin > webpack > schema-utils > ajv > fast-uri`. Fixed
+      with a `pnpm.overrides` pin, following the precedent already in `package.json` for
+      `deepmerge-ts` (GHSA-ggr8-5vv4-36mx): a transitive advisory is closed at the transitive
+      dependency, not by dragging a major version of Sentry through the tree
+- [x] **`FIX-LOCKFILE.cmd` added**, because an override is always TWO steps: edit the manifest, then
+      regenerate `pnpm-lock.yaml`. CI runs `pnpm install --frozen-lockfile`, which fails when the two
+      disagree — so editing only the manifest turns one red check into a different red check, and the
+      second one looks like a lockfile problem rather than the security fix it is. Ran it:
+      `pnpm install` +1 −1 package, then `pnpm audit --audit-level high --prod` →
+      **`No known vulnerabilities found`, EXITCODE=0**
+- [ ] **Push the lockfile fix** — `BACKUP-AND-PUSH.cmd`. `package.json` + `pnpm-lock.yaml` +
+      `FIX-LOCKFILE.cmd` are uncommitted
+- [ ] `CI / build · e2e · axe` was still running when this was written — the browser gate
 >
 > Two of the session's recurring "database" failures turned out to be one bug in `AGENT-RUN.cmd`
 > (it ran the dev stack alongside the suite) and one bug in a test's own SQL (a correlated `EXISTS`
