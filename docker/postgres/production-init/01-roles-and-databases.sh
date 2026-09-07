@@ -57,10 +57,10 @@ database_exists() {
 ensure_role() {
   local role="$1" password="$2" attributes="${3:-}"
   if role_exists "$role"; then
-    psql_super -v pw="$password" -c "ALTER ROLE ${role} LOGIN PASSWORD :'pw' ${attributes}"
+    psql_super -v pw="$password" <<< "ALTER ROLE ${role} LOGIN PASSWORD :'pw' ${attributes};"
     echo "role ${role}: password set"
   else
-    psql_super -v pw="$password" -c "CREATE ROLE ${role} LOGIN PASSWORD :'pw' ${attributes}"
+    psql_super -v pw="$password" <<< "CREATE ROLE ${role} LOGIN PASSWORD :'pw' ${attributes};"
     echo "role ${role}: created"
   fi
 }

@@ -25,7 +25,13 @@ export function AccountTabs({ tenantId }: { tenantId: string }) {
   ];
 
   return (
-    <nav className="sba-tabs" aria-label={t('admin', 'account.tabs.overview')}>
+    /*
+      The nav's own name, not the first tab's. It was `account.tabs.overview` — «نظرة عامة» — so a
+      screen-reader rotor listed a navigation landmark called "Overview" whose first link was also
+      called "Overview", and the region gave no clue what it navigated. A landmark is named for what
+      it contains.
+    */
+    <nav className="sba-tabs" aria-label={t('admin', 'account.tabs.label')}>
       {tabs.map((tab) => (
         <Link
           key={tab.href}

@@ -134,6 +134,7 @@ export function TextInput({
   step,
   min,
   max,
+  dir,
 }: {
   name: string;
   type?: string;
@@ -143,6 +144,13 @@ export function TextInput({
   step?: string;
   min?: string;
   max?: string;
+  /**
+   * The surface is RTL and a few of these boxes hold text that is not — a URL, most of all. In an
+   * `rtl` input a pasted `https://maps.app.goo.gl/x` renders its slashes and dots in visually wrong
+   * places and the cursor jumps while editing, so an operator cannot check a link against what they
+   * copied. `dir="ltr"` on those fields only; the Arabic label above is unaffected.
+   */
+  dir?: 'ltr' | 'rtl' | 'auto';
 }) {
   return (
     <input
@@ -156,6 +164,7 @@ export function TextInput({
       step={step}
       min={min}
       max={max}
+      dir={dir}
     />
   );
 }

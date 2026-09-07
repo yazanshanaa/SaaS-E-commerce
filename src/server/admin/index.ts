@@ -105,6 +105,7 @@ export {
   moveSection,
   saveAnnouncement,
   saveAnnouncementBar,
+  saveBusinessDetails,
   saveMapLocation,
   saveSocialLinks,
   seedDefaultSections,

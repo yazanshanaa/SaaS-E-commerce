@@ -43,10 +43,15 @@
  * text. A grocer's customer navigates by department far more often than by the two links beside the
  * shop name.
  */
-[data-template='raff'] .sf-catnav {
-  margin-block-start: var(--t-space-md);
-  margin-inline: calc(var(--t-space-lg) * -1);
-  padding-inline: var(--t-space-lg);
+/*
+ * RETARGETED TO THE BAND (2026-09-06). The chips now live inside `.sf-header__cats`, a full-width
+ * strip that already carries the hairline, the vertical padding and a tinted background — which is
+ * exactly what this block was hand-building when `.sf-catnav` was a wrapping flex item. Left on the
+ * inner element it drew the rule TWICE, a few pixels apart, and put `--t-bg` inside the band's
+ * `--t-surface`. The negative inline margin is gone too: the band is already full width, so it now
+ * pulls the strip past the page edge instead of out to it.
+ */
+[data-template='raff'] .sf-header__cats {
   padding-block: var(--t-space-sm);
   background: var(--t-bg);
   border-block-start: 1px solid var(--t-border);

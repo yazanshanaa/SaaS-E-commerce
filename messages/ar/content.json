@@ -121,6 +121,9 @@
     "overnightHint": "إذا كنت بتسكّر بعد منتصف الليل، اكتب وقت الإغلاق زي ما هو — مثلاً من 22:00 لحد 02:00 — واحنا بنحسبها صح.",
     "closedLabel": "مغلق",
     "range": "{from} – {to}",
+    "daySpan": "{from} – {to}",
+    "summaryGroup": "{days}: {hours}",
+    "summarySeparator": " · ",
     "openNow": "مفتوح الآن",
     "closedNow": "مغلق الآن",
     "saved": "انحفظت ساعات الدوام."

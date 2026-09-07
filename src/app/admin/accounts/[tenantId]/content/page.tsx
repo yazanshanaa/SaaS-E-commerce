@@ -6,11 +6,13 @@ import {
   TEMPLATE_KEYS,
   socialPlatformSchema,
 } from '@/shared/site-contract';
-import { formatDate, t } from '@/shared/i18n';
+import { formatDate, formatNumber, t } from '@/shared/i18n';
+import { mapLinkFor } from '@/shared/map-url';
 import { TemplatePreview } from '@/app/_components/kit/template-preview';
 import { param, requireAdminPage } from '../../../_components/guard';
 import { ActionForm } from '../../../_components/action-form';
 import { Empty, Field, Notice, Panel, SwitchButton, TextInput } from '../../../_components/ui';
+import { saveBusinessDetailsAction } from '../actions';
 import {
   deleteAnnouncementAction,
   moveSectionAction,
@@ -48,9 +50,10 @@ export default async function AccountContentPage({
 
   const site = content.site;
   const socialByPlatform = new Map(content.socialLinks.map((link) => [link.platform, link]));
-  const mapsHref = site.mapLat !== null && site.mapLng !== null
-    ? `https://www.google.com/maps/search/?api=1&query=${site.mapLat},${site.mapLng}`
-    : null;
+  /** Rebuilt from the stored pair so the link box is not blank on a shop that has a location. */
+  const storedMapLink = mapLinkFor(site.mapLat, site.mapLng);
+  /* The same string `mapLinkFor` already built — one builder, so the box and the button agree. */
+  const mapsHref = storedMapLink;
   const wazeHref = site.mapLat !== null && site.mapLng !== null
     ? `https://waze.com/ul?ll=${site.mapLat},${site.mapLng}&navigate=yes`
     : null;
@@ -61,6 +64,72 @@ export default async function AccountContentPage({
 
       <Panel title={t('admin', 'content.title')} note={t('admin', 'content.subtitle')}>
         <p className="sba-hint">{t('admin', 'permissions.adminNote')}</p>
+      </Panel>
+
+      {/*
+        THE SHOP'S OWN IDENTITY, EDITABLE FROM HERE (2026-09-06, owner-directed).
+
+        Everything else about a shop was already reachable from this surface — template, palette,
+        social links, map pin, section order, feature flags — except its NAME, which is the thing
+        merchants phone about most. The only route to it was impersonation, which is a support tool
+        being used as a data-entry tool and writes the merchant into the audit log as the author.
+
+        It is FIRST on the page on purpose: the operator opening this tab during a phone call is
+        almost always here for one of these seven fields, not for the announcement scheduler.
+
+        The panel is deliberately open regardless of the `settings` capability. Access axis (b)
+        decides what the MERCHANT may edit; the operator's own permission to write a tenant's content
+        is what this whole screen is (see `src/server/admin/site-content.ts`).
+      */}
+      <Panel title={t('admin', 'content.business.title')} note={t('admin', 'content.business.hint')}>
+        <ActionForm action={saveBusinessDetailsAction} submitLabel={t('admin', 'account.save')}>
+          <input type="hidden" name="tenantId" value={tenantId} />
+
+          <div className="sba-row">
+            <Field label={t('admin', 'content.business.name')} name="name">
+              <TextInput name="name" defaultValue={site.name} required />
+            </Field>
+            <Field label={t('admin', 'content.business.tagline')} name="tagline">
+              <TextInput name="tagline" defaultValue={site.tagline ?? ''} />
+            </Field>
+          </div>
+
+          <Field label={t('admin', 'content.business.about')} name="about">
+            <textarea
+              className="sba-textarea"
+              id="about"
+              name="about"
+              rows={4}
+              defaultValue={site.about ?? ''}
+            />
+          </Field>
+
+          <div className="sba-row">
+            <Field label={t('admin', 'content.business.address')} name="address">
+              <TextInput name="address" defaultValue={site.address ?? ''} />
+            </Field>
+            <Field label={t('admin', 'content.business.phone')} name="phone">
+              <TextInput name="phone" defaultValue={site.phone ?? ''} />
+            </Field>
+            <Field
+              label={t('admin', 'content.business.whatsapp')}
+              name="whatsapp"
+              hint={t('admin', 'content.business.whatsappHint')}
+            >
+              <TextInput name="whatsapp" defaultValue={site.whatsapp ?? ''} />
+            </Field>
+            <Field label={t('admin', 'content.business.email')} name="email">
+              <TextInput name="email" defaultValue={site.email ?? ''} />
+            </Field>
+          </div>
+
+          {/*
+            No hours field here on purpose — the structured week on the merchant's `/content/hours`
+            is the one editor for that fact now, and a third box for it is the exact duplication this
+            change set removed. `saveBusinessDetails` refuses to write it.
+          */}
+          <p className="sba-hint">{t('admin', 'content.business.hoursNote')}</p>
+        </ActionForm>
       </Panel>
 
       <Panel
@@ -204,17 +273,29 @@ export default async function AccountContentPage({
       <Panel title={t('admin', 'content.mapLocation')} note={t('admin', 'content.mapHint')}>
         <ActionForm action={saveMapLocationAction} submitLabel={t('admin', 'account.save')}>
           <input type="hidden" name="tenantId" value={tenantId} />
-          <div className="sba-row">
-            <Field label={t('admin', 'content.mapLat')} name="mapLat">
-              <TextInput name="mapLat" defaultValue={site.mapLat ?? ''} />
-            </Field>
-            <Field label={t('admin', 'content.mapLng')} name="mapLng">
-              <TextInput name="mapLng" defaultValue={site.mapLng ?? ''} />
-            </Field>
-            <Field label={t('admin', 'content.mapQuery')} name="mapQuery">
-              <TextInput name="mapQuery" defaultValue={site.mapQuery ?? ''} />
-            </Field>
-          </div>
+          {/*
+            ONE LINK BOX, matching the merchant's own screen (2026-09-06, owner-directed). Nobody —
+            operator or merchant — knows a shop's latitude; what they have is the link «مشاركة» put
+            on their clipboard. `parseMapLink` extracts the pair in the action and the COLUMNS are
+            unchanged, so `resolveMapTarget`, the Waze deep link and the audit entry all still see
+            coordinates. Pre-filled from the stored pair so «احفظ» on an untouched form is not a
+            silent delete.
+          */}
+          <Field
+            label={t('admin', 'content.mapLink')}
+            name="mapLink"
+            hint={t('admin', 'content.mapLinkHint')}
+          >
+            <TextInput name="mapLink" defaultValue={storedMapLink ?? ''} dir="ltr" />
+          </Field>
+
+          <Field
+            label={t('admin', 'content.mapQuery')}
+            name="mapQuery"
+            hint={t('admin', 'content.mapQueryHint')}
+          >
+            <TextInput name="mapQuery" defaultValue={site.mapQuery ?? ''} />
+          </Field>
         </ActionForm>
 
         <p className="sba-actions" style={{ marginBlockStart: 'var(--sb-space-4)' }}>
@@ -352,7 +433,7 @@ export default async function AccountContentPage({
         </ActionForm>
       </Panel>
 
-      <Panel title={t('admin', 'content.sections')} note={t('admin', 'content.sectionsHint')}>
+      <Panel title={t('admin', 'content.sections')} note={t('admin', 'content.sectionsOrderHint')}>
         {content.sections.length === 0 ? (
           <>
             <Empty>{t('admin', 'content.noSections')}</Empty>
@@ -370,54 +451,96 @@ export default async function AccountContentPage({
           </>
         ) : (
           <div className="sba-matrix">
-            {content.sections.map((section, index) => (
-              <div className="sba-matrix-row" key={section.id}>
-                <div>
-                  <span className="sba-matrix-name">{t('admin', `sections.${section.type}`)}</span>
-                  <span className="sba-matrix-default">
-                    {section.enabled
-                      ? t('admin', 'content.sectionShown')
-                      : t('admin', 'content.sectionHidden')}
-                  </span>
-                </div>
+            {content.sections.map((section, index) => {
+              /*
+                «الترتيب فوق وتحت غير مفهوم» (2026-09-06, owner-directed), and it was three separate
+                problems wearing one complaint:
 
-                <div className="sba-matrix-control">
-                  <form action={toggleSectionAction}>
-                    <input type="hidden" name="tenantId" value={tenantId} />
-                    <input type="hidden" name="sectionId" value={section.id} />
-                    <SwitchButton
-                      pressed={section.enabled}
-                      label={
-                        section.enabled ? t('admin', 'content.hide') : t('admin', 'content.show')
-                      }
-                    />
-                  </form>
-                </div>
+                  1. NO POSITION WAS SHOWN. Two bare buttons labelled «فوق» and «تحت» tell you what
+                     they do and nothing about where you are. «٣ من ٧» does, and it also makes the
+                     disabled state legible — the first row's «فوق» is greyed because it is FIRST,
+                     which is only obvious once the number is on screen.
+                  2. THE PAGE JUMPED TO THE TOP after every click, so the operator lost their place
+                     on every step of a reorder. Fixed by the anchor below.
+                  3. THE ORDER OF THE PAGE was not stated. The list is the home page top-to-bottom,
+                     and the panel note now says so.
+              */
+              const anchor = `sec-${section.id}`;
 
-                <div className="sba-matrix-control">
-                  <form action={moveSectionAction}>
-                    <input type="hidden" name="tenantId" value={tenantId} />
-                    <input type="hidden" name="sectionId" value={section.id} />
-                    <input type="hidden" name="direction" value="up" />
-                    <button type="submit" className="sba-btn sba-btn--sm" disabled={index === 0}>
-                      {t('admin', 'content.moveUp')}
-                    </button>
-                  </form>
-                  <form action={moveSectionAction}>
-                    <input type="hidden" name="tenantId" value={tenantId} />
-                    <input type="hidden" name="sectionId" value={section.id} />
-                    <input type="hidden" name="direction" value="down" />
-                    <button
-                      type="submit"
-                      className="sba-btn sba-btn--sm"
-                      disabled={index === content.sections.length - 1}
-                    >
-                      {t('admin', 'content.moveDown')}
-                    </button>
-                  </form>
+              return (
+                <div className="sba-matrix-row" id={anchor} key={section.id}>
+                  <div>
+                    <span className="sba-matrix-name">
+                      {t('admin', `sections.${section.type}`)}
+                    </span>
+                    <span className="sba-matrix-default">
+                      {t('admin', 'content.sectionPosition', {
+                        index: formatNumber(index + 1),
+                        total: formatNumber(content.sections.length),
+                      })}
+                      {' · '}
+                      {section.enabled
+                        ? t('admin', 'content.sectionShown')
+                        : t('admin', 'content.sectionHidden')}
+                    </span>
+                  </div>
+
+                  <div className="sba-matrix-control">
+                    <form action={toggleSectionAction}>
+                      <input type="hidden" name="tenantId" value={tenantId} />
+                      <input type="hidden" name="sectionId" value={section.id} />
+                      <input type="hidden" name="anchor" value={anchor} />
+                      <SwitchButton
+                        pressed={section.enabled}
+                        label={
+                          section.enabled ? t('admin', 'content.hide') : t('admin', 'content.show')
+                        }
+                      />
+                    </form>
+                  </div>
+
+                  <div className="sba-matrix-control">
+                    <form action={moveSectionAction}>
+                      <input type="hidden" name="tenantId" value={tenantId} />
+                      <input type="hidden" name="sectionId" value={section.id} />
+                      <input type="hidden" name="direction" value="up" />
+                      <input type="hidden" name="anchor" value={anchor} />
+                      {/*
+                        The accessible name says WHICH section moves, not just «فوق». Seven rows of
+                        identically-named buttons is a screen a keyboard or voice user cannot
+                        address; the visible label stays short because the row gives it context.
+                      */}
+                      <button
+                        type="submit"
+                        className="sba-btn sba-btn--sm"
+                        disabled={index === 0}
+                        aria-label={t('admin', 'content.moveUpNamed', {
+                          name: t('admin', `sections.${section.type}`),
+                        })}
+                      >
+                        {t('admin', 'content.moveUp')}
+                      </button>
+                    </form>
+                    <form action={moveSectionAction}>
+                      <input type="hidden" name="tenantId" value={tenantId} />
+                      <input type="hidden" name="sectionId" value={section.id} />
+                      <input type="hidden" name="direction" value="down" />
+                      <input type="hidden" name="anchor" value={anchor} />
+                      <button
+                        type="submit"
+                        className="sba-btn sba-btn--sm"
+                        disabled={index === content.sections.length - 1}
+                        aria-label={t('admin', 'content.moveDownNamed', {
+                          name: t('admin', `sections.${section.type}`),
+                        })}
+                      >
+                        {t('admin', 'content.moveDown')}
+                      </button>
+                    </form>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Panel>

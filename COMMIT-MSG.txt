@@ -1,27 +1,26 @@
-Read the visible brand, and make a refused account creation say so
+Add fill-env.sh: one paste per key, and no key in the shell history
 
-Two things, both about tests reading the wrong thing.
+Ten values in `.env` cannot be generated - they need a Cloudflare account, an R2
+subscription, a Resend account, and an age keypair whose secret half must never
+touch this server. The three ways an operator normally fills them are all worse
+than they look:
 
-1. b2-dashboard asserted the shop name with `.first()`. Phase 11's kit renders
-   the brand TWICE by design - a top bar below 48rem and the sticky rail above
-   it, with CSS hiding whichever does not apply; `rail.tsx`'s own comment on the
-   top bar says "Hidden by the kit above 48rem". `.first()` takes DOM ORDER,
-   which is the top bar, and at every viewport this suite runs at that is the
-   hidden copy. The dashboard was working and the test was reading a copy the
-   merchant cannot see. Now filtered to the visible one.
+  nano       - navigating by line number in a 376-line file, and one stray
+               keystroke edits a line nobody will notice until a container
+               refuses to start.
+  sed        - the key lands in ~/.bash_history and stays there. It is the kind
+               of leak nobody cleans up because nobody remembers it happened.
+  a template - a file full of secrets sitting on disk waiting to be forgotten.
 
-2. `phase11:181` and `phase7:313` both assert a heading straight after clicking
-   «افتح الحساب», and both fail with "element not found" - while `a1-admin.spec.ts`
-   does the identical thing and passes. Reading the code did not find the
-   discriminator: same form, same plan (`basic` in phase7), same
-   `sendPasswordLink`, and the heading is `PageHead title={account.name}` in the
-   account layout either way.
+So: prompts, one at a time, read with `read -s` so nothing echoes and nothing
+reaches the history. A key already set is reported and left alone, which makes
+re-running safe - the operator can fill what they have today and come back.
 
-   So rather than guess a fix, the assertion now names the page it landed on. A
-   refused creation re-renders `/accounts/new`; a successful one redirects to
-   `/accounts/{id}`, the shape a1-admin already pins. Asserting the heading
-   alone spends the timeout waiting for something that was never going to
-   render and then reports nothing useful. The next run answers the question
-   instead of repeating it.
+It ends by checking exactly the six values the compose marks `:?` and saying
+whether the stack can boot, rather than leaving that to be discovered by a
+container exiting.
 
-Fifth of the ten first-run e2e failures fixed; the sixth is now instrumented.
+The read-only backup pair is prompted for with the reason it is separate from
+the write pair spelled out at the prompt: the write pair can delete every
+historical dump, and the web container is the one process exposed to the
+internet.

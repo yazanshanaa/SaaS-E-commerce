@@ -18,7 +18,9 @@ import {
 } from '@/server/admin';
 import { socialPlatformSchema } from '@/shared/site-contract';
 import { t } from '@/shared/i18n';
+import { parseMapLink } from '@/shared/map-url';
 import { requireAdminPage } from '../../../_components/guard';
+import { backTo } from '../../../_components/return-anchor';
 
 /**
  * Site-content actions.
@@ -30,13 +32,17 @@ import { requireAdminPage } from '../../../_components/guard';
 
 const SOCIAL_PLATFORMS = socialPlatformSchema.options;
 
-function back(tenantId: string, result: { ok?: string; error?: string }): never {
-  const query = result.error
-    ? `?error=${encodeURIComponent(result.error)}`
-    : result.ok
-      ? `?ok=${encodeURIComponent(result.ok)}`
-      : '';
-  redirect(`/accounts/${tenantId}/content${query}`);
+/**
+ * `anchor` is the id of the section row that was clicked. Reordering a home page is a sequence of
+ * «فوق» / «تحت» clicks, and without the fragment every one of them threw the operator back to the
+ * top of a long page — see `admin/_components/return-anchor.ts`.
+ */
+function back(
+  tenantId: string,
+  result: { ok?: string; error?: string },
+  anchor?: string | null,
+): never {
+  redirect(backTo(`/accounts/${tenantId}/content`, result, anchor));
 }
 
 function done(tenantId: string, state: ActionState | null, okKey: string): ActionState {
@@ -82,11 +88,38 @@ export async function saveMapLocationAction(
   const ctx = await requireAdminPage();
   const tenantId = text(form, 'tenantId');
 
+  /**
+   * The form posts a LINK; `saveMapLocation` still takes coordinates (2026-09-06). Same change as
+   * the merchant's own map panel, and for the same reason — see `src/shared/map-url.ts`. An empty
+   * box clears the pin, which is the only way to undo one; an unreadable link is refused with its
+   * own sentence rather than silently saving nothing.
+   */
+  const link = text(form, 'mapLink');
+  let mapLat = '';
+  let mapLng = '';
+
+  if (link) {
+    const parsed = parseMapLink(link);
+    if (!parsed.ok) {
+      return {
+        status: 'error',
+        messageKey:
+          parsed.reason === 'shortened'
+            ? 'admin:errors.mapLinkShortened'
+            : parsed.reason === 'noCoordinates'
+              ? 'admin:errors.mapLinkNoCoordinates'
+              : 'admin:errors.mapLinkUnreadable',
+      };
+    }
+    mapLat = String(parsed.lat);
+    mapLng = String(parsed.lng);
+  }
+
   return done(
     tenantId,
     await saveMapLocation(ctx, tenantId, {
-      mapLat: text(form, 'mapLat'),
-      mapLng: text(form, 'mapLng'),
+      mapLat,
+      mapLng,
       mapQuery: text(form, 'mapQuery'),
     }),
     'admin:account.saved',
@@ -167,7 +200,11 @@ export async function toggleSectionAction(form: FormData): Promise<void> {
   );
 
   revalidatePath(`/accounts/${tenantId}/content`);
-  back(tenantId, state ? { error: state.messageKey } : { ok: 'admin:account.saved' });
+  back(
+    tenantId,
+    state ? { error: state.messageKey } : { ok: 'admin:account.saved' },
+    text(form, 'anchor'),
+  );
 }
 
 export async function moveSectionAction(form: FormData): Promise<void> {
@@ -182,5 +219,14 @@ export async function moveSectionAction(form: FormData): Promise<void> {
   );
 
   revalidatePath(`/accounts/${tenantId}/content`);
-  back(tenantId, state ? { error: state.messageKey } : { ok: 'admin:account.saved' });
+  /**
+   * The anchor names the SECTION, and the section moved — so the browser lands on the row wherever
+   * it now is, which is the confirmation the operator was looking for. An anchor naming a POSITION
+   * would land on whatever swapped into the old slot and read as "nothing happened".
+   */
+  back(
+    tenantId,
+    state ? { error: state.messageKey } : { ok: 'admin:account.saved' },
+    text(form, 'anchor'),
+  );
 }

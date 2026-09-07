@@ -1,5 +1,6 @@
 import { st } from '../i18n';
 import { hasContactSection } from '../lib/arrangement';
+import { resolveHoursLine } from '../lib/hours-summary';
 import { legalHref, legalPagesFor } from '../lib/legal';
 import { SECTION_ANCHORS } from '../section-anchors';
 import type { StorefrontContext } from '../view-model';
@@ -34,7 +35,16 @@ export function SiteFooter({
   const { site, socialLinks } = context;
   const legal = legalPagesFor(site.sellingEnabled);
   const year = new Date().getFullYear();
-  const hasContactDetails = Boolean(site.phone || site.address || site.hours || site.email);
+
+  /**
+   * The structured week first, the free-text box second — see `lib/hours-summary.ts` and the same
+   * change in `sections/contact-whatsapp.tsx`. `hasContactDetails` asks about the RESOLVED line
+   * rather than about `site.hours`, or a shop that filled in the picker and left the textarea empty
+   * would have its hours dropped from the "is there anything in this column" test and then rendered
+   * inside it — which is how a column ends up one item shorter than the condition that showed it.
+   */
+  const hoursLine = resolveHoursLine(context.openingHours, site.hours);
+  const hasContactDetails = Boolean(site.phone || site.address || hoursLine || site.email);
 
   return (
     <footer className="sf-footer" aria-label={st('footer.label')}>
@@ -80,7 +90,7 @@ export function SiteFooter({
                 </li>
               ) : null}
               {site.address ? <li>{site.address}</li> : null}
-              {site.hours ? <li>{site.hours}</li> : null}
+              {hoursLine ? <li>{hoursLine}</li> : null}
               {site.email ? (
                 <li>
                   <a href={`mailto:${site.email}`}>{site.email}</a>
@@ -90,8 +100,17 @@ export function SiteFooter({
           </div>
         ) : null}
 
+        {/*
+          THE ONLY SOCIAL ROW ON THE SITE (2026-09-06, owner-directed). `contact-whatsapp.tsx` used
+          to render a second identical one a few hundred pixels above this; it no longer does.
+
+          It gets its own FULL-WIDTH band rather than a 15rem grid column, and that is what fixes the
+          «طولي» complaint: eight 44px circles cannot fit in one auto-fit track, so they wrapped into
+          a two-per-row stack that read as a vertical list. Spanning every column gives one row, and
+          `.sf-footer__social` centres it under the columns instead of leaving it ragged at one end.
+        */}
         {socialLinks.length > 0 ? (
-          <div>
+          <div className="sf-footer__social">
             <h2>{st('social.title')}</h2>
             <SocialLinks links={socialLinks} />
           </div>

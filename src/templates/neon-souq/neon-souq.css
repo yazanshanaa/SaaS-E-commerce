@@ -54,7 +54,11 @@
  * for every section heading on the site.
  */
 
-[data-template='neon-souq'] .sf-catnav {
+/*
+  The band, not the nav (2026-09-06). `.sf-catnav` no longer declares a `border-block-start` of its
+  own — `.sf-header__cats` does — so a bare `-color` here painted nothing.
+*/
+[data-template='neon-souq'] .sf-header__cats {
   border-block-start-color: var(--t-secondary);
 }
 
@@ -194,9 +198,14 @@
   border-block-start: 1px solid var(--t-border);
 }
 
+/*
+  Square corners kept, the border dropped (2026-09-06). The social row is now a saturated brand
+  colour per platform; a `--t-border` ring around a filled tile reads as an unfinished button on a
+  dark template, and it was written for the old transparent circle. The shape is this template's
+  signature and stays.
+*/
 [data-template='neon-souq'] .sf-social a {
   border-radius: var(--t-radius-sm);
-  border-color: var(--t-border);
 }
 
 /* -------------------------------------------- Phase 9: the poster board -- */

@@ -1,5 +1,7 @@
 import Link from 'next/link';
+import { can } from '@/server/entitlements';
 import { formatDate, formatNumber, t } from '@/shared/i18n';
+import { mapLinkFor } from '@/shared/map-url';
 import { getSiteDetails, listAnnouncements, listSocialLinks, socialPlatformSchema } from '../_lib/site';
 import { loadCapabilityContext, listOwnChangeRequests } from '../_lib/change-requests';
 import { loadAdvanced } from '../_lib/settings';
@@ -53,8 +55,17 @@ export default async function SettingsPage({
   const ctx = await requireMerchantPage('settings');
   const params = await searchParams;
 
-  const [site, social, announcements, capabilityContext, requests, hasExport, hasDomain, advanced] =
-    await Promise.all([
+  const [
+    site,
+    social,
+    announcements,
+    capabilityContext,
+    requests,
+    hasExport,
+    hasDomain,
+    advanced,
+    searchFeature,
+  ] = await Promise.all([
       getSiteDetails(ctx),
       listSocialLinks(ctx),
       listAnnouncements(ctx),
@@ -81,9 +92,20 @@ export default async function SettingsPage({
        * to the two panels they DO have, on a page that renders them perfectly.
        */
       loadAdvanced(ctx),
+      /**
+       * The PLAN half of `flags.search` — the same question `src/app/site/_data/context.ts` asks
+       * when it decides whether the storefront draws a search box at all, so the «فعّل البحث»
+       * checkbox is offered exactly when flipping it would change something.
+       *
+       * In the `Promise.all`, not awaited after it: this screen already makes eight round trips and
+       * a ninth in series is a ninth in series.
+       */
+      can(ctx.tenantId, 'search_insights'),
     ]);
 
   if (!site) return <Empty>{t('common', 'states.empty')}</Empty>;
+
+  const hasSearchFeature = searchFeature === true;
 
   const hasAdvanced = advanced !== null && !advanced.flags.empty;
 
@@ -104,6 +126,9 @@ export default async function SettingsPage({
       disabled: !capability.editable && exhausted,
     };
   };
+
+  /** Rebuilt from the stored pair, for the "check the pin" link under the map panel. */
+  const storedMapLink = mapLinkFor(site.mapLat, site.mapLng);
 
   const socialPanel = panel('social_links');
   const mapPanel = panel('map_location');
@@ -179,13 +204,62 @@ export default async function SettingsPage({
             </Field>
           </div>
 
-          <Field
-            label={t('dashboard', 'settings.fields.hours')}
-            name="hours"
-            hint={t('dashboard', 'settings.fields.hoursHint')}
-          >
-            <TextArea name="hours" defaultValue={site.hours ?? ''} rows={3} />
-          </Field>
+          {/*
+            THE OPENING-HOURS TEXTAREA IS GONE (2026-09-06, owner-directed).
+
+            The platform stored the same fact twice: a free-text box here, and the seven-day picker
+            on `/content/hours` that writes real `OpeningHours` rows. Two editors for one fact is a
+            fact that is wrong in one of them — and it was reliably this one, because the textarea is
+            what a merchant fills in on setup day and never opens again, while the picker is what the
+            «ساعات الدوام» section and the «مفتوح الآن» pill are computed from.
+
+            The picker is now the ONLY editor and the storefront prefers it everywhere
+            (`templates/lib/hours-summary.ts`). `hours` posts as a hidden field carrying the stored
+            value so this form does not blank the legacy sentence some accounts still rely on as a
+            fallback — `saveDetails` reads the field, and an absent input would parse as "clear it".
+          */}
+          <input type="hidden" name="hours" value={site.hours ?? ''} />
+
+          {/*
+            A `div`, not a `Field`. `Field` renders `<label htmlFor={name}>`, and a label pointing at
+            something that is not a form control is a broken association — it is announced, focuses
+            nothing, and fails the same axe rule an unlabelled input does. There is no control here
+            to label: this is a signpost.
+          */}
+          <div className="sbd-field">
+            <span className="sbd-label">{t('dashboard', 'settings.fields.hours')}</span>
+            <p className="sbd-hint">{t('dashboard', 'settings.fields.hoursMoved')}</p>
+            <p>
+              <Link className="sbd-btn" href="/content/hours">
+                {t('dashboard', 'settings.fields.hoursCta')}
+              </Link>
+            </p>
+          </div>
+
+          {/*
+            «فعّل البحث» — the switch that never existed (2026-09-06, owner-directed).
+
+            `Site.searchEnabled` has been a column since Phase 9 and defaults to false, and nothing
+            in the product could set it: no merchant screen, no admin screen, no seed. So the search
+            box, the `/search` route and the zero-result report that `search_insights` sells were
+            unreachable on every account. This is the missing half.
+
+            It is rendered only when the PLAN half is also true. A checkbox for a feature the shop
+            does not have would be a switch that changes nothing — and it would advertise a feature
+            to a merchant who cannot use it, which this codebase refuses everywhere else.
+          */}
+          {hasSearchFeature ? (
+            <Checkbox
+              name="searchEnabled"
+              label={t('dashboard', 'settings.fields.searchEnabled')}
+              defaultChecked={site.searchEnabled}
+            />
+          ) : (
+            <input type="hidden" name="searchEnabled" value={site.searchEnabled ? 'on' : ''} />
+          )}
+          {hasSearchFeature ? (
+            <p className="sbd-hint">{t('dashboard', 'settings.fields.searchEnabledHint')}</p>
+          ) : null}
 
           {/*
             The logo used to be carried through here as a hidden field, because it is a media id
@@ -258,34 +332,59 @@ export default async function SettingsPage({
           submitLabel={mapPanel.submitLabel}
           disabled={mapPanel.disabled}
         >
-          <div className="sbd-grid">
-            <Field label={t('dashboard', 'settings.mapLat')} name="mapLat">
-              <TextInput
-                name="mapLat"
-                defaultValue={site.mapLat === null ? '' : String(site.mapLat)}
-                readOnly={mapPanel.locked}
-                inputMode="decimal"
-              />
-            </Field>
-            <Field label={t('dashboard', 'settings.mapLng')} name="mapLng">
-              <TextInput
-                name="mapLng"
-                defaultValue={site.mapLng === null ? '' : String(site.mapLng)}
-                readOnly={mapPanel.locked}
-                inputMode="decimal"
-              />
-            </Field>
-            <Field label={t('dashboard', 'settings.mapQuery')} name="mapQuery">
-              <TextInput
-                name="mapQuery"
-                defaultValue={site.mapQuery ?? ''}
-                readOnly={mapPanel.locked}
-              />
-            </Field>
-          </div>
+          {/*
+            ONE LINK BOX, NOT TWO DECIMAL BOXES (2026-09-06, owner-directed).
+
+            «خط العرض» and «خط الطول» asked a shop owner for two numbers they have no way of knowing.
+            What they DO have is what «مشاركة» in Google Maps or Waze puts on their clipboard, and
+            every one of those links carries the pair inside it — `parseMapLink` in
+            `src/shared/map-url.ts` extracts it in the action. The COLUMNS are unchanged, so the
+            storefront, the Waze deep link and the change-request payload all still see coordinates.
+
+            The box is pre-filled with a link REBUILT from the stored pair rather than left blank on
+            a shop that has a location, so «احفظ» on an untouched form is not a silent delete.
+          */}
+          <Field
+            label={t('dashboard', 'settings.mapLink')}
+            name="mapLink"
+            hint={t('dashboard', 'settings.mapLinkHint')}
+          >
+            <TextInput
+              name="mapLink"
+              defaultValue={storedMapLink ?? ''}
+              readOnly={mapPanel.locked}
+              inputMode="url"
+              dir="ltr"
+            />
+          </Field>
+
+          <Field
+            label={t('dashboard', 'settings.mapQuery')}
+            name="mapQuery"
+            hint={t('dashboard', 'settings.mapQueryHint')}
+          >
+            <TextInput
+              name="mapQuery"
+              defaultValue={site.mapQuery ?? ''}
+              readOnly={mapPanel.locked}
+            />
+          </Field>
 
           {mapPanel.locked ? <NoteField /> : null}
         </ActionForm>
+
+        {/*
+          A CHECK LINK for what is currently stored. Confirming the pin lands on the right shop is
+          the only way a merchant can tell a correct save from a plausible-looking one, and it costs
+          nothing to offer — the same button the operator's screen already had.
+        */}
+        {storedMapLink ? (
+          <p className="sbd-hint" style={{ marginBlockStart: 'var(--sb-space-4)' }}>
+            <a href={storedMapLink} target="_blank" rel="noreferrer noopener">
+              {t('dashboard', 'settings.mapCheck')}
+            </a>
+          </p>
+        ) : null}
       </Panel>
 
       <Panel

@@ -451,8 +451,18 @@ function visitsNote(reason: string | null): string {
  * glance rather than buried in a tooltip.
  */
 function FeatureRowView({ tenantId, row }: { tenantId: string; row: FeatureRow }) {
+  /**
+   * The row's id, posted with both its forms and returned as a fragment, so a toggle near the bottom
+   * of a thirty-row matrix does not throw the operator back to the page heading. See
+   * `admin/_components/return-anchor.ts` for why a server-action redirect does that at all.
+   */
+  const anchor = `feat-${row.key}`;
+
   return (
-    <div className={row.isOverridden ? 'sba-matrix-row sba-matrix-row--overridden' : 'sba-matrix-row'}>
+    <div
+      id={anchor}
+      className={row.isOverridden ? 'sba-matrix-row sba-matrix-row--overridden' : 'sba-matrix-row'}
+    >
       <div>
         <span className="sba-matrix-name">{t('admin', `features.${row.key}`)}</span>
         <span className="sba-matrix-default">
@@ -464,6 +474,7 @@ function FeatureRowView({ tenantId, row }: { tenantId: string; row: FeatureRow }
         <form action={setFeatureAction} className="sba-inline-form">
           <input type="hidden" name="tenantId" value={tenantId} />
           <input type="hidden" name="featureKey" value={row.key} />
+          <input type="hidden" name="anchor" value={anchor} />
           <FeatureControl row={row} />
         </form>
       </div>
@@ -473,6 +484,7 @@ function FeatureRowView({ tenantId, row }: { tenantId: string; row: FeatureRow }
           <form action={clearFeatureAction}>
             <input type="hidden" name="tenantId" value={tenantId} />
             <input type="hidden" name="featureKey" value={row.key} />
+            <input type="hidden" name="anchor" value={anchor} />
             <button type="submit" className="sba-btn sba-btn--sm">
               {t('admin', 'account.resetToPlan')}
             </button>
