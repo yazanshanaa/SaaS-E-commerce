@@ -46,6 +46,9 @@ export const mawid: TemplateDefinition = {
     // 16:9: the banner is the room itself — a wide, calm establishing shot, never a portrait.
     bannerAspect: '16:9',
     imageMask: 'arch',
+    // 12.C: a balanced header over an ending. موعد's contact block does the work above the fold.
+    header: 'centered',
+    footer: 'minimal',
   },
   /**
    * none · printed · framed · bottom.

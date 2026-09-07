@@ -46,6 +46,9 @@ export const matbakh: TemplateDefinition = {
     // ledger's facts keeps the fold honest on a phone.
     bannerAspect: '1:1',
     imageMask: 'notch',
+    // 12.C: a balanced header over a band — a kitchen's footer is its shopfront sign.
+    header: 'centered',
+    footer: 'band',
   },
   /**
    * ticket · stamp · tape · bottom.

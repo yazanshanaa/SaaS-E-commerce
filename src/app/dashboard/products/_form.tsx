@@ -52,6 +52,31 @@ export function ProductForm({
   const shekels = (agorot: number | null | undefined): string =>
     agorot === null || agorot === undefined ? '' : (agorot / 100).toString();
 
+  /**
+   * Does this product already USE anything in the advanced group?
+   *
+   * If it does, the disclosure arrives open. A merchant who tracks stock or wrote their own SEO
+   * title must not have to remember that those fields moved — the fold is there to spare the
+   * majority who never touch them, not to hide a field from the person already using it.
+   *
+   * `slug` is deliberately NOT a trigger even though it is in the group. Every saved product has
+   * one, generated from its name by `saveProductAction`, so testing it would open the disclosure for
+   * every product ever edited and the fold would do nothing at all. It counts as "in use" only via
+   * the fields a merchant had to type on purpose.
+   *
+   * `stockPolicy` is compared against `'untracked'` rather than checked for truthiness for the same
+   * reason: it is never null on a saved row, so truthiness would be true for everyone.
+   */
+  const usesAdvanced = Boolean(
+    product &&
+      (product.sku ||
+        product.badge ||
+        (product.tags?.length ?? 0) > 0 ||
+        (product.stockPolicy && product.stockPolicy !== 'untracked') ||
+        product.seoTitle ||
+        product.seoDescription),
+  );
+
   return (
     <ActionForm action={saveProductAction} submitLabel={submitLabel} aside={<BackLink href="/products" label={t('common', 'actions.back')} />}>
       {product ? <input type="hidden" name="id" value={product.id} /> : null}
@@ -105,10 +130,6 @@ export function ProductForm({
             ]}
           />
         </Field>
-
-        <Field label={t('dashboard', 'products.fields.sku')} name="sku">
-          <TextInput name="sku" defaultValue={product?.sku ?? ''} />
-        </Field>
       </div>
 
       <Field label={t('dashboard', 'products.fields.description')} name="description">
@@ -128,99 +149,6 @@ export function ProductForm({
         <TextArea name="careInstructions" defaultValue={product?.careInstructions ?? ''} rows={4} />
       </Field>
 
-      {flags.tags ? (
-        <Field
-          label={t('catalogue', 'tags.label')}
-          name="tags"
-          hint={t('catalogue', 'tags.hint', {
-            max: formatNumber(MAX_TAGS_PER_PRODUCT),
-            length: formatNumber(MAX_TAG_LENGTH),
-          })}
-        >
-          {/*
-            One comma-separated text input, not a chip editor. A chip editor needs client state,
-            and this dashboard has none anywhere (see `ActionForm`) — a merchant typing
-            «صيفي، قطن، تنزيلات» into one box gets the same result with no JavaScript, and the
-            normalisation that makes it safe lives server-side in `normaliseTags` either way.
-          */}
-          <TextInput name="tags" defaultValue={(product?.tags ?? []).join(LIST_SEPARATOR)} />
-        </Field>
-      ) : null}
-
-      <div className="sbd-grid">
-        <Field
-          label={t('dashboard', 'products.fields.slug')}
-          name="slug"
-          hint={t('dashboard', 'products.fields.slugHint')}
-        >
-          <TextInput name="slug" defaultValue={product?.slug ?? ''} />
-        </Field>
-
-        <Field
-          label={t('dashboard', 'products.fields.badge')}
-          name="badge"
-          hint={t('dashboard', 'products.fields.badgeHint')}
-        >
-          <TextInput name="badge" defaultValue={product?.badge ?? ''} />
-        </Field>
-      </div>
-
-      {flags.stockTracking ? (
-        <div className="sbd-grid">
-          <Field
-            label={t('catalogue', 'stock.policy')}
-            name="stockPolicy"
-            hint={t('catalogue', 'stock.policyHint')}
-          >
-            <Select
-              name="stockPolicy"
-              defaultValue={product?.stockPolicy ?? 'untracked'}
-              options={[
-                { value: 'untracked', label: t('catalogue', 'stock.policyOptions.untracked') },
-                {
-                  value: 'track_and_block',
-                  label: t('catalogue', 'stock.policyOptions.track_and_block'),
-                },
-                {
-                  value: 'track_and_allow',
-                  label: t('catalogue', 'stock.policyOptions.track_and_allow'),
-                },
-              ]}
-            />
-          </Field>
-
-          <Field
-            label={t('catalogue', 'stock.quantity')}
-            name="stockQty"
-            hint={t('catalogue', 'stock.quantityHint')}
-          >
-            <TextInput
-              name="stockQty"
-              defaultValue={product ? String(product.stockQty) : '0'}
-              inputMode="numeric"
-            />
-          </Field>
-
-          <Field
-            label={t('catalogue', 'stock.threshold')}
-            name="lowStockThreshold"
-            hint={t('catalogue', 'stock.thresholdHint', {
-              fallback: formatNumber(product?.lowStockThreshold ?? 3),
-            })}
-          >
-            <TextInput
-              name="lowStockThreshold"
-              defaultValue={
-                product?.lowStockThreshold === null || product?.lowStockThreshold === undefined
-                  ? ''
-                  : String(product.lowStockThreshold)
-              }
-              inputMode="numeric"
-            />
-          </Field>
-        </div>
-      ) : null}
-
       <div className="sbd-grid">
         <Checkbox
           name="published"
@@ -236,19 +164,158 @@ export function ProductForm({
       </div>
 
       {/*
-        SEO fields are always present on the product form and are NOT gated by `seo_tools`.
-        That flag gates the SITE-level editable metadata (docs/PHASES.md); baseline product
-        metadata ships on every plan from A2, and these two columns are part of the product
-        rather than a tool bolted onto it.
+        PHASE 12.D — EVERYTHING BELOW IS FOLDED AWAY BY DEFAULT.
+
+        The form showed fifteen fields at once, and a shop owner adding their tenth dress met «عنوان
+        الصفحة في محركات البحث» and «الرابط في المتجر» with the same visual weight as the price. Six
+        of the fifteen are things most merchants will never fill in and none of the six is required:
+        the server defaults the slug from the name, the SKU is optional, stock is `untracked` until
+        someone changes it, and both SEO columns fall back to the product's own name and description
+        (A2's baseline metadata ships on every plan regardless).
+
+        NATIVE `<details>`, for the reason `media-picker.tsx` writes out at length: this surface has
+        no client state anywhere, and a disclosure is keyboard-operable, screen-reader-announced and
+        focus-correct in every browser with no JavaScript. Critically it keeps the inputs INSIDE the
+        form — a folded field still posts, so nothing about `saveProductAction` changes and a value
+        already saved cannot be silently dropped by being out of sight.
+
+        OPEN WHEN IT IS ALREADY IN USE. A merchant who tracks stock or wrote their own SEO title
+        should not have to remember where those fields went; on those products the group arrives
+        expanded. Only a product that uses none of it gets the tidy form.
       */}
-      <div className="sbd-grid">
-        <Field label={t('dashboard', 'products.fields.seoTitle')} name="seoTitle">
-          <TextInput name="seoTitle" defaultValue={product?.seoTitle ?? ''} />
+      <details className="sbd-details" open={usesAdvanced}>
+        <summary>{t('dashboard', 'products.advanced.summary')}</summary>
+        <p className="sbd-details__hint">{t('dashboard', 'products.advanced.hint')}</p>
+
+        <div className="sbd-grid">
+          <Field
+            label={t('dashboard', 'products.fields.sku')}
+            name="sku"
+            hint={t('dashboard', 'products.fields.skuHint')}
+          >
+            <TextInput name="sku" defaultValue={product?.sku ?? ''} />
+          </Field>
+
+          <Field
+            label={t('dashboard', 'products.fields.badge')}
+            name="badge"
+            hint={t('dashboard', 'products.fields.badgeHint')}
+          >
+            <TextInput name="badge" defaultValue={product?.badge ?? ''} />
+          </Field>
+        </div>
+
+        {flags.tags ? (
+          <Field
+            label={t('catalogue', 'tags.label')}
+            name="tags"
+            hint={t('catalogue', 'tags.hint', {
+              max: formatNumber(MAX_TAGS_PER_PRODUCT),
+              length: formatNumber(MAX_TAG_LENGTH),
+            })}
+          >
+            {/*
+              One comma-separated text input, not a chip editor. A chip editor needs client state,
+              and this dashboard has none anywhere (see `ActionForm`) — a merchant typing
+              «صيفي، قطن، تنزيلات» into one box gets the same result with no JavaScript, and the
+              normalisation that makes it safe lives server-side in `normaliseTags` either way.
+            */}
+            <TextInput name="tags" defaultValue={(product?.tags ?? []).join(LIST_SEPARATOR)} />
+          </Field>
+        ) : null}
+
+        <Field
+          label={t('dashboard', 'products.fields.slug')}
+          name="slug"
+          hint={t('dashboard', 'products.fields.slugHint')}
+        >
+          <TextInput name="slug" defaultValue={product?.slug ?? ''} />
         </Field>
-        <Field label={t('dashboard', 'products.fields.seoDescription')} name="seoDescription">
-          <TextInput name="seoDescription" defaultValue={product?.seoDescription ?? ''} />
-        </Field>
-      </div>
+
+        {flags.stockTracking ? (
+          <div className="sbd-grid">
+            <Field
+              label={t('catalogue', 'stock.policy')}
+              name="stockPolicy"
+              hint={t('catalogue', 'stock.policyHint')}
+            >
+              <Select
+                name="stockPolicy"
+                defaultValue={product?.stockPolicy ?? 'untracked'}
+                options={[
+                  { value: 'untracked', label: t('catalogue', 'stock.policyOptions.untracked') },
+                  {
+                    value: 'track_and_block',
+                    label: t('catalogue', 'stock.policyOptions.track_and_block'),
+                  },
+                  {
+                    value: 'track_and_allow',
+                    label: t('catalogue', 'stock.policyOptions.track_and_allow'),
+                  },
+                ]}
+              />
+            </Field>
+
+            <Field
+              label={t('catalogue', 'stock.quantity')}
+              name="stockQty"
+              hint={t('catalogue', 'stock.quantityHint')}
+            >
+              <TextInput
+                name="stockQty"
+                defaultValue={product ? String(product.stockQty) : '0'}
+                inputMode="numeric"
+              />
+            </Field>
+
+            <Field
+              label={t('catalogue', 'stock.threshold')}
+              name="lowStockThreshold"
+              hint={t('catalogue', 'stock.thresholdHint', {
+                fallback: formatNumber(product?.lowStockThreshold ?? 3),
+              })}
+            >
+              <TextInput
+                name="lowStockThreshold"
+                defaultValue={
+                  product?.lowStockThreshold === null || product?.lowStockThreshold === undefined
+                    ? ''
+                    : String(product.lowStockThreshold)
+                }
+                inputMode="numeric"
+              />
+            </Field>
+          </div>
+        ) : null}
+
+        {/*
+          SEO fields are always present on the product form and are NOT gated by `seo_tools`.
+          That flag gates the SITE-level editable metadata (docs/PHASES.md); baseline product
+          metadata ships on every plan from A2, and these two columns are part of the product
+          rather than a tool bolted onto it.
+
+          12.D moved them inside the disclosure and gave them a hint that says what they DO, because
+          the labels alone («عنوان الصفحة في محركات البحث») describe a mechanism rather than a
+          benefit, and a shop owner reading them at the same weight as the price concluded, not
+          unreasonably, that the form was asking them for something they did not have.
+        */}
+        <div className="sbd-grid">
+          <Field
+            label={t('dashboard', 'products.fields.seoTitle')}
+            name="seoTitle"
+            hint={t('dashboard', 'products.fields.seoTitleHint')}
+          >
+            <TextInput name="seoTitle" defaultValue={product?.seoTitle ?? ''} />
+          </Field>
+          <Field
+            label={t('dashboard', 'products.fields.seoDescription')}
+            name="seoDescription"
+            hint={t('dashboard', 'products.fields.seoDescriptionHint')}
+          >
+            <TextInput name="seoDescription" defaultValue={product?.seoDescription ?? ''} />
+          </Field>
+        </div>
+      </details>
     </ActionForm>
   );
 }

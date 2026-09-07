@@ -11,7 +11,13 @@ import { analyticsDecision, pluralCount, ProductCard, StorefrontShell } from '@/
 import { CONSENT_COOKIE, readConsentCookie } from '../_data/consent';
 import { loadStorefrontContext } from '../_data/context';
 import { storefrontMetadata } from '../_data/metadata';
-import { countProducts, queryProducts } from '../_data/products';
+import {
+  countProducts,
+  isProductSort,
+  PRODUCT_SORTS,
+  queryProducts,
+  type ProductSort,
+} from '../_data/products';
 import { requireStorefront } from '../_data/surface';
 
 /**
@@ -42,6 +48,8 @@ interface PageProps {
     category?: string | string[];
     /** Phase 9. Same shape and same reasoning as `category` — see above. */
     tag?: string | string[];
+    /** Phase 12.B. Validated against `PRODUCT_SORTS`, never passed through to Prisma. */
+    sort?: string | string[];
     page?: string | string[];
   }>;
 }
@@ -74,6 +82,13 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
   const params = await searchParams;
   const category = firstParam(params.category);
   const tag = firstParam(params.tag);
+  /**
+   * Phase 12.B. A NON-DEFAULT sort is noindex for exactly the reason a tag filter is, and the
+   * arithmetic is worse: four orders across eight categories and ten tags is three hundred and
+   * twenty URLs whose content is one catalogue re-sequenced. `sort=featured` is not counted,
+   * because `buildHref` never emits it — the default order's URL is the canonical `/products`.
+   */
+  const sorted = isProductSort(firstParam(params.sort)) && firstParam(params.sort) !== 'featured';
 
   const categoryName = category
     ? context.categories.find((entry) => entry.key === category)?.name
@@ -90,7 +105,7 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
      * the pages that matter stop being visited. The `path` above deliberately stays the CANONICAL
      * category URL for the same reason.
      */
-    noindex: tag !== undefined,
+    noindex: tag !== undefined || sorted,
     suspended: surface.isSuspended,
   });
 }
@@ -128,11 +143,21 @@ export default async function ProductsPage({ searchParams }: PageProps) {
   // into the heading, a place to put text of their choosing on someone else's shop.
   const activeTag = facets.some((facet) => facet.tag === requestedTag) ? requestedTag : undefined;
 
+  /**
+   * PHASE 12.B. Validated against the closed set in `_data/products.ts`, never forwarded raw — the
+   * same rule `?tag=` follows twenty lines up. An unrecognised `?sort=` falls back to `featured`
+   * rather than 404ing, because the common source of one is a stale share link, and the merchant's
+   * own arrangement is the right answer to "I do not understand this parameter".
+   */
+  const requestedSort = firstParam(params.sort);
+  const activeSort: ProductSort = isProductSort(requestedSort) ? requestedSort : 'featured';
+
   const page = pageNumber(params.page);
   const [products, total] = await Promise.all([
     queryProducts(context.tenantId, {
       categoryKey: activeCategory,
       tag: activeTag,
+      sort: activeSort,
       take: PAGE_SIZE,
       skip: (page - 1) * PAGE_SIZE,
     }),
@@ -184,9 +209,17 @@ export default async function ProductsPage({ searchParams }: PageProps) {
                icon target, which put every Arabic category name in this filter row inside a
                circle the size of a glyph. */
             <nav className="sf-chips" aria-label={t('storefront', 'products.filterLabel')}>
+              {/*
+                Phase 12.B routed these two through `buildHref` as well. They were hand-built
+                strings, so changing department silently threw away the visitor's chosen ORDER —
+                and a control that resets itself when you use the control next to it reads as
+                broken. The TAG is still dropped on a department change, which is deliberate and
+                different: a tag belongs to the department it was offered in, and «تنزيلات» under
+                «فساتين» is not the same set as «تنزيلات» under «أحذية».
+              */}
               <a
                 className="sf-btn sf-btn--ghost"
-                href="/products"
+                href={buildHref(undefined, undefined, 1, activeSort)}
                 aria-current={activeCategory ? undefined : 'page'}
               >
                 {t('storefront', 'products.filterAll')}
@@ -195,7 +228,7 @@ export default async function ProductsPage({ searchParams }: PageProps) {
                 <a
                   key={entry.key}
                   className="sf-btn sf-btn--ghost"
-                  href={`/products?category=${encodeURIComponent(entry.key)}`}
+                  href={buildHref(entry.key, undefined, 1, activeSort)}
                   aria-current={activeCategory === entry.key ? 'page' : undefined}
                 >
                   {entry.name}
@@ -218,7 +251,7 @@ export default async function ProductsPage({ searchParams }: PageProps) {
             <nav className="sf-chips" aria-label={t('catalogue', 'tags.filterLabel')}>
               <a
                 className="sf-btn sf-btn--ghost"
-                href={buildHref(activeCategory, undefined, 1)}
+                href={buildHref(activeCategory, undefined, 1, activeSort)}
                 aria-current={activeTag ? undefined : 'page'}
               >
                 {t('catalogue', 'tags.filterAll')}
@@ -227,10 +260,42 @@ export default async function ProductsPage({ searchParams }: PageProps) {
                 <a
                   key={facet.tag}
                   className="sf-btn sf-btn--ghost"
-                  href={buildHref(activeCategory, facet.tag, 1)}
+                  href={buildHref(activeCategory, facet.tag, 1, activeSort)}
                   aria-current={activeTag === facet.tag ? 'page' : undefined}
                 >
                   {facet.tag}
+                </a>
+              ))}
+            </nav>
+          ) : null}
+
+          {/*
+            PHASE 12.B — THE ORDER CONTROL, and it is four links rather than a `<select>`.
+
+            The file's opening comment settled the mechanism years before this row existed: "on Fast
+            3G a filter that needs a bundle to work is a filter that does not work". A `<select>`
+            needs an onChange handler to navigate, so it is dead until hydration and invisible to a
+            crawler; four anchors are shareable, bookmarkable, work with the back button, and are
+            already styled by the two rows above.
+
+            It draws only when there is more than one product to order. A sort control over a
+            single item is noise that makes a new shop look emptier, not richer — the same
+            content-awareness rule `buildDefaultSections` follows.
+
+            Every chip carries the CURRENT category, tag and a reset to page 1: changing the order
+            of a filtered list must keep the filter, and must not leave the visitor on page 3 of a
+            sequence that has just been rearranged underneath them.
+          */}
+          {total > 1 ? (
+            <nav className="sf-chips" aria-label={t('storefront', 'products.sortLabel')}>
+              {PRODUCT_SORTS.map((option) => (
+                <a
+                  key={option}
+                  className="sf-btn sf-btn--ghost"
+                  href={buildHref(activeCategory, activeTag, 1, option)}
+                  aria-current={activeSort === option ? 'page' : undefined}
+                >
+                  {t('storefront', `products.sort.${option}`)}
                 </a>
               ))}
             </nav>
@@ -272,7 +337,7 @@ export default async function ProductsPage({ searchParams }: PageProps) {
                   key={number}
                   className="sf-btn sf-btn--ghost"
                   aria-current={number === page ? 'page' : undefined}
-                  href={buildHref(activeCategory, activeTag, number)}
+                  href={buildHref(activeCategory, activeTag, number, activeSort)}
                 >
                   {number}
                 </a>
@@ -297,10 +362,18 @@ function buildHref(
   category: string | undefined,
   tag: string | undefined,
   page: number,
+  /**
+   * Phase 12.B. Dropped when it is `featured` for the same reason `page` is dropped when it is 1:
+   * the canonical URL of the unfiltered, unsorted first page has to stay exactly `/products`, which
+   * is the address the sitemap, the header nav and `generateMetadata` all already use. A
+   * `?sort=featured` that means "the default" would be a second URL for one page.
+   */
+  sort: ProductSort = 'featured',
 ): string {
   const params = new URLSearchParams();
   if (category) params.set('category', category);
   if (tag) params.set('tag', tag);
+  if (sort !== 'featured') params.set('sort', sort);
   if (page > 1) params.set('page', String(page));
   const query = params.toString();
   return query ? `/products?${query}` : '/products';

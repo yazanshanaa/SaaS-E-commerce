@@ -52,6 +52,34 @@ export default async function DashboardHomePage() {
         }
       />
 
+      {/*
+        PHASE 12.A — A CATALOGUE WITH NO PHOTOGRAPHS, said once, at the top, in the merchant's own
+        terms.
+
+        The checklist below already carries «ارفع أول صورة لمكتبة الصور», and it was not enough: it
+        is one line of six, four panels down, and it reads as a suggestion. The live audit of
+        2026-09-07 found a real shop with a full catalogue and `img` element count of ZERO — every
+        hero, category and product slot rendering the no-image state — which is the single largest
+        reason a storefront built on this platform looks unfinished.
+
+        Deliberately NOT shown to a brand-new empty account: with no products either, this is the
+        ordinary first minute of an account and the checklist is the right, calmer instrument. The
+        warning exists for the shop that thinks it is finished.
+      */}
+      {stats.media === 0 && stats.products > 0 ? (
+        <div className="sbd-notice sbd-notice--warn" role="status">
+          <strong>{t('dashboard', 'home.noMediaTitle')}</strong>
+          <p>
+            {t('dashboard', 'home.noMediaBody', { products: formatNumber(stats.products) })}
+          </p>
+          <p>
+            <Link className="sbd-btn sbd-btn--primary" href="/media">
+              {t('dashboard', 'home.noMediaAction')}
+            </Link>
+          </p>
+        </div>
+      ) : null}
+
       <SalesPanel kpis={kpis} stats={stats} />
       <StatusPanel kpis={kpis} />
       <RecentOrdersPanel kpis={kpis} />

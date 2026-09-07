@@ -104,31 +104,76 @@ describe('row-level security coverage', () => {
    * relation, and the day someone drops the FK to slip past this check, the cascade that protects
    * the tenant's data goes with it and half the suite fails first.
    */
+  /**
+   * PHASE 12.D — DECORRELATED, ASSERTING EXACTLY THE SAME THING, AND NO LONGER THE SUITE'S ONE
+   * FLAKE.
+   *
+   * This test timed out at vitest's 60s ceiling on three of five full sweeps on 2026-09-07, and
+   * twice the first read of the log looked like a real isolation defect. It was not: the shape of
+   * the query was the problem.
+   *
+   * The `EXISTS` was CORRELATED on `tc.table_name = g.table_name`, so the three-way
+   * `information_schema` join re-ran once per grant row — roughly forty tables × three privileges,
+   * i.e. ~120 executions of a join over views that Postgres builds on the fly over `pg_catalog`
+   * with per-row privilege filters. The sibling test below scans ONE of those views flatly and
+   * finishes in 253ms; this one is the only query in the suite shaped like that, and it is the only
+   * one that ever timed out.
+   *
+   * Hoisting the subquery into a CTE computes the tenant-owned set ONCE and inner-joins it.
+   * `EXISTS(… AND tc.table_name = g.table_name)` is by definition `g.table_name ∈ {that set}`, and
+   * `DISTINCT` stops the join multiplying rows, so the assertion is unchanged — this is the same
+   * question asked in a way the planner can answer.
+   *
+   * A LONGER TIMEOUT WOULD HAVE BEEN THE WRONG FIX. It would have kept a 60-second query in a suite
+   * that runs on every gate, and the next contended machine would simply have moved the flake to
+   * whatever margin was granted.
+   */
   it('gives app_system no write grant on any table that belongs to a live tenant', async () => {
-    const writable = await withDb(async (c) => {
-      const { rows } = await c.query<{ table_name: string; privilege_type: string }>(`
-        SELECT g.table_name, g.privilege_type
-        FROM information_schema.role_table_grants g
-        WHERE g.grantee = 'app_system'
-          AND g.privilege_type IN ('INSERT','UPDATE','DELETE')
-          AND EXISTS (
-            SELECT 1
-            FROM information_schema.table_constraints tc
-            JOIN information_schema.key_column_usage kcu
-              ON kcu.constraint_name = tc.constraint_name
-             AND kcu.constraint_schema = tc.constraint_schema
-            JOIN information_schema.constraint_column_usage ccu
-              ON ccu.constraint_name = tc.constraint_name
-             AND ccu.constraint_schema = tc.constraint_schema
-            WHERE tc.constraint_type = 'FOREIGN KEY'
-              AND tc.table_schema = 'public'
-              AND tc.table_name = g.table_name
-              AND kcu.column_name = 'tenant_id'
-              AND ccu.table_name = 'tenants'
-          )
+    const { writable, tenantOwned } = await withDb(async (c) => {
+      const { rows } = await c.query<{ table_name: string; privilege_type: string | null }>(`
+        WITH tenant_owned AS (
+          SELECT DISTINCT tc.table_name
+          FROM information_schema.table_constraints tc
+          JOIN information_schema.key_column_usage kcu
+            ON kcu.constraint_name = tc.constraint_name
+           AND kcu.constraint_schema = tc.constraint_schema
+          JOIN information_schema.constraint_column_usage ccu
+            ON ccu.constraint_name = tc.constraint_name
+           AND ccu.constraint_schema = tc.constraint_schema
+          WHERE tc.constraint_type = 'FOREIGN KEY'
+            AND tc.table_schema = 'public'
+            AND kcu.column_name = 'tenant_id'
+            AND ccu.table_name = 'tenants'
+        )
+        SELECT t.table_name, g.privilege_type
+        FROM tenant_owned t
+        LEFT JOIN information_schema.role_table_grants g
+          ON g.table_name = t.table_name
+         AND g.grantee = 'app_system'
+         AND g.privilege_type IN ('INSERT','UPDATE','DELETE')
       `);
-      return rows.map((r) => `${r.table_name}:${r.privilege_type}`);
+
+      return {
+        writable: rows
+          .filter((r) => r.privilege_type !== null)
+          .map((r) => `${r.table_name}:${r.privilege_type}`),
+        tenantOwned: new Set(rows.map((r) => r.table_name)).size,
+      };
     });
+
+    /**
+     * THE VACUOUS PASS IS GUARDED, which the original was not.
+     *
+     * Both the old shape and the new one return an empty list when the tenant-owned SET comes back
+     * empty — a renamed `tenants` table, a dropped foreign key, a schema that failed to migrate —
+     * and an empty list is what "no offenders" looks like. So the strongest isolation check in the
+     * suite could have passed while testing nothing at all. The `LEFT JOIN` exists for this: it
+     * keeps one row per tenant-owned table whether or not it has an offending grant, so the count
+     * is observable and the test can refuse to pass on an empty schema.
+     */
+    expect(tenantOwned, 'no tenant-owned tables found — this test would pass vacuously').toBeGreaterThan(
+      10,
+    );
 
     // A SystemJob that tries to write a tenant-owned table is refused by Postgres, not by a
     // code review.

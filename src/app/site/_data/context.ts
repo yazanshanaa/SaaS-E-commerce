@@ -16,6 +16,7 @@ import {
 } from '@/shared/site-contract';
 import {
   buildDefaultSections,
+  DEFAULT_ARRANGEMENT_WINDOWS,
   getTemplate,
   isCustomHtmlAllowed,
   isRenderableSocialUrl,
@@ -617,8 +618,24 @@ async function loadTenantSource(tenantId: string): Promise<TenantSource> {
    * configs — widest wins, exactly as `pinnedCategoryLimits` takes the larger of two limits — so a
    * page with neither section runs neither query.
    */
-  const arrivals = windowFor(storedSections, 'new_arrivals', { days: 7, take: 8 });
-  const sellers = windowFor(storedSections, 'best_sellers', { days: 90, take: 4 });
+  /**
+   * PHASE 12.A. A page with NO stored sections runs the default arrangement, which now contains
+   * both rails — so "the page has none" and "the page has not been arranged" are different
+   * questions and only the first one `windowFor` can answer.
+   *
+   * `storedSections` is empty for every tenant before a merchant opens «أقسام الموقع», which is
+   * most of them and all of the new ones. Leaving the null through meant `buildDefaultSections`
+   * would plan a `new_arrivals` block against `source.newArrivals === []` — a heading over nothing.
+   * The windows come from `DEFAULT_ARRANGEMENT_WINDOWS` rather than from a literal here, so the
+   * query and the section config cannot drift apart.
+   */
+  const usingDefaultArrangement = storedSections.length === 0;
+  const arrivals = usingDefaultArrangement
+    ? DEFAULT_ARRANGEMENT_WINDOWS.new_arrivals
+    : windowFor(storedSections, 'new_arrivals', { days: 7, take: 8 });
+  const sellers = usingDefaultArrangement
+    ? DEFAULT_ARRANGEMENT_WINDOWS.best_sellers
+    : windowFor(storedSections, 'best_sellers', { days: 90, take: 4 });
 
   const [, newArrivals, bestSellers] = await Promise.all([
     Promise.all(
@@ -909,6 +926,33 @@ function composeTenantData(source: TenantSource, access: StorefrontAccess): Cach
           hasContact: source.hasContact || socialLinks.length > 0,
           hasLocation: source.hasLocation,
           gridColumns: template.layout.gridColumns,
+
+          /*
+            PHASE 12.A. Every one of these is read from the ALREADY-GATED local, never from
+            `source.*` — and the distinction is the whole safety argument for widening the default
+            arrangement.
+
+            `banners`, `trustBadges`, `storeStats` and `openingHours` were each computed above as
+            `entitlement && data`, so an أساسي tenant sees `[]` here no matter how many rows its
+            tables hold. That makes the default arrangement for a basic-plan shop byte-identical to
+            the one it renders today: the new sections are false at the input, before
+            `hiddenSectionTypes` downstream gets its second, independent chance to remove them.
+            Reading `source.banners` instead would have put a plan-locked section into the plan's
+            own home page and relied on that second layer alone.
+          */
+          hasBanners: banners.length > 0,
+          hasSearch: access.searchInsights && source.searchEnabled,
+          hasTrustBadges: trustBadges.length > 0,
+          hasOpeningHours: openingHours.length > 0,
+          hasStoreStats: storeStats.length > 0,
+          /*
+            These two are `source.*` because there is no entitlement on them — both rails read the
+            catalogue the visitor can already browse, and both queries above returned [] unless the
+            arrangement asked for them. An empty array here is therefore "this shop has no product
+            new enough / no product at all", which is exactly the content-awareness question.
+          */
+          hasNewArrivals: source.newArrivals.length > 0,
+          hasBestSellers: source.bestSellers.length > 0,
         });
 
   return {

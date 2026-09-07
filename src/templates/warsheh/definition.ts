@@ -50,6 +50,9 @@ export const warsheh: TemplateDefinition = {
      * that gave this template a `ledger` hero and a `spec` card body.
      */
     imageMask: 'square',
+    // 12.C: the catalogue posture — nav on its own row — over a directory footer.
+    header: 'split',
+    footer: 'columns',
   },
   /**
    * The only template in the nine that takes NO heading mark, and that is the point.

@@ -220,6 +220,39 @@ export interface TemplateLayout {
    *            whose items are priced, listed and compared (سوق نيون, مطبخ, جهاز).
    */
   imageMask: 'square' | 'arch' | 'notch';
+  /**
+   * PHASE 12.C, the fifth structural axis — and the one that was missing for the worst reason.
+   *
+   * `components/site-header.tsx` never read `template` at all. Nine templates, nine palettes, nine
+   * type scales, four ornament axes — and the first two hundred pixels of every one of them were
+   * byte-identical. A visitor forms an impression of a shop before scrolling; the header is most of
+   * what they have to form it from, and it was the one part the template system did not reach.
+   *
+   * `split` — brand and tools on one row, the nav on a ruled row of its own beneath them,
+   *           inline-start aligned. The catalogue posture: it gives the nav room to grow and reads
+   *           as a tool rather than as decoration (ورشة, رفّ, جهاز).
+   * `stacked` — a masthead. Brand centred on its own row, nav centred under it. Slower, and the
+   *           slowness is the point: it is the posture of a shop that expects to be browsed
+   *           (سوق نيون, دار, بيت).
+   * `centered` — brand at the inline-start, nav on the optical centre, tools at the end. The
+   *           balanced general-retail default (ديوان, مطبخ, موعد).
+   *
+   * Selected by CSS from `data-header` on `.sf-root`. The MARKUP is identical for all three — the
+   * rule Phase 9 set for the `overlay` card body and Phase 11 kept for the whole ornament layer —
+   * so `.sf-header__inner` is one grid whose template areas change, not three components.
+   */
+  header: 'centered' | 'split' | 'stacked';
+  /**
+   * PHASE 12.C, the sixth structural axis. Same story as `header`, same mechanism.
+   *
+   * `columns` — the auto-fit column grid. Right for a shop with hours, an address and a phone to
+   *           show (ديوان, ورشة, بيت).
+   * `minimal` — one centred stack: name, links, legal. Right when the footer is an ending rather
+   *           than a directory (دار, موعد, جهاز).
+   * `band`   — the identity block on a filled `--t-surface-alt` band, the rest on the page ground
+   *           beneath it. Right for a shop whose footer is also a sign (سوق نيون, رفّ, مطبخ).
+   */
+  footer: 'columns' | 'minimal' | 'band';
 }
 
 /**

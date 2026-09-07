@@ -188,7 +188,19 @@
 .sbk-rail {
   border-inline-end: 1px solid var(--sbx-hairline);
   background: var(--sbx-panel-alt);
-  padding: var(--sb-space-5) var(--sb-space-3);
+  /*
+    PHASE 12.D — `--sb-space-5` DOES NOT EXIST, and this declaration has therefore never applied.
+    The scale in `globals.css` is 1, 2, 3, 4, 6, 8, 12; there is no 5. An undefined custom property
+    makes the whole SHORTHAND invalid at computed-value time — not just the one component — so the
+    rail has been rendering at `padding: 0` since the kit shipped, with its group headings and the
+    first nav row flush against the hairline. Silent by construction: no parse error, no console
+    warning, and a rail that merely looks a little tight.
+
+    16px block against 12px inline is the nearest expressible reading of what was written: the
+    author asked for more room above and below than at the sides, and 4 (16px) is the step below
+    the 24px that would have pushed the first group off a short viewport.
+  */
+  padding: var(--sb-space-4) var(--sb-space-3);
   display: flex;
   flex-direction: column;
   gap: var(--sb-space-4);

@@ -15,6 +15,7 @@ import {
   buildDefaultSections,
   buildOrderUrl,
   CUSTOM_HTML_FEATURE_KEY,
+  DEFAULT_ARRANGEMENT_WINDOWS,
   fillOrderMessage,
   getTemplate,
   isCustomHtmlAllowed,
@@ -283,7 +284,8 @@ describe('the permanent legal footer (placeholders Phase 6 fills)', () => {
 });
 
 describe('default sections for a site nobody has arranged yet', () => {
-  const everything = {
+  /** The six inputs that existed before Phase 12.A, all true. */
+  const preExisting = {
     hasProducts: true,
     hasCategories: true,
     hasAbout: true,
@@ -292,6 +294,29 @@ describe('default sections for a site nobody has arranged yet', () => {
     hasContact: true,
     hasLocation: true,
     gridColumns: 3 as const,
+  };
+
+  /** Phase 12.A's nine, all false — which is a basic-plan shop, and the regression guard below. */
+  const noExtras = {
+    hasBanners: false,
+    hasSearch: false,
+    hasTrustBadges: false,
+    hasOpeningHours: false,
+    hasStoreStats: false,
+    hasNewArrivals: false,
+    hasBestSellers: false,
+  };
+
+  /** A pro shop that has filled in everything the platform offers. */
+  const everything = {
+    ...preExisting,
+    hasBanners: true,
+    hasSearch: true,
+    hasTrustBadges: true,
+    hasOpeningHours: true,
+    hasStoreStats: true,
+    hasNewArrivals: true,
+    hasBestSellers: true,
   };
 
   it('always leads with a hero, so the page has an h1', () => {
@@ -308,10 +333,55 @@ describe('default sections for a site nobody has arranged yet', () => {
       hasContact: false,
       hasLocation: false,
       gridColumns: 3,
+      ...noExtras,
     });
 
     // An empty "آراء الزبائن" heading looks broken in a way an absent one does not.
     expect(bare.map((section) => section.type)).toEqual(['hero']);
+  });
+
+  /**
+   * PHASE 12.A's SAFETY PROPERTY, and the one test that has to stay green forever.
+   *
+   * `context.ts` computes every new input as `entitlement && data`, so an أساسي tenant passes false
+   * for all seven no matter how many rows its Phase 9 tables hold. This pins the consequence: the
+   * arrangement such a tenant renders is byte-identical to the one it rendered before the default
+   * list grew. Widening a default is only safe while this holds.
+   */
+  it('renders the pre-12.A arrangement, unchanged, when every new input is false', () => {
+    expect(buildDefaultSections({ ...preExisting, ...noExtras }).map((s) => s.type)).toEqual([
+      'hero',
+      'announcements',
+      'categories',
+      'products_grid',
+      'about',
+      'testimonials',
+      'contact_whatsapp',
+      'map',
+    ]);
+  });
+
+  it('plans the full fifteen in the designed reading order when the content exists', () => {
+    expect(buildDefaultSections(everything).map((section) => section.type)).toEqual([
+      'hero',
+      'announcements',
+      // A scheduled promotion, then a way to skip straight past the merchandising.
+      'banner_slider',
+      'search_bar',
+      'categories',
+      'new_arrivals',
+      'products_grid',
+      'best_sellers',
+      // The objection-handling row goes UNDER the catalogue: an objection needs a want first.
+      'trust_badges',
+      'about',
+      'store_stats',
+      'testimonials',
+      // Hours immediately before contact, because they answer the same question.
+      'opening_hours',
+      'contact_whatsapp',
+      'map',
+    ]);
   });
 
   it('normalises through the same zod schemas a stored section goes through', () => {
@@ -319,9 +389,89 @@ describe('default sections for a site nobody has arranged yet', () => {
     expect(grid?.config).toMatchObject({ limit: 12, columns: 3, showPrices: true });
   });
 
+  /**
+   * The bug documented on `productsGridConfig.columns` in `site-contract/sections.ts`, guarded on
+   * the two rails 12.A added: the renderer reads `config.columns ?? template.layout.gridColumns`,
+   * so writing a number here would flatten نيون's two large columns and ورشة's four dense ones
+   * into whichever count this file happened to choose. Absence is the meaningful value.
+   */
+  it('leaves the new rails without a column count so each template keeps its own grid', () => {
+    const sections = buildDefaultSections(everything);
+
+    for (const type of ['new_arrivals', 'best_sellers'] as const) {
+      const section = sections.find((s) => s.type === type);
+      expect(section, type).toBeDefined();
+      expect(section?.config).not.toHaveProperty('columns');
+    }
+  });
+
+  /**
+   * The query in `context.ts` and the section config have to ask for the SAME window, or the rail
+   * renders a heading over rows the source builder never fetched. One constant, two readers.
+   */
+  it('asks for exactly the window context.ts pre-fetches for the default arrangement', () => {
+    const sections = buildDefaultSections(everything);
+
+    expect(sections.find((s) => s.type === 'new_arrivals')?.config).toMatchObject({
+      days: DEFAULT_ARRANGEMENT_WINDOWS.new_arrivals.days,
+      limit: DEFAULT_ARRANGEMENT_WINDOWS.new_arrivals.take,
+    });
+    expect(sections.find((s) => s.type === 'best_sellers')?.config).toMatchObject({
+      days: DEFAULT_ARRANGEMENT_WINDOWS.best_sellers.days,
+      limit: DEFAULT_ARRANGEMENT_WINDOWS.best_sellers.take,
+    });
+  });
+
   it('keeps sort order contiguous so the renderer needs no re-sorting', () => {
     const sections = buildDefaultSections(everything);
     expect(sections.map((section) => section.sort)).toEqual(sections.map((_, index) => index));
+  });
+});
+
+describe('the default arrangement and its pre-fetch cannot drift apart', () => {
+  const source = readFileSync(
+    path.join(repoRoot, 'src', 'app', 'site', '_data', 'context.ts'),
+    'utf8',
+  );
+
+  /**
+   * `windowFor()` reads the page's STORED sections and returns null when there are none — which is
+   * every tenant before a merchant opens «أقسام الموقع». Without the fallback, 12.A's two rails
+   * would have been planned against arrays the cached source builder never populated.
+   */
+  it('falls back to the shared windows when the page has no stored arrangement', () => {
+    expect(source).toContain('usingDefaultArrangement');
+    expect(source).toContain('DEFAULT_ARRANGEMENT_WINDOWS.new_arrivals');
+    expect(source).toContain('DEFAULT_ARRANGEMENT_WINDOWS.best_sellers');
+  });
+
+  /**
+   * The plan-locked four are read from the ALREADY-GATED locals, never from `source.*`. Reading the
+   * raw source rows would put a section a plan does not include into that plan's own home page and
+   * lean entirely on `hiddenSectionTypes` to take it back out again.
+   */
+  it('feeds the gated locals into buildDefaultSections, not the raw source rows', () => {
+    const call = source.slice(source.indexOf('buildDefaultSections({'));
+    /**
+     * COMMENTS STRIPPED FIRST, and the first draft of this test is why.
+     *
+     * The call site carries a block comment explaining that reading `source.banners` would defeat
+     * the gating — so a bare `not.toContain('source.banners')` matched the explanation and failed
+     * on correct code. Its three siblings passed only because the same comment happened to spell
+     * those names without the `source.` prefix, which is a test that reports on prose. Assert on
+     * the assignment shape instead: `hasX: source.…` is the actual mistake being guarded against,
+     * and it cannot appear inside a comment that has been removed.
+     */
+    const body = call.slice(0, call.indexOf('});')).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '');
+
+    expect(body).toContain('hasBanners: banners.length > 0');
+    expect(body).toContain('hasTrustBadges: trustBadges.length > 0');
+    expect(body).toContain('hasOpeningHours: openingHours.length > 0');
+    expect(body).toContain('hasStoreStats: storeStats.length > 0');
+
+    for (const key of ['hasBanners', 'hasTrustBadges', 'hasOpeningHours', 'hasStoreStats']) {
+      expect(body, key).not.toMatch(new RegExp(`${key}:\\s*source\\.`));
+    }
   });
 });
 

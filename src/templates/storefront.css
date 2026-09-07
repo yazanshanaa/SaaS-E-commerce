@@ -187,14 +187,94 @@
 */
 .sf-header__inner {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: var(--t-space-lg);
   padding-block: var(--t-space-md);
+
+  /*
+    PHASE 12.C — ONE GRID, THREE POSTURES, IDENTICAL MARKUP.
+
+    `site-header.tsx` renders brand, nav and tools in that source order and does not know which
+    template it is on. Naming the three children as grid AREAS is what lets `data-header` rearrange
+    them in CSS: a `split` header needs the nav BELOW the brand and a `stacked` one needs it below
+    and centred, and neither is expressible by reordering flex items without also changing the
+    element order for a screen reader. Areas move the boxes and leave the document alone.
+
+    The three columns and the centred nav below are the `centered` posture — what all nine
+    templates rendered before this — so a template that somehow reached the browser without the
+    attribute still gets the old header rather than an unstyled one.
+  */
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-areas: 'brand nav tools';
 }
 
 .sf-header__inner > * {
   min-inline-size: 0;
+}
+
+.sf-header__inner > .sf-brand {
+  grid-area: brand;
+}
+
+.sf-header__inner > .sf-nav {
+  grid-area: nav;
+}
+
+.sf-header__inner > .sf-header__tools {
+  grid-area: tools;
+}
+
+/*
+  `split` — the catalogue posture (ورشة, رفّ, جهاز).
+
+  Brand and tools hold one row; the nav drops to a ruled row of its own, aligned to the inline
+  start. The rule is on the NAV rather than on the row, so a header whose nav is the only thing in
+  that row does not draw a line across the tools above it.
+
+  Why the nav gets a whole row on exactly these three: they are the templates whose shops have the
+  most departments, and a nav that has to compete for a centre track with a long Arabic shop name
+  is the first thing to wrap. Given the row it never wraps, and it reads as a tool.
+*/
+[data-header='split'] .sf-header__inner {
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'brand tools'
+    'nav   nav';
+  gap: var(--t-space-sm) var(--t-space-lg);
+}
+
+[data-header='split'] .sf-nav {
+  justify-content: flex-start;
+  border-block-start: var(--t-rule-hair);
+  padding-block-start: var(--t-space-sm);
+}
+
+/*
+  `stacked` — the masthead (سوق نيون, دار, بيت).
+
+  Brand centred on its own row, nav centred beneath it, tools tucked to the end of the brand row so
+  a search box does not push the name off centre. `justify-self: center` on the brand rather than
+  `text-align`, because `.sf-brand` is a flex row carrying an optional logo and the logo has to
+  travel with the text.
+
+  It costs vertical space on purpose. These are the three shops meant to be browsed rather than
+  searched, and a masthead is the cheapest way a page says so before anything has loaded.
+*/
+[data-header='stacked'] .sf-header__inner {
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-areas:
+    '.   brand tools'
+    'nav nav   nav';
+  gap: var(--t-space-md) var(--t-space-lg);
+  padding-block: var(--t-space-lg);
+}
+
+[data-header='stacked'] .sf-brand {
+  justify-self: center;
+}
+
+[data-header='stacked'] .sf-nav {
+  justify-content: center;
 }
 
 .sf-header__tools {
@@ -298,9 +378,31 @@
   `justify-content` is directly above and would have silently taken the mobile block's place.
 */
 @media (max-width: 45rem) {
-  .sf-header__inner {
+  /*
+    ONE COLUMN, AND THE AREAS HAVE TO GO WITH IT (Phase 12.C).
+
+    `grid-template-areas` implies its own column count, so a one-column `grid-template-columns` under
+    a three-column area map does not produce one column — it produces one explicit track and two
+    IMPLICIT ones, which is the three-column header this block exists to undo. Dropping the map is
+    what lets the `order` rules below take over, and they are what the phone layout has always been
+    built on.
+
+    The selector carries `[data-header]` so it outranks the two posture blocks above at equal
+    specificity plus source order; the bare class stays for the default posture, which sets its map
+    at (0,1,0).
+  */
+  .sf-header__inner,
+  [data-header] .sf-header__inner {
     grid-template-columns: 1fr;
+    grid-template-areas: none;
     gap: var(--t-space-sm);
+    padding-block: var(--t-space-md);
+  }
+
+  .sf-header__inner > .sf-brand,
+  .sf-header__inner > .sf-nav,
+  .sf-header__inner > .sf-header__tools {
+    grid-area: auto;
   }
 
   .sf-header__tools {
@@ -315,6 +417,15 @@
   .sf-nav {
     order: 2;
     justify-content: center;
+  }
+
+  /*
+    `split`'s hairline is the one posture detail that survives to the phone: it still separates the
+    nav from the brand, which is the whole of what the posture says. `stacked`'s centred brand
+    survives too — a masthead shop is still a masthead shop at 390px.
+  */
+  [data-header='split'] .sf-nav {
+    padding-block-start: var(--t-space-sm);
   }
 }
 
@@ -468,28 +579,39 @@
   place-items: center;
   block-size: 100%;
   /*
-    A HAIRLINE HATCH IN `--t-border`, not two bands of surface tones.
+    A CALM GROUND AND A FRAME — not a hatch. Phase 12.A, and the reason is a whole-page effect the
+    per-element reasoning could not see.
 
-    It used to alternate `--t-surface-alt` and `--t-surface`, and on a light palette those two are
-    derived from each other: `surfaceAlt = mix(surface, text, 0.05)`, which on ديوان is #F4F2ED
-    against #FFFDF8 and on رفّ is #F3F4F3 against #FFFFFF — 1.03:1. The "deliberate no-image state"
-    was therefore invisible on every light template, so a merchant's first day looked like a blank
-    box rather than like a decision, which is the one thing the state exists to avoid.
+    The hatch it replaces was right about the problem and wrong about the scale. Its note (kept
+    below, because the constraint it records is still binding) was written against ONE placeholder
+    sitting in a grid of real photographs, where a 1px-every-9px texture in `--t-border` reads as a
+    deliberately empty slot. The live audit of 2026-09-07 found the case it was never tested
+    against: a shop where `document.querySelectorAll('img').length === 0` — hero, categories and
+    every product card, all placeholder. Forty tiled hatches do not read as forty decisions. They
+    read as a stylesheet that failed to load, which is the exact impression the state exists to
+    prevent, arrived at from the other direction.
 
-    `--t-border` is the only token guaranteed to be visible against the page: the guard holds it to
-    3:1 as non-text UI. At 1px every 9px it reads as a texture rather than as stripes, which is why
-    the contrast is safe to spend here — a 10px band of a 3:1 colour would be loud enough to fight
-    the product photograph that replaces it.
+    THE CONSTRAINT THAT SURVIVES: `--t-surface-alt` alone is invisible on a light template —
+    `surfaceAlt = mix(surface, text, 0.05)` is 1.03:1 against ديوان's page. So the box is still
+    made visible by `--t-border`, the one token the guard holds to 3:1 as non-text UI. It is spent
+    on a HAIRLINE FRAME instead of on a fill pattern: the same guarantee, one occurrence per box
+    rather than a hundred, and quiet enough not to fight the photograph that replaces it.
   */
-  background: repeating-linear-gradient(135deg, var(--t-border) 0 1px, transparent 1px 9px)
-    var(--t-surface-alt);
+  background: var(--t-surface-alt);
+  box-shadow: inset 0 0 0 var(--t-rule-hair) var(--t-border);
   color: var(--t-text-muted);
 }
 
 .sf-ph__mark {
   font-size: var(--t-text-2xl);
   font-weight: var(--t-weight-display);
-  opacity: 0.55;
+  /*
+    0.38, down from 0.55. The glyph is the shop's initial repeated in every empty slot on the page;
+    at 0.55 a catalogue with no photographs became a wall of the same letter. Lower is not weaker
+    here — one letter at 0.38 against `--t-surface-alt` still reads, and forty of them stop
+    competing with the copy that carries the actual information.
+  */
+  opacity: 0.38;
 }
 
 /* --------------------------------------------------------------- hero -- */
@@ -1057,6 +1179,74 @@ details.sf-note > summary:focus-visible {
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
 }
 
+/*
+  PHASE 12.C — THE FOOTER'S THREE POSTURES. `site-footer.tsx` renders one tree and reads no
+  template; `data-footer` on `.sf-root` selects between them here, exactly as `data-header` does
+  for the chrome above.
+
+  `columns` is the block directly above — the auto-fit directory that all nine shipped — so it
+  needs no rule of its own and a missing attribute still lands on it.
+*/
+
+/*
+  `minimal` (دار, موعد, جهاز) — one centred stack.
+
+  `max-inline-size` on the grid rather than on each child: the columns collapse to one track and the
+  whole block narrows to a readable measure, so a shop with two links does not spread them across
+  1400px. The social band's own `grid-column: 1 / -1` keeps working because it is still a grid — one
+  column wide.
+
+  Headings stay. They are the only thing separating «روابط سريعة» from «معلومات التواصل» once the
+  columns are gone, and a stack of unlabelled lists is a worse footer than a wide one.
+*/
+[data-footer='minimal'] .sf-footer__inner {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  text-align: center;
+  gap: var(--t-space-lg);
+  max-inline-size: 36rem;
+  margin-inline: auto;
+}
+
+[data-footer='minimal'] .sf-footer__social {
+  border-block-start: none;
+  padding-block-start: 0;
+}
+
+/*
+  `band` (سوق نيون, رفّ, مطبخ) — the identity block is a filled plaque, the rest sits on the page.
+
+  THE FILL IS `--t-bg`, AND THE FIRST VERSION OF THIS RULE WAS WRONG IN A WAY ONLY A BROWSER SHOWS.
+
+  It used `--t-surface-alt`, on the reasoning that `deriveColorTokens` derives and guards it. True,
+  and irrelevant here: the FOOTER already sits on `--t-surface`, and `surfaceAlt` is
+  `mix(surface, text, 0.05)` — a five-percent step from the very colour it was being laid on. On
+  ديوان's dark counterpart the band was invisible; it read as a centred heading with generous
+  padding, which is not a band. Exactly the mistake `.sf-ph` above records, made again one block
+  later, and typecheck and a green unit suite had nothing to say about either.
+
+  `--t-bg` is the page ground, and it is the one colour guaranteed distinguishable from
+  `--t-surface` on every template: the two are separate tokens the design system defines
+  deliberately, and `defaultSurface()` derives the surface FROM the background precisely so they
+  differ. Inside a surface-coloured footer the page ground reads as a plaque cut into it, which is
+  the sign this posture was after. The hairline is `--t-border`, held to 3:1 as non-text UI, so the
+  plaque still has an edge on a palette where the two grounds happen to sit close.
+*/
+[data-footer='band'] .sf-footer__inner > :first-child {
+  grid-column: 1 / -1;
+  background: var(--t-bg);
+  border: var(--t-rule-hair);
+  border-radius: var(--t-radius-lg);
+  padding: var(--t-space-lg) var(--t-space-xl);
+  text-align: center;
+}
+
+[data-footer='band'] .sf-footer__inner > :first-child h2 {
+  font-size: var(--t-text-xl);
+  color: var(--t-text);
+  letter-spacing: var(--t-tracking-display);
+}
+
 .sf-footer h2 {
   font-size: var(--t-text-sm);
   color: var(--t-text-muted);
@@ -1142,13 +1332,25 @@ details.sf-note > summary:focus-visible {
   border-radius: var(--t-radius-pill);
   background: var(--brand);
   color: var(--brand-ink);
-  /* The row is the one place on the page where a hover should read as "this opens elsewhere". */
-  transition: transform 120ms ease-out, filter 120ms ease-out;
 }
 
-@media (prefers-reduced-motion: reduce) {
+/*
+  OPT-IN, not opt-out. The row is the one place on the page where a hover should read as "this
+  opens elsewhere" — but the declaration lives inside `no-preference`, not at the top level with a
+  `reduce` override underneath.
+
+  The two spellings are equivalent for a browser that HAS a preference and differ for the one that
+  does not: `prefers-reduced-motion` resolves to `no-preference` only when the platform actually
+  reports it, so a top-level `transition` also animates for a user agent that reports nothing at
+  all. 11.A settled `no-preference` as the house pattern for exactly that reason and
+  `phase9-templates.test.ts` enforces it over the whole sheet; these two rules predate it and were
+  the two the guard was failing on — so it has never once passed since 11.A shipped.
+*/
+@media (prefers-reduced-motion: no-preference) {
   .sf-social a {
-    transition: none;
+    transition:
+      transform 120ms ease-out,
+      filter 120ms ease-out;
   }
 }
 
@@ -1341,7 +1543,6 @@ details.sf-note > summary:focus-visible {
   background: #25d366;
   color: #fff;
   box-shadow: 0 6px 20px rgb(0 0 0 / 0.22);
-  transition: transform 120ms ease-out;
 }
 
 .sf-wa-fab__icon {
@@ -1353,9 +1554,10 @@ details.sf-note > summary:focus-visible {
   transform: translateY(-2px);
 }
 
-@media (prefers-reduced-motion: reduce) {
+/* Same inversion as `.sf-social a` above, and for the same reason — see the note there. */
+@media (prefers-reduced-motion: no-preference) {
   .sf-wa-fab {
-    transition: none;
+    transition: transform 120ms ease-out;
   }
 }
 

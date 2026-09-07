@@ -272,11 +272,43 @@ async function main(): Promise<void> {
 
   // 4. Demo tenant slug -> hostnames hint file (the launcher writes these into the hosts file).
   let slug: string | undefined;
+  /**
+   * The demo's magic TOKEN, fetched beside its slug — Phase 12, and the READY panel below is why.
+   *
+   * A demo hostname without a valid token serves the Arabic rejection page (Q8), which is correct
+   * and is the whole point of the gate. But the panel printed `demo store: http://…:3000` with no
+   * token, so from the second `dev` onward it offered an address that cannot open — and the only
+   * routes back to the token were the admin panel or a SQL client. A developer who wants to LOOK at
+   * a storefront should not have to authenticate to find the link to it.
+   *
+   * One extra column on a query this file already runs. It stays in the dev launcher rather than
+   * moving into the app, because a route that hands out demo tokens is precisely what Q8 exists to
+   * prevent — this is a script that already has superuser credentials to the local database.
+   */
+  let demoToken: string | undefined;
   try {
-    slug = await withClient(pgUrl('postgres', 'postgres', DB), async (c) => {
-      const r = await c.query('SELECT slug FROM tenants WHERE is_demo = true ORDER BY created_at LIMIT 1');
-      return r.rows[0]?.slug as string | undefined;
+    const demo = await withClient(pgUrl('postgres', 'postgres', DB), async (c) => {
+      const r = await c.query(
+        /*
+          LIVE links only — revoked and expired ones are excluded, which is the same predicate
+          `proxy.ts` resolves the hostname against. Printing any token would have reintroduced the
+          bug one layer down: a link that looks right, opens the rejection page, and sends the
+          reader hunting for a fault in the gate.
+        */
+        `SELECT t.slug, d.token
+           FROM tenants t
+           LEFT JOIN demo_links d
+             ON d.tenant_id = t.id
+            AND d.revoked_at IS NULL
+            AND (d.expires_at IS NULL OR d.expires_at > now())
+          WHERE t.is_demo = true
+          ORDER BY t.created_at
+          LIMIT 1`,
+      );
+      return r.rows[0] as { slug?: string; token?: string } | undefined;
     });
+    slug = demo?.slug;
+    demoToken = demo?.token;
   } catch {
     /* seed may not create a demo tenant on every profile — not fatal */
   }
@@ -310,14 +342,56 @@ async function main(): Promise<void> {
   }
 
   const scheme = process.env.PUBLIC_SCHEME ?? 'http';
-  console.log('\n\x1b[32m──────────── SOUQ BARTAA — READY (no Docker) ────────────\x1b[0m');
-  console.log(`  admin panel   : ${scheme}://admin.${DOMAIN}:${WEB_PORT}`);
-  console.log(`  merchant panel: ${scheme}://app.${DOMAIN}:${WEB_PORT}`);
-  if (slug) console.log(`  demo store    : ${scheme}://${slug}.${DOMAIN}:${WEB_PORT}`);
-  console.log(`  dev mail      : ${path.relative(repoRoot, MAIL_FILE)}`);
-  console.log(`  login         : ${process.env.SEED_SUPER_ADMIN_EMAIL ?? 'admin@souqbartaa.test'} / ${process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'ChangeMe!2026'}`);
-  console.log('  stop          : Ctrl+C in this window');
-  console.log('\x1b[32m─────────────────────────────────────────────────────────\x1b[0m\n');
+
+  /**
+   * THE PANEL IS BUILT AS TEXT AND THEN WRITTEN TWICE — to the console, and to `.tmp/dev-ready.txt`.
+   *
+   * A dev server prints one screenful of addresses and then thousands of request lines over the top
+   * of them. Ten minutes in, the only way back to the demo store's URL is to stop the server and
+   * start it again, and the demo URL is the one line here that cannot be reconstructed from memory
+   * because it carries a random token. Writing it to a file costs nothing and turns "restart the
+   * stack to read the link" into "open the file".
+   *
+   * `.tmp/` is already gitignored and already holds `dev-mail.json`, which is the same species of
+   * artefact: local, disposable, and containing exactly the kind of thing you need to look at while
+   * developing and must never ship.
+   */
+  const lines = [
+    '──────────── SOUQ BARTAA — READY (no Docker) ────────────',
+    `  admin panel   : ${scheme}://admin.${DOMAIN}:${WEB_PORT}`,
+    `  merchant panel: ${scheme}://app.${DOMAIN}:${WEB_PORT}`,
+  ];
+
+  /*
+    The token is part of the ADDRESS, not a footnote under it. Printing the bare hostname and the
+    token separately is how a developer ends up opening the rejection page, concluding the demo is
+    broken, and going to look for a bug that is not there.
+  */
+  if (slug && demoToken) {
+    lines.push(`  demo store    : ${scheme}://${slug}.${DOMAIN}:${WEB_PORT}/?token=${demoToken}`);
+  } else if (slug) {
+    lines.push(`  demo store    : ${scheme}://${slug}.${DOMAIN}:${WEB_PORT}  (no live demo link —`);
+    lines.push('                  it will serve the rejection page; issue one from the admin panel)');
+  }
+
+  lines.push(`  dev mail      : ${path.relative(repoRoot, MAIL_FILE)}`);
+  lines.push(
+    `  login         : ${process.env.SEED_SUPER_ADMIN_EMAIL ?? 'admin@souqbartaa.test'} / ${process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'ChangeMe!2026'}`,
+  );
+  lines.push('  stop          : Ctrl+C in this window');
+  lines.push('─────────────────────────────────────────────────────────');
+
+  console.log(`\n\x1b[32m${lines[0]}\x1b[0m`);
+  for (const line of lines.slice(1, -1)) console.log(line);
+  console.log(`\x1b[32m${lines[lines.length - 1]}\x1b[0m\n`);
+
+  const readyFile = path.join(repoRoot, '.tmp', 'dev-ready.txt');
+  try {
+    mkdirSync(path.dirname(readyFile), { recursive: true });
+    writeFileSync(readyFile, `${lines.join('\n')}\n`, 'utf8');
+  } catch {
+    /* the panel is already on screen; a missing convenience file must never stop the stack */
+  }
 
   let shuttingDown = false;
   const shutdown = async (code = 0): Promise<void> => {

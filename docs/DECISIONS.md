@@ -3321,3 +3321,466 @@ Rubik despite the face being declared only in `aldar.css`, because `site/layout.
 nine sheets — the declared-once rule holds. The rail's cookie writer and SSR reader agree on name
 and encoding; `billing ∉ STAFF_ALLOWED` and the guard 404s rather than 403s; `X-Frame-Options` is
 absent from both places and `framable` is asked on one predicate.
+
+---
+
+## Phase 12.A — a shop is never born empty (main session, 2026-09-07, owner-directed)
+
+Opened by an owner audit of the LIVE deployment, not by a plan: «لماذا التصميمات ضعيفة جدا في
+المتجر». The audit is written up in `docs/PHASE-12.md`; the finding that reframed everything is that
+`document.querySelectorAll('img').length` was **zero** on a real, populated shop, and that the same
+shop rendered six sections while the platform ships eighteen types.
+
+**The default arrangement had never caught up with Phase 9, and nothing made that visible.**
+`buildDefaultSections` was written in A2 against ten section types and was not revisited when Phase 9
+added eight more. So `banner_slider`, `trust_badges`, `opening_hours`, `store_stats`, `new_arrivals`,
+`best_sellers` and `search_bar` shipped complete — schema, dashboard screens, renderers, entitlements
+— and then reached a storefront only if a merchant opened «أقسام الموقع» and added each by hand,
+which requires first knowing they exist. Five populated tables behind a page that drew none of them.
+The list is now fifteen, and the ordering is a design decision rather than an append: the trust row
+sits UNDER the catalogue because an objection needs a want first, and opening hours sit immediately
+before contact because they answer the same question a visitor is already asking.
+
+**Widening a default is only safe because the inputs are gated, and that is now pinned by a test.**
+Every new condition is read in `context.ts` from a local that was already computed as
+`entitlement && data` — `trustBadges`, `storeStats`, `openingHours` are each `extras && access.X ? …
+: []`, and `banners` folds in two features. So an أساسي tenant passes false for all seven regardless
+of what its tables hold, and its home page is byte-identical to the pre-12.A one. Reading `source.*`
+instead would have put a plan-locked section into that plan's own arrangement and relied entirely on
+`hiddenSectionTypes` downstream to take it back out — one layer where there are meant to be two. A
+source-level test asserts the call site uses the gated locals, and a behavioural test asserts the
+old eight-section arrangement comes back unchanged when the new inputs are false.
+
+**A default section can outrun its own query, and one of them did.** `windowFor()` decides whether to
+run `queryNewArrivals` / `queryBestSellers` by scanning the page's **stored** sections, returning null
+when there are none — deliberately, so a shop with no `best_sellers` block never pays for a `groupBy`
+over its order items. But "the page has none" and "the page has not been arranged" are different
+questions, and a default arrangement is the second one: `storedSections` is empty for every tenant
+before a merchant touches the dashboard, which is most of them. A default `new_arrivals` would
+therefore have been planned against an array the cached source builder never populated — a heading
+over nothing, the exact failure the content-awareness rule exists to prevent. The fix is a shared
+`DEFAULT_ARRANGEMENT_WINDOWS` constant read by both the query and the section config, because the
+two must ask for the same window and a second spelling of `{ days: 14 }` is a silent empty section.
+
+**`columns` is unset on both new rails, for the third time in this codebase.** `productsGridConfig`
+already carries the long version of why: the renderer reads `config.columns ?? template.layout.
+gridColumns`, so a number written here flattens نيون's two large columns and ورشة's four dense ones
+into whichever count the default chose. The existing `products_grid` default DOES write
+`input.gridColumns` and is now the odd one out; it is left alone because changing it is a visible
+change to every existing storefront and belongs to 12.C, not to a content track.
+
+**«الأكثر مبيعًا» is not in a new shop's default arrangement, and the renderer's fallback is why it
+looked like it should be.** `BestSellersSection` falls back to the plain catalogue when the ranking
+query returns nothing, and `sections.ts` records the reason: a merchant who added the block must not
+be shown an empty heading. That fallback is right for a section someone ASKED for and wrong for one
+the platform adds on their behalf. Two sections below `products_grid`, it renders the same four
+products a second time under a heading claiming they are the best sellers of a shop that has never
+had an order — padding that reads as padding, and a small lie in the shop's own voice. So
+`hasBestSellers` is `source.bestSellers.length > 0`, not `products.length > 0`: the default
+arrangement waits for the shop to earn the heading, and until then the page is one section shorter
+and every claim on it is true. The JSDoc that said otherwise was written before the caller and has
+been corrected rather than implemented.
+
+**The no-image placeholder was right about one box and wrong about a page of them.** The 1px
+`--t-border` hatch replaced an invisible surface-tone fill for a good reason, recorded in the
+stylesheet: on a light template `surfaceAlt` is 1.03:1 against the page, so the "deliberate no-image
+state" was not a state at all. That reasoning was derived against ONE empty slot in a grid of
+photographs. The audit found the case it was never tested against — hero, categories and every card
+empty — where forty tiled hatches stop reading as forty decisions and start reading as a stylesheet
+that failed to load. The constraint survives and the instrument changes: `--t-border` is still the
+token that makes the box visible, spent on a hairline frame (once per box) instead of on a fill
+pattern (a hundred times per page). The glyph drops 0.55 → 0.38 for the same reason — one shop
+initial reads, forty of them are a wall.
+
+**The checklist step was not enough, and the warning is deliberately narrower than it.**
+«ارفع أول صورة لمكتبة الصور» has been in the onboarding checklist since B2 and the audited shop had
+a full catalogue and no media anyway: it is one line of six, four panels below the fold, and it reads
+as a suggestion. The new warning fires on `media === 0 && products > 0` only. A brand-new empty
+account is NOT warned — that is the ordinary first minute of an account and the checklist is the
+right, calmer instrument. The warning exists for the shop whose owner thinks it is finished.
+
+**The admin `<Empty>` reached parity rather than being left behind.** 11.F gave the merchant one an
+action and named the reason: «ما في منتجات بعد» with nothing under it is a dead end. The admin
+version stayed a bare `<p>` and had the same dead ends. It now takes the same two optional props and
+still renders a bare `<p>` when it has no action, so nothing about the forty existing call sites
+changes in the DOM — with `.sba-empty > p { margin: 0 }` added, since the UA margin would otherwise
+move only the actioned states.
+
+**The gate finally ran.** `AGENT-RUN.cmd`, 2026-09-07 11:06–11:32 — the first machine run in this
+checkout since 2026-08-24, covering Phase 11's entire unproven diff along with 12.A's. Rubik landed
+(that blocker is closed), typecheck **0**, lint **0 errors**, and the suite came back **1502 passed
+/ 2 failed of 1504**. Every one of 12.A's new assertions passed, including both `context.ts` source
+guards and the pre-12.A regression guard.
+
+**The one real failure had been red since 11.A and nobody had run the suite to see it.**
+`phase9-templates.test.ts` asserts that nothing in a storefront sheet animates outside
+`@media (prefers-reduced-motion: no-preference)`. Two rules predated that decision and used the
+older inverted spelling — a top-level `transition` on `.sf-social a` and `.sf-wa-fab`, each with a
+`prefers-reduced-motion: reduce { transition: none }` block underneath. The two are equivalent for a
+browser that HAS a preference and differ for the one that does not: `prefers-reduced-motion`
+resolves to `no-preference` only where the platform actually reports it, so the top-level form also
+animates for a user agent that reports nothing. 11.A chose `no-preference` for that reason and wrote
+the guard; the guard then never passed, because the run that would have said so never happened.
+Both inverted, and all four `transition` declarations in `storefront.css` now sit inside a
+`no-preference` block.
+
+**The other failure is an infrastructure flake, recorded so it is not re-derived.**
+`rls-coverage.test.ts` › "gives app_system no write grant on any table that belongs to a live
+tenant" timed out at 60s inside an `information_schema` privilege query — at the end of an 80-file,
+772-second run, with the embedded Postgres logging «background writer process (PID 7244) exited»
+and terminating its own backends. The assertion is a static catalogue read with no dependency on
+anything either phase touched — and the re-run confirmed it: clean pass, 209s of test time instead
+of 334s.
+
+**Second run, 11:35–11:48: everything green.** `fetch-rubik` 0, `prisma migrate status` **0**,
+typecheck 0, lint 0 errors, **80 files / 1504 tests, all passed**. The first run's
+`prisma migrate status` EXITCODE=1 («FATAL: the database system is starting up») was a race with the
+dev cluster booting in the second window, not a pending migration — worth recording, because that
+line is exactly the shape of the failure the gate is meant to catch and it is not one. Phase 11's
+diff and Phase 12.A's are both proven for the first time; what remains is browser-only — axe, the
+screenshot passes, LCP per template, `pnpm build` and `pnpm e2e`.
+
+---
+
+## Phase 12.C — the chrome becomes structural (main session, 2026-09-07, owner-approved)
+
+**Taken out of the phase's own order, and the reason is recorded rather than hidden.** 12.B needs a
+migration for `ProductReview` and `Product.attributes`, and four consecutive sessions have had no
+working shell — a hand-written migration matching what `prisma migrate dev` would emit is exactly
+the kind of guess that produces silent drift on the next `migrate status`. 12.C needs no migration
+at all, and it is the track that answers the complaint that opened this phase most directly. 12.B is
+unblocked the moment a migration can actually be generated.
+
+**Half of the finding that opened this track was wrong, and it is corrected here rather than
+quietly dropped.** The audit also said `warsheh`, `matbakh` and `mawid` carry "zero structural
+declarations", and put the nine sheets at "700 skin against 45 structural". Neither number was
+re-derived before it was written into `docs/PHASE-12.md`. Counting the properties that actually move
+boxes — `grid-template*`, `display`, `position`, `flex-direction`, `order`, `--sf-ratio`,
+`aspect-ratio`, `grid-column/row`, sizing — gives ورشة **7**, مطبخ **11**, موعد **15**, against
+ديوان **13** and نيون **13**. موعد has the most of the five sampled; ورشة sets its card to 1:1 and
+builds three blocks out of a 1px-gap grid. The ratio figure is withdrawn with them, and Track C5 —
+"give the three sheets at least four structural declarations" — is struck: there was no deficit, and
+filling one that does not exist is decoration with a bad number for a justification.
+
+**The finding, restated because it is the whole justification** — and it is the half that was READ
+rather than counted, which is why it held. `components/site-header.tsx` and
+`components/site-footer.tsx` never referenced `template`. Nine palettes, nine type scales, nine
+ornament quadruples — and the first two hundred pixels of every storefront were the same markup in
+the same three-column grid, closing on the same auto-fit footer. A visitor decides whether two shops
+look alike from the chrome, before scrolling and before reading anything; the chrome was the one
+part of the page the template system did not reach. Two of the four axes a pair of templates could
+differ on — the product-card body and the category style — are below the fold.
+
+**The mechanism did not change, only its reach.** `data-header` and `data-footer` are stamped on
+`.sf-root` beside Phase 11's five, and `storefront.css` selects the posture. Both components still
+render exactly one tree: `.sf-header__inner` is ONE grid whose `grid-template-areas` map changes.
+That was the deciding constraint — `split` needs the nav below the brand and `stacked` needs it
+below and centred, and reordering flex items would have moved the boxes AND the tab order, which is
+the render-tree difference Phase 9 forbade for the `overlay` card body and Phase 11 kept for the
+ornament layer. Areas move boxes and leave the document alone.
+
+**The two attributes go on `layout`, not on `signature`, and the placement is the argument.**
+`signature` is explicitly outside the Hamming check — ornaments are a design differentiator and two
+templates may legitimately both press their buttons. The chrome is not that. If two shops open and
+close identically a merchant reads them as one template no matter what the cards do, so the chrome
+has to be a term in the distance the anti-reskin check measures.
+
+**The floor moved from 2 to 3, and no pair had to be checked by hand.** Three headers × three
+footers is exactly nine, so the nine templates take every combination once — which means every pair
+differs on at least one of the two, so all ten pairs sitting at the old minimum land at 3 or better
+by construction. Six ternary axes at distance 3 admit 3⁴ = 81 codewords against nine spent, so
+unlike Phase 11's fourth axis this one is not buying headroom; it is buying the property the check
+was always supposed to have. `a2-templates.test.ts` now pins the 3×3 uniqueness AND the arithmetic
+that makes it meaningful, so a tenth template gets told plainly that it must earn its distance
+elsewhere.
+
+**Raising a floor can silently disable a different test, and this one nearly did.** The ornament
+check finds the pairs sitting ON the structural minimum — `if (structural > 2) continue` — and asks
+them to differ on at least two ornaments. With the floor at 3 that guard skips *every* pair, and the
+test would have gone on passing while asserting nothing. Both tests now read one `STRUCTURAL_MINIMUM`
+constant through one `structuralDistance()` helper, because they are one rule stated twice.
+
+**The mobile block needed a line nobody would predict.** `grid-template-areas` implies its own
+column count, so the existing `@media (max-width: 45rem) { grid-template-columns: 1fr }` under a
+three-column area map does not produce one column — it produces one explicit track plus two
+IMPLICIT ones, i.e. the desktop header the media query exists to undo. The block now drops the map
+(`grid-template-areas: none`) and clears the children's `grid-area`, which is what lets the `order`
+rules the phone layout has always used take over again.
+
+---
+
+## Three things that looked like defects on 2026-09-07 and were not one bug (recorded so the next
+## reader does not re-diagnose them)
+
+**1. `'stack' is not recognized as an internal or external command` — the agent's own mistake, and
+a batch trap worth knowing.** `AGENT-RUN.cmd` was edited while a window sat at its final
+`Press any key to continue`. cmd.exe does not read a batch file into memory: it reads incrementally
+and remembers a BYTE OFFSET, so on the keypress it resumed reading at that offset into the NEW text.
+The offset landed inside `Leave the OTHER window (the stack) running.`, which became a command named
+`stack`, and steps 4–6 re-executed — starting a second dev stack. Nothing was corrupted; the sweep
+had already finished and written its log. The cost was purely that a nonsense failure looks exactly
+like a real one, which is expensive. The file now carries a warning at the top, an `exit /b 0` after
+the final `pause` to cap what a resumed offset can reach, and the parentheses removed from that
+line. **Do not edit a `.cmd` while any window is running or paused in it.**
+
+**2. The hydration mismatch is a BROWSER EXTENSION, not the app.** React's diff names the culprit
+outright:
+
+```
+-   id="ext-megabonus-main-content"
+-   className="ext-megabonus-top-line"
+```
+
+An extension injected an id and a class into the document before React hydrated, so the client tree
+no longer matched the server's. React's own error text lists this as a cause. Nothing in
+`src/app/layout.tsx` produced it, and it will not reproduce in a clean profile or for any visitor
+without that extension. Worth stating plainly because a hydration error is normally a real bug and
+the reflex is to go looking for `Date.now()` in a component.
+
+**3. `eval() is not supported in this environment` is CSP doing its job, in dev only.** Phase 6's
+`buildCsp` omits `'unsafe-eval'`, and React's DEVELOPMENT build wants `eval()` to reconstruct
+callstacks for its debugging overlay. React's message says it itself: *"React will never use eval()
+in production mode."* So this is a dev-experience cost, not a production defect, and the correct
+response is to leave the header alone: loosening a security header to improve a debugging overlay is
+the wrong trade, and `phase6-security-headers.test.ts` exists to make that trade deliberate rather
+than incidental. If the overlay's callstacks are ever wanted, the change is a dev-ONLY branch in
+`buildCsp` with a test pinning that production is unaffected — not a quiet addition to the list.
+
+**4. And the reason none of this could be LOOKED at: the dev launcher printed an address that could
+not open.** A demo hostname without a valid token serves the Arabic rejection page — Q8, working as
+designed. But the magic link was printed only on the run that CREATED the demo tenant, and
+`dev-native.ts` re-runs `db:seed` on every start, so from the second `pnpm dev` onward the READY
+panel offered `demo store: http://…-cbvz.localhost:3000` and nothing else. The only routes back to
+the token were the admin panel and a SQL client, which means you had to authenticate to find the
+link to a page that deliberately requires no account. Three sessions of "the designs are weak" and
+the storefront was, for practical purposes, unopenable on a fresh checkout.
+
+Fixed at both ends: `dev-native.ts` selects the token beside the slug it was already querying and
+prints the complete address, and `prisma/seed.ts` prints the link on its already-present branch too
+rather than only on creation. Both filter to LIVE links — `revoked_at IS NULL` and unexpired, the
+same predicate `proxy.ts` resolves a demo hostname against — because printing any token would have
+reproduced the original bug one layer down: an address that looks right, opens the rejection page,
+and sends the reader hunting for a fault in the gate. The token stays in the launcher rather than
+moving behind an app route: a route that hands out demo tokens is exactly what Q8 exists to prevent,
+while this is a script that already holds superuser credentials to the local database.
+
+**Noted in passing, not investigated:** the dev log shows `GET / 200 in 2.2s (next.js: 220ms,
+proxy.ts: 1666ms, application-code: 330ms)`. `proxy.ts` at 1.7s is almost certainly first-request
+compilation on a cold `next dev` start — but if it holds on a warm server it is the tenant
+resolution path and it is worth a look, because every request on every surface pays it.
+
+---
+
+## Phase 12.B — the catalogue's order control, and a third correction to the audit (2026-09-07)
+
+**The audit said `/products` had no filters. It has had them since Phase 9.** Category AND tag
+filtering, both URL-driven, server-rendered, composable, paginated, with a correct canonical and a
+deliberate `noindex` on tag pages — all of it already there and well-reasoned. That is the third
+line from the opening survey to be overstated (after "zero structural declarations" and the
+"700 vs 45" ratio), and the pattern is now clear enough to name: the survey counted, and counting
+is what got it wrong each time. Every claim that survived was one that came from READING the file.
+
+What was genuinely missing was the ORDER, and that is what shipped.
+
+**`Product.attributes Json?` was struck from 12.B0 before a line of it was written, because this
+schema has already made that mistake and documented it.** The plan asked for a JSON column "so
+filters read one column instead of a join". `Product.variants Json?` exists for exactly that reason,
+and its own docblock records the ending: Q19 moved sizes and colours to the relational
+`ProductVariant` table because stock has to be an integer a transaction can lock, and the JSON
+column is now *"DEPRECATED IN PLACE: nothing reads it, nothing writes it"*. Every facet 12.B needs
+is already relational and indexed. **The consequence matters more than the correction: 12.B1 needs
+no migration at all**, so the thing that had been blocking most of this track was never real.
+
+**Four links, not a `<select>`, and the file had already settled it.** `products/page.tsx` opens
+with "on Fast 3G a filter that needs a bundle to work is a filter that does not work". A `<select>`
+needs an onChange handler to navigate, so it is dead until hydration and invisible to a crawler.
+Four anchors are shareable, bookmarkable, work with the back button, and were already styled by the
+two filter rows above them.
+
+**The sort key never reaches Prisma from the URL.** `PRODUCT_SORTS` is a closed set resolved in
+`_data/products.ts`, and the page validates against it — the same rule `?tag=` follows, checked
+against live facets. A sort key forwarded raw is a visitor choosing which column a stranger's shop
+is ordered by, and the next column added to `Product` is one they can order by too.
+
+**Every order ends on `{ id: 'asc' }`, and that is not tidiness.** `orderBy: { priceAgorot: 'asc' }`
+alone leaves rows at the same price in planner order, which is free to differ between two identical
+queries — so a catalogue with thirty items at ₪50 can show one product on both page 1 and page 2
+while never showing another at all. A unique last column makes every order total and pagination
+stable. The unit test asserts it per key, because the symptom is invisible until a customer
+complains about a product they cannot find.
+
+**The two category chips were hand-built strings and silently discarded the chosen order.** Routed
+through `buildHref` like everything else: a control that resets itself when you use the control
+beside it reads as broken. The TAG is still dropped on a department change, which is a different
+decision and a deliberate one — «تنزيلات» under «فساتين» is not the set «تنزيلات» under «أحذية».
+
+**THE BROWSER FOUND A BUG THE WHOLE MACHINE GATE COULD NOT — 2026-09-07 18:1x, first look at a
+rendered storefront.** 1515 passing tests, typecheck and lint clean, and `[data-footer='band']` was
+still wrong: the identity plaque was filled with `--t-surface-alt`, laid on a footer that is already
+`--t-surface`. `surfaceAlt` is `mix(surface, text, 0.05)` — a five-percent step from the very colour
+it sits on — so on ديوان's dark counterpart the band was invisible. It read as a centred heading
+with generous padding, which is not a band; the posture simply did not exist.
+
+It is the same mistake `.sf-ph` records one block earlier in the same stylesheet, made again by the
+same reasoning ("`deriveColorTokens` derives and guards this token"), which is true and was beside
+the point. The fill is `--t-bg` now: the page ground is the one colour guaranteed distinguishable
+from `--t-surface` on every template, because the two are separate tokens the system defines
+deliberately and `defaultSurface()` derives the surface FROM the background so they differ. Inside a
+surface-coloured footer it reads as a plaque cut into it, plus a `--t-border` hairline for palettes
+where the two grounds sit close.
+
+Verified after the fix, and the other five postures with it: `centered` / `split` / `stacked` all
+lay out as designed at 1440 (`"brand nav tools"`, `"brand tools" / "nav nav"`, `". brand tools" /
+"nav nav nav"`), `columns` and `minimal` were right the first time, and the phone block's
+`grid-template-areas: none` reset parses and reaches both selectors — checked through the CSSOM,
+since an area map left in place under a one-column track silently produces two implicit columns.
+
+**This is the argument for the rule, stated with a number: three sessions of green gates, and the
+defect was in the first thing anyone would have seen.**
+
+**The gate caught a bug in the new test itself, which is the system working.** The tie-break
+assertion scanned `SORT_ORDER` for array literals and found five where four were expected: the
+declaration's own TYPE, `Record<ProductSort, Prisma.ProductOrderByWithRelationInput[]>`, contains an
+empty bracket pair. Second time in this file that a source scan matched the syntax it was describing
+rather than the code it meant — the first was the comment quoting `source.banners`. Both are now
+filtered, and the reason is written where the next person will hit it.
+
+---
+
+## Phase 12.D — two silent defects, and one form that stopped shouting (2026-09-07)
+
+**The sign-in background bug was one line in the wrong place, and it is worth writing down because
+the same shape will recur.** `dashboard/layout.tsx` and `admin/layout.tsx` stamp `data-surface` on a
+`<div>`, and both stylesheets paint the surface ground from that selector. A div's box is the
+viewport rectangle and nothing beyond it, so everything OUTSIDE it — the overscroll area and the two
+edges the UA reserves for scrollbar gutters — kept `body`'s `--sb-bg: #faf7f1` from `globals.css`.
+Cream, on a dark surface. Invisible on the signed-in dashboard, where the shell scrolls internally;
+plainly visible on the signed-out card, where the document scrolls. In `dir="rtl"` the vertical
+gutter is physically on the LEFT, which is exactly where the band showed in the 2026-09-07 audit.
+
+`color-scheme: dark` had the same shape one level up: it was set on the div, and a non-root element
+cannot restyle viewport scrollbars — those follow `:root`, which `globals.css` leaves at `light`. So
+the gutters painted light over the cream.
+
+**The fix is `html:has(…)` rather than moving the attribute, and the reason is blast radius.**
+`theme-switch.tsx` resolves its target with `closest('[data-surface]')`, and every one of the
+thousand-odd `[data-surface='app'] .x` descendant selectors assumes the attribute sits above the
+content. Moving it to `html` would touch two layouts, the switch, and both stylesheets. Widening two
+selectors per surface touches four lines: `html` gets the tokens and the background, an `html`
+background propagates to the canvas by specification, `color-scheme` reaches the root, and `:has()`
+re-evaluates live so the switch's `setAttribute` on the div still flips it. A test pins the
+`closest('[data-surface]')` assumption the whole approach rests on.
+
+**`--sb-space-5` was never defined, and the entire declaration had been silently void.** `.sbk-rail`
+asked for `padding: var(--sb-space-5) var(--sb-space-3)`; the scale in `globals.css` is 1, 2, 3, 4,
+6, 8, 12. An undefined custom property does not fall back to a default for that one component — it
+makes the whole DECLARATION invalid at computed-value time, so the rail has rendered at `padding: 0`
+since the kit shipped, group headings flush against its own hairline. No parse error, no console
+warning, no failing test, and the only symptom is a rail that looks slightly tight. That is the
+class of defect a human reviewer reads straight past, so it now has a scanner: every `var(--sb*)`
+read without a fallback, across the five chrome sheets, must resolve to a definition. Comments are
+BLANKED rather than stripped so line numbers survive a failure — and necessarily so, since the note
+explaining the defect quotes the broken declaration and would otherwise have failed the test it
+documents.
+
+**The product form folds six fields away, and the fold is conditional.** Fifteen fields at once meant
+a shop owner adding their tenth dress met «عنوان الصفحة في محركات البحث» at the same visual weight as
+the price. None of the six moved fields is required — the server defaults the slug from the name, the
+SKU is optional, stock is `untracked` until someone changes it, and both SEO columns fall back to the
+product's own name and description, since A2's baseline metadata ships on every plan regardless. A
+native `<details>` keeps the inputs INSIDE the form, so a folded field still posts and nothing about
+`saveProductAction` changes; that property is why this is a disclosure and not a second screen.
+
+It opens automatically when the product already uses any of it, because the fold exists to spare the
+majority who never touch those fields, not to hide a field from the person already using it. `slug`
+is excluded from that test on purpose: every saved product has one, so testing it would open the
+disclosure for every product ever edited and the fold would do nothing at all.
+
+**The suite's one flake was a query shape, not a machine, and chasing the machine cost two false
+diagnoses.** `rls-coverage.test.ts` › "gives app_system no write grant on any table that belongs to a
+live tenant" timed out at vitest's 60s ceiling on three of five sweeps on 2026-09-07. Twice it was
+written off as contention — plausibly, since a `phase8-checkout` failure in the same sweep said
+literally «Can't reach database server» — and twice the first read of the log looked like a real
+isolation defect, which is the expensive part.
+
+The cause was in the SQL. The `EXISTS` was correlated on `tc.table_name = g.table_name`, so a
+three-way `information_schema` join re-ran once per grant row: roughly forty tables times three
+privileges, over views Postgres builds on the fly from `pg_catalog` with per-row privilege filters.
+The sibling test immediately below scans one of those views flatly and finishes in 253ms. It is the
+only query in the suite shaped that way and the only one that ever timed out. Hoisting the subquery
+into a CTE computes the set once and inner-joins it, which is precisely what
+`EXISTS(… AND tc.table_name = g.table_name)` means — the same question, asked in a form the planner
+can answer. A longer timeout was the obvious alternative and the wrong one: it keeps a sixty-second
+query in every gate and moves the flake to whatever new margin it is granted.
+
+The rewrite took that test from a 60-second timeout to **720ms**, and its file from 61.8s to 2.2s.
+That number is the proof the diagnosis was right: contention does not make a query eighty times
+faster.
+
+**The last flake was the harness script, not the database — and refusing to guess is what found it.**
+`phase8-checkout.test.ts` › "gives concurrent checkouts … gap-free order numbers" failed with
+«Can't reach database server at `127.0.0.1:5433`», over a server log reading «background writer
+process exited with exit code 1 / terminating any other active server processes / all server
+processes terminated; reinitializing». That is a backend CRASH and a cluster restart, not connection
+exhaustion — and the distinction is the whole answer. The obvious fix, raising `max_connections`
+from the embedded default of 100, addresses exhaustion; it would have done nothing here and would
+have added memory pressure to a machine that had run out.
+
+What was actually happening was in `AGENT-RUN.cmd`. Step 2 launched `START-HERE.cmd` — a SECOND
+embedded Postgres on 5432, plus `next dev`, plus the worker — and then step 5 ran `pnpm test`, which
+boots its own cluster on 5433. Two Postgres servers and a dev server competing for one Windows box
+that also had Docker Desktop, Chrome and an editor open. The 10-way concurrent checkout is the
+heaviest thing in the suite, so it was simply the test most likely to be running when a backend got
+starved and died; nothing about it was wrong. That is why it passed on two sweeps and failed on
+three, on identical code either side.
+
+The suite now runs alone: fetch → git → typecheck + lint → **tests** → stack → migrate status. And
+the same reorder closed the other recurring false alarm — `prisma migrate status` reporting «FATAL:
+the database system is starting up» because it ran seconds after the stack was launched. It now sits
+behind a readiness poll, and the confirming sweep needed **six attempts, thirty seconds**, before the
+cluster answered: a fixed `timeout` would have been either a flake or wasted time, which is why it
+polls.
+
+**Confirming sweep, 2026-09-07 15:54–16:11: `fetch-rubik` 0 · `typecheck` 0 · `lint` 0 errors ·
+`pnpm test` 81 files / 1511 tests, ALL PASSED · `prisma migrate status` 0.** Three of the four
+"database" failures in this session's five sweeps were one script bug, and each one had first looked
+like a defect in the code under test. The cost of chasing them is the argument for fixing the
+harness rather than re-running around it.
+
+**And the rewrite closed a vacuous-pass hole that had been there all along.** Both the old shape and
+the new one return an empty offender list when the tenant-owned SET comes back empty — a renamed
+`tenants` table, a dropped foreign key, a schema that failed to migrate — and an empty list is
+exactly what "no offenders" looks like. The strongest isolation check in the suite could have passed
+while testing nothing. The `LEFT JOIN` is there for that reason and not for the query plan: it keeps
+one row per tenant-owned table whether or not that table has an offending grant, so the count is
+observable and the test refuses to pass on a schema with fewer than ten of them.
+
+**What was NOT attempted, recorded as a decision rather than left as an implied omission.** The rest
+of 12.D — the kit primitives, the 39 hand-rolled tables, and splitting the four monster pages into
+tabs — are layout refactors of the busiest screens in the product. Typecheck and lint prove such a
+refactor compiles; they prove nothing about whether the result is usable, and a half-migrated tab
+structure is worse than the long page it replaces. The same reasoning defers 12.C's scroll-reveal:
+a CSS-only version needs an `opacity: 0` start state, and an animation that fails to run leaves a
+merchant's content invisible. Three sessions of typecheck-only verification is enough to know which
+changes that is safe for, and these are not among them.
+
+---
+
+**`gridColumns` stayed out of the distance function, deliberately.** It is a density default that a
+merchant's own section config overrides per block, so counting it would let two otherwise identical
+templates claim separation from a number the rendered page may never use.
+
+**The gate, 12:00–12:17: typecheck 0, lint 0 errors, 1503 passed / 2 failed of 1505 — and both
+template suites green in full.** `phase9-templates.test.ts` 24/24 with the distance floor at 3,
+`a2-templates.test.ts` 26/26 with the new chrome-uniqueness case. The two failures are neither in
+this diff nor in any diff: `phase8-checkout.test.ts` reported «Can't reach database server at
+`127.0.0.1:5433`» and `rls-coverage.test.ts` timed out at 60s on an `information_schema` query —
+the same test, the same way, as the first 12.A sweep.
+
+**And that is now a pattern worth naming rather than a coincidence to keep re-diagnosing.**
+`AGENT-RUN.cmd` pins `EMBEDDED_PG_PORT=5433`, so two sweeps whose lifetimes overlap contend for one
+cluster; this run took 812s against the clean run's 423s, with a `node (vitest 1)` window from the
+previous sweep still open when it began. Two of the three sweeps in this session lost tests to it,
+and on both occasions the first read of the log looked like a real defect — which is the actual
+cost. The operational rule is to let a sweep finish and close its windows before starting the next;
+the fix is a per-run port, or a refusal to start when 5433 is already listening.

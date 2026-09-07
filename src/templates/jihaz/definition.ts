@@ -49,6 +49,9 @@ export const jihaz: TemplateDefinition = {
     // 16:9: a launch banner is a landscape render, and height is rows of products.
     bannerAspect: '16:9',
     imageMask: 'notch',
+    // 12.C: the catalogue posture over an ending. جهاز's facts live on the product page.
+    header: 'split',
+    footer: 'minimal',
   },
   /**
    * rule · outline · framed · top.

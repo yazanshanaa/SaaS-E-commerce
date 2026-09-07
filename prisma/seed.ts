@@ -701,9 +701,39 @@ async function seedSuperAdmin(): Promise<string> {
 async function seedDemoTenant(demoPlanId: string, createdById: string): Promise<void> {
   const slug = `${foodPack.tenant.slugPrefix}-${shortId(4)}`;
 
-  const existing = await db.tenant.findFirst({ where: { isDemo: true }, select: { id: true } });
+  /**
+   * ALREADY PRESENT STILL PRINTS THE LINK. Phase 12, and it is a dev-experience defect not a nicety.
+   *
+   * A demo hostname without a valid token serves the Arabic rejection page (Q8) — correctly, that is
+   * the whole point of the demo gate. But the magic link was printed ONLY on the run that created
+   * the tenant, and `dev-native.ts` re-runs `db:seed` on every start, so from the second start
+   * onward the READY panel offered `demo store: http://…-cbvz.localhost:3000` — an address that
+   * cannot open. Every developer after day one had a storefront they could not look at, and the only
+   * way back to the token was the admin panel or a SQL client.
+   *
+   * Re-reading the token for an existing tenant costs one indexed query on a seed that already runs
+   * a dozen, and it is what makes "look at the storefront" a copy-paste instead of an investigation.
+   * The token is not a secret in the sense that matters here: it is a dev database, the link is
+   * printed beside the super admin's password two lines up, and a demo is a shop with no orders.
+   */
+  const existing = await db.tenant.findFirst({
+    where: { isDemo: true },
+    select: {
+      slug: true,
+      demoLinks: {
+        // LIVE links only — the same predicate `proxy.ts` resolves a demo hostname against.
+        // Printing a revoked token would reintroduce the bug one layer down: an address that looks
+        // right, opens the rejection page, and sends the reader hunting for a fault in the gate.
+        where: { revokedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+        select: { token: true },
+        take: 1,
+      },
+    },
+  });
+
   if (existing) {
-    console.log('  demo tenant: already present, skipped');
+    console.log(`  demo tenant: ${existing.slug} (already present)`);
+    printDemoLink(existing.slug, existing.demoLinks[0]?.token);
     return;
   }
 
@@ -795,9 +825,32 @@ async function seedDemoTenant(demoPlanId: string, createdById: string): Promise<
   }
 
   console.log(`  demo tenant: ${tenant.slug}`);
-  console.log(
-    `    magic link: ${process.env.PUBLIC_SCHEME ?? 'http'}://${tenant.slug}.${process.env.DOMAIN}/?token=${tenant.demoLinks[0]?.token}`,
-  );
+  printDemoLink(tenant.slug, tenant.demoLinks[0]?.token);
+}
+
+/**
+ * The one place the demo's opening URL is spelled, so the created and already-present branches
+ * cannot print two different addresses — which is the ordinary way a "copy this link" line goes
+ * stale without anyone noticing it has.
+ *
+ * A missing token prints an explanation rather than a URL ending in `undefined`: a demo whose
+ * every link an admin has revoked is a real state, and a link that silently cannot work is worse
+ * than a line saying so.
+ */
+function printDemoLink(slug: string, token: string | undefined): void {
+  if (!token) {
+    console.log('    magic link: none — every demo link was revoked; issue one from the admin panel');
+    return;
+  }
+
+  /*
+    NO PORT HERE, deliberately. This file runs in production too, where the URL has none, and the
+    dev port lives in `scripts/dev-native.ts` (`DEV_WEB_PORT`) which this process does not read.
+    The launcher prints the complete, clickable address in its READY panel; this line exists for
+    anyone running `pnpm db:seed` on its own, where the host is whatever their DOMAIN says.
+  */
+  const scheme = process.env.PUBLIC_SCHEME ?? 'http';
+  console.log(`    magic link: ${scheme}://${slug}.${process.env.DOMAIN}/?token=${token}`);
 }
 
 async function main(): Promise<void> {
