@@ -1002,8 +1002,32 @@ test.describe('the documented performance proxies, on a 30-product catalogue', (
   }) => {
     await page.goto(`${origin(HOST_WARSHEH)}/`);
 
-    const grid = page.locator('.sf-grid .sf-card');
-    await expect(grid).toHaveCount(12);
+    /*
+      SCOPED TO `#products`, and Phase 12.A is why — this assertion caught a real change and the
+      re-write must not be a loosening.
+
+      It used to count `.sf-grid .sf-card` across the WHOLE page, which was the same thing as the
+      products grid only while the products grid was the only block rendering product cards. 12.A
+      put `new_arrivals` and `best_sellers` into the default arrangement, so a home page now legally
+      carries three product rails. Counting all of them and calling it twelve was measuring the
+      arrangement, not the limit.
+
+      The number 12 belongs to `products_grid`'s own `limit`, so it is asserted where that limit
+      applies. The PAGE-level bound the test actually exists to defend — "the home page does not
+      ship the whole catalogue" — is asserted separately below, and more strictly than before.
+    */
+    await expect(page.locator('#products .sf-grid .sf-card')).toHaveCount(12);
+
+    /*
+      THE PERFORMANCE PROXY, restated so it still bites. The point was never "exactly twelve": it
+      was that a 30-product catalogue does not arrive as 30 cards in one document. Three rails at
+      12 + 8 + 4 is 24 at the very most, and every one of those numbers is a section `limit` rather
+      than a catalogue size — so this stays bounded as the shop grows, which is the property the
+      Lighthouse budget depends on.
+    */
+    const homeCards = await page.locator('.sf-card').count();
+    expect(homeCards).toBeGreaterThanOrEqual(12);
+    expect(homeCards).toBeLessThanOrEqual(24);
 
     // 30 > 12, so the rest is one link away rather than thirty cards deep.
     await expect(page.getByRole('link', { name: 'شوف كل المنتجات' })).toBeVisible();

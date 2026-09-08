@@ -44,6 +44,9 @@ export const neonSouq: TemplateDefinition = {
      * نيون two apart from دار, which shares its `overlay` card and its `rail` categories.
      */
     imageMask: 'notch',
+    // 12.C: a fashion masthead, and a footer that is also a sign.
+    header: 'stacked',
+    footer: 'band',
   },
   /**
    * The loudest of the nine, and the ornaments say so.

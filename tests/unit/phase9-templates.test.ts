@@ -39,6 +39,32 @@ import type { TemplateDefinition } from '@/templates/types';
  */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+
+/**
+ * The floor the anti-reskin check enforces, and the threshold the ornament check reads to find the
+ * pairs sitting ON that floor. One constant, because the two tests are one rule: "no pair may be
+ * closer than this, and a pair exactly at it must also separate on ornaments". They were two
+ * hardcoded `2`s, which is how raising the floor in one test silently disabled the other.
+ */
+const STRUCTURAL_MINIMUM = 3;
+
+/**
+ * How many of the SIX structural axes two templates disagree on.
+ *
+ * `gridColumns` is deliberately not among them and never has been: it is a density setting a
+ * merchant's own section config overrides per block, so counting it would let two otherwise
+ * identical templates claim separation from a number the page may not even use.
+ */
+function structuralDistance(a: TemplateDefinition, b: TemplateDefinition): number {
+  return [
+    a.layout.hero !== b.layout.hero,
+    a.layout.productCard !== b.layout.productCard,
+    a.layout.categories !== b.layout.categories,
+    a.layout.imageMask !== b.layout.imageMask,
+    a.layout.header !== b.layout.header,
+    a.layout.footer !== b.layout.footer,
+  ].filter(Boolean).length;
+}
 const templatesDir = path.join(repoRoot, 'src', 'templates');
 
 /** Key -> stylesheet, relative to `src/templates`. The list is asserted complete below. */
@@ -178,6 +204,10 @@ describe('the five templates', () => {
        * `productsGridConfig.columns` records in `src/shared/site-contract/sections.ts`.
        */
       expect(['4:5', '16:9', '1:1'], `${template.key} bannerAspect`).toContain(layout.bannerAspect);
+      // Phase 12.C's two. Required, not optional: an unset header is the state this phase existed
+      // to end — nine templates rendering one chrome.
+      expect(['centered', 'split', 'stacked'], `${template.key} header`).toContain(layout.header);
+      expect(['columns', 'minimal', 'band'], `${template.key} footer`).toContain(layout.footer);
     }
 
     // The brief's two: portrait for the lookbook, landscape for the shelf.
@@ -199,25 +229,31 @@ describe('the five templates', () => {
    * hero came welded to a `spec` product card, i.e. a lookbook opening above a parts-catalogue body.
    * A fourth axis takes the space to 27, which is what made a sixth GOOD template expressible instead
    * of merely permitted.
+   *
+   * PHASE 12.C ADDED `header` AND `footer`, AND RAISED THE FLOOR FROM 2 TO 3. The reason is not
+   * arithmetic this time, it is what a merchant actually sees. Ten of the thirty-six pairs sat at the
+   * old minimum of two, and two of the four axes a pair could differ on — the card body and the
+   * category style — are BELOW THE FOLD. A visitor decides whether two shops look alike from the
+   * chrome, and the chrome was the one thing every template shared: `site-header.tsx` and
+   * `site-footer.tsx` read no template at all, so nine palettes opened with one identical header.
+   *
+   * Six ternary axes at distance 3 admit 3⁴ = 81 codewords, so nine is not close to the bound and the
+   * floor costs nothing in expressible designs. It buys the property the anti-reskin check was always
+   * meant to have: no two shops can now agree on the first two hundred pixels AND the last hundred.
    */
-  it('keeps every pair of templates at least two structural axes apart', () => {
+  it('keeps every pair of templates at least three structural axes apart', () => {
     const templates = allTemplates();
 
     for (let i = 0; i < templates.length; i += 1) {
       for (let j = i + 1; j < templates.length; j += 1) {
         const a = templates[i]!;
         const b = templates[j]!;
-        const differences = [
-          a.layout.hero !== b.layout.hero,
-          a.layout.productCard !== b.layout.productCard,
-          a.layout.categories !== b.layout.categories,
-          a.layout.imageMask !== b.layout.imageMask,
-        ].filter(Boolean).length;
+        const differences = structuralDistance(a, b);
 
         expect(
           differences,
-          `${a.key} vs ${b.key} differ on only ${differences} axis`,
-        ).toBeGreaterThan(1);
+          `${a.key} vs ${b.key} differ on only ${differences} axes`,
+        ).toBeGreaterThan(2);
       }
     }
   });
@@ -247,14 +283,9 @@ describe('the five templates', () => {
       for (let j = i + 1; j < templates.length; j += 1) {
         const a = templates[i]!;
         const b = templates[j]!;
-        const structural = [
-          a.layout.hero !== b.layout.hero,
-          a.layout.productCard !== b.layout.productCard,
-          a.layout.categories !== b.layout.categories,
-          a.layout.imageMask !== b.layout.imageMask,
-        ].filter(Boolean).length;
-
-        if (structural > 2) continue;
+        // Tracks the floor rather than restating it: 12.C raised the minimum to 3, and a hardcoded
+        // `> 2` here would have skipped every pair and left the ornament rule asserting nothing.
+        if (structuralDistance(a, b) > STRUCTURAL_MINIMUM) continue;
 
         const ornamental = [
           a.signature.headingMark !== b.signature.headingMark,

@@ -53,6 +53,9 @@ export const aldar: TemplateDefinition = {
     // The banner board is portrait: the picture sells, and 4:5 beside the copy IS the fold.
     bannerAspect: '4:5',
     imageMask: 'arch',
+    // 12.C: a masthead over an ending. دار is browsed, not searched.
+    header: 'stacked',
+    footer: 'minimal',
   },
   /**
    * squiggle · printed · soft-block · bottom.

@@ -44,6 +44,9 @@ export const diwan: TemplateDefinition = {
      * shape, not the corner radius of one photograph.
      */
     imageMask: 'arch',
+    // 12.C: the balanced general-retail posture, and a footer that carries hours and an address.
+    header: 'centered',
+    footer: 'columns',
   },
   /**
    * Warm, hand-made, and NOT pressed.

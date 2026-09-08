@@ -43,6 +43,10 @@ export default async function OfflinePage() {
       data-button={context.template.signature.button}
       data-panel={context.template.signature.panel}
       data-badge={context.template.signature.badge}
+      /* 12.C's two, stamped here for the same reason the five above are: this page builds its own
+         root and would otherwise be the one storefront surface whose chrome is the default. */
+      data-header={context.template.layout.header}
+      data-footer={context.template.layout.footer}
     >
       {/*
         Same `<style>` block as the shell, and for the same reason (Phase 11): an inline `style`

@@ -144,6 +144,18 @@ export function StorefrontShell({
       data-button={template.signature.button}
       data-panel={template.signature.panel}
       data-badge={template.signature.badge}
+      /*
+        THE CHROME'S OWN TWO AXES (Phase 12.C), stamped from `layout` rather than from `signature`
+        because they are structure, not ornament — they enter the Hamming check that keeps two
+        templates from collapsing into one.
+
+        Same mechanism as the five above and for a stronger reason: `site-header.tsx` and
+        `site-footer.tsx` never read `template` at all, so the first two hundred pixels of all nine
+        storefronts were identical markup AND identical layout. These two attributes are the only
+        thing that changes; both components still render one tree.
+      */
+      data-header={template.layout.header}
+      data-footer={template.layout.footer}
     >
       {/*
         THE TOKENS MOVED OUT OF THE `style` ATTRIBUTE, AND THAT IS THE WHOLE OF DARK MODE.

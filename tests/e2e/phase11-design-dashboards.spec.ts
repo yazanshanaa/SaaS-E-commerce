@@ -373,7 +373,18 @@ test.describe('dark mode on the storefront (11.C, Q34)', () => {
     }
 
     // The signature layer is stamped on every storefront.
-    for (const attribute of ['data-mask', 'data-mark', 'data-button', 'data-panel', 'data-badge']) {
+    // 12.C appended `data-header` / `data-footer` to the same stamped set rather than starting a
+    // second list — the property being asserted ("the root carries every selector the sheet reads,
+    // exactly once") is one property, and two lists is how one of them stops being maintained.
+    for (const attribute of [
+      'data-mask',
+      'data-mark',
+      'data-button',
+      'data-panel',
+      'data-badge',
+      'data-header',
+      'data-footer',
+    ]) {
       await expect(page.locator(`.sf-root[${attribute}]`)).toHaveCount(1);
     }
   });

@@ -99,8 +99,33 @@ export function Notice({ okKey, errorKey }: { okKey?: string; errorKey?: string 
   return null;
 }
 
-export function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="sba-empty">{children}</p>;
+/**
+ * Phase 12.A — parity with the merchant surface's `Empty`, which gained an action in 11.F.
+ *
+ * The admin version was a bare `<p>` and had no way to name a next step, so every empty admin
+ * panel was a dead end in the same way «ما في منتجات بعد» was before 11.F. The element becomes a
+ * `<div>` only when there IS an action: an empty state that is still one sentence stays one
+ * paragraph, so nothing about the 40-odd existing call sites changes in the DOM or the stylesheet.
+ */
+export function Empty({
+  children,
+  actionHref,
+  actionLabel,
+}: {
+  children: React.ReactNode;
+  actionHref?: string;
+  actionLabel?: string;
+}) {
+  if (!actionHref || !actionLabel) return <p className="sba-empty">{children}</p>;
+
+  return (
+    <div className="sba-empty">
+      <p>{children}</p>
+      <Link className="sba-btn sba-btn--primary sbk-empty-action" href={actionHref}>
+        {actionLabel}
+      </Link>
+    </div>
+  );
 }
 
 export function Field({

@@ -78,6 +78,9 @@ export const raff: TemplateDefinition = {
      * photograph. A shopper here is reading prices, not looking at pictures.
      */
     imageMask: 'square',
+    // 12.C: the catalogue posture over a shelf-talker band. رفّ is scanned, fast.
+    header: 'split',
+    footer: 'band',
   },
   /**
    * A shelf edge, a price, a stub.

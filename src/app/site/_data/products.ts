@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { PUBLIC_ACTOR, tenantDb } from '@/server/db';
 import {
   listVariants,
@@ -74,6 +75,42 @@ export function toProduct(row: ProductRowShape): StorefrontProduct {
   };
 }
 
+/**
+ * PHASE 12.B — the catalogue's sort orders, as a CLOSED SET.
+ *
+ * A closed set rather than a column name from the URL, for the same reason `?tag=` is checked
+ * against the live facets a few lines up in `products/page.tsx`: a sort key that reaches Prisma
+ * from a query string is a visitor choosing which column a stranger's shop is ordered by, and the
+ * next column added to `Product` is one they can order by too. Four names, resolved here.
+ *
+ * `featured` is the DEFAULT and is not a new behaviour — it is the `sort asc, createdAt desc` this
+ * function has always used. Naming it matters: without a name for "the merchant's own order" there
+ * is no way back to it once a visitor has picked a price sort, and a filter you cannot leave is
+ * worse than one that was never offered.
+ */
+export const PRODUCT_SORTS = ['featured', 'newest', 'price_asc', 'price_desc'] as const;
+export type ProductSort = (typeof PRODUCT_SORTS)[number];
+
+export function isProductSort(value: unknown): value is ProductSort {
+  return typeof value === 'string' && (PRODUCT_SORTS as readonly string[]).includes(value);
+}
+
+/**
+ * Every order ends with a TIE-BREAK the database can rely on, and that is not decoration.
+ *
+ * `orderBy: { priceAgorot: 'asc' }` alone leaves rows at the same price in whatever order the
+ * planner returns them, and that order is free to differ between two identical queries — so a
+ * catalogue where thirty items cost ₪50 could show a visitor the same product twice across pages 1
+ * and 2 while never showing another at all. `id` is unique, so appending it makes every order
+ * total and pagination stable.
+ */
+const SORT_ORDER: Record<ProductSort, Prisma.ProductOrderByWithRelationInput[]> = {
+  featured: [{ sort: 'asc' }, { createdAt: 'desc' }, { id: 'asc' }],
+  newest: [{ createdAt: 'desc' }, { id: 'asc' }],
+  price_asc: [{ priceAgorot: 'asc' }, { id: 'asc' }],
+  price_desc: [{ priceAgorot: 'desc' }, { id: 'asc' }],
+};
+
 export interface ProductQuery {
   categoryKey?: string | undefined;
   /**
@@ -82,13 +119,15 @@ export interface ProductQuery {
    * repeating a query parameter.
    */
   tag?: string | undefined;
+  /** Phase 12.B. Defaults to `featured`, which is the merchant's own arrangement. */
+  sort?: ProductSort | undefined;
   take?: number;
   skip?: number;
 }
 
 export async function queryProducts(
   tenantId: string,
-  { categoryKey, tag, take = 24, skip = 0 }: ProductQuery = {},
+  { categoryKey, tag, sort = 'featured', take = 24, skip = 0 }: ProductQuery = {},
 ): Promise<StorefrontProduct[]> {
   const db = tenantDb(tenantId, PUBLIC_ACTOR);
 
@@ -114,8 +153,11 @@ export async function queryProducts(
         orderBy: [{ isPrimary: 'desc' }, { sort: 'asc' }],
       },
     },
-    // Merchant order first, then newest. `sort` is what drag-and-drop in B2 writes.
-    orderBy: [{ sort: 'asc' }, { createdAt: 'desc' }],
+    /*
+      Merchant order first, then newest — that is `featured`, the default, and it is what this
+      query has always done. `sort` is what drag-and-drop in B2 writes.
+    */
+    orderBy: SORT_ORDER[sort],
     take,
     skip,
   });

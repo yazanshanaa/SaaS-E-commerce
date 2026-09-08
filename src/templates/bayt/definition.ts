@@ -68,6 +68,9 @@ export const bayt: TemplateDefinition = {
      * whole claim is that the picture is not framed. `square` is not the absence of a decision here.
      */
     imageMask: 'square',
+    // 12.C: a masthead over a directory. بيت is a home shop with real opening hours.
+    header: 'stacked',
+    footer: 'columns',
   },
   /**
    * Almost nothing, held deliberately.

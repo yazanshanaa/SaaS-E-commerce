@@ -32,6 +32,31 @@
  * The workbench paper sits ONE step lighter than the ledger's so the two are distinguishable on a
  * second monitor without being different products.
  */
+/*
+ * PHASE 12.D — `html` IS IN THE SELECTOR, AND THAT IS THE WHOLE OF THE SIGN-IN BACKGROUND BUG.
+ *
+ * The ground below is painted by a `<div>` in the middle of the tree (`dashboard/layout.tsx`
+ * stamps `data-surface` on a div, never on `html` or `body`). A div's box is exactly the viewport
+ * rectangle and nothing beyond it, so everything OUTSIDE that rectangle keeps `body`'s
+ * `--sb-bg: #faf7f1` from globals.css — cream, on every surface, including this dark one.
+ *
+ * On the signed-in dashboard nothing shows, because the shell scrolls internally. On the SIGNED-OUT
+ * card the document itself scrolls, and the two edges the UA reserves for scrollbar gutters — the
+ * inline-end one, which in `dir="rtl"` is physically the LEFT, and the block-end strip — render
+ * cream. That is the band visible at 1568×758 in the 2026-09-07 audit.
+ *
+ * `color-scheme: dark` had the same problem one level up: it is set on the div, and a non-root
+ * element cannot restyle viewport scrollbars — those follow `:root`, which globals.css leaves at
+ * `light`. So the gutters painted in light mode over the cream.
+ *
+ * WHY `:has()` RATHER THAN MOVING THE ATTRIBUTE TO `html`. `theme-switch.tsx` finds its target with
+ * `closest('[data-surface]')` and both layouts stamp the div; moving the attribute would mean
+ * touching two layouts, the switch, and every `[data-surface='app'] .x` descendant selector in
+ * 1000+ lines of CSS. `:has()` re-evaluates live, so the switch's `setAttribute` on the div still
+ * flips the root — no JS change, no markup change, and the background reaches the canvas because
+ * an `html` background propagates to it by specification.
+ */
+html:has([data-surface='app']),
 [data-surface='app'] {
   --sbd-ink: #101815;
   --sbd-ink-soft: #55645e;
@@ -127,6 +152,8 @@
  * load-bearing on this surface — that is the one thing that could not be allowed to soften when
  * the ladder went cool.
  */
+/* `html` here too — this is the half that makes the scrollbar gutters dark; see the note above. */
+html:has([data-surface='app'][data-theme='dark']),
 [data-surface='app'][data-theme='dark'] {
   color-scheme: dark;
 
@@ -269,6 +296,43 @@
   border: 1px dashed var(--sbd-rule-strong);
   border-radius: var(--sbd-radius);
   text-align: center;
+}
+
+/*
+ * PHASE 12.D — the disclosure, on this surface at last.
+ *
+ * The admin has had `.sba-details` since Phase 9 and the merchant surface had nothing, which is why
+ * the whole dashboard carried FOUR `<details>` across sixty-odd screens while the admin reached for
+ * one whenever a card grew. A merchant form with fifteen fields is the case that needed it most.
+ *
+ * A framed block rather than the admin's bare link: an advanced group inside a form has to read as
+ * a PART of that form that is currently folded away, not as a link that might navigate. The frame
+ * is what says "this is still the same page".
+ */
+.sbd-details {
+  border: 1px solid var(--sbd-rule);
+  border-radius: var(--sbd-radius);
+  background: var(--sbd-panel-alt);
+  padding: var(--sb-space-3) var(--sb-space-4);
+}
+
+.sbd-details summary {
+  cursor: pointer;
+  color: var(--sbd-accent);
+  font-size: var(--sb-text-sm);
+  font-weight: 600;
+}
+
+.sbd-details[open] summary {
+  margin-block-end: var(--sb-space-4);
+  padding-block-end: var(--sb-space-3);
+  border-block-end: 1px solid var(--sbd-rule);
+}
+
+.sbd-details__hint {
+  margin: var(--sb-space-1) 0 0;
+  font-size: var(--sb-text-sm);
+  color: var(--sbd-ink-soft);
 }
 
 /* --- Notices --------------------------------------------------------------- */

@@ -90,6 +90,30 @@ describe('the template registry', () => {
     expect(new Set(layouts.map((l) => l.productCard)).size).toBe(3);
     expect(new Set(layouts.map((l) => l.categories)).size).toBe(3);
     expect(new Set(layouts.map((l) => l.imageMask)).size).toBe(3);
+    // Phase 12.C's two, held to the same bar the moment they shipped.
+    expect(new Set(layouts.map((l) => l.header)).size).toBe(3);
+    expect(new Set(layouts.map((l) => l.footer)).size).toBe(3);
+  });
+
+  /**
+   * PHASE 12.C — THE CHROME PAIR IS UNIQUE PER TEMPLATE, and that is a stronger claim than the two
+   * exhaustiveness assertions above.
+   *
+   * Three headers × three footers is exactly nine, so the nine templates use every combination once.
+   * That is not a coincidence to preserve for its own sake — it is what guarantees the distance floor
+   * without any pair having to be checked by hand: every pair differs on at least one of the two, so
+   * every pair that sat at the old minimum of 2 lands at 3 or better.
+   *
+   * A tenth template necessarily repeats a pair, and that is allowed — it just has to earn its
+   * distance on the other four axes, which is precisely what `phase9-templates.test.ts` will tell it.
+   * So this asserts the property for the NINE, and the arithmetic that makes it meaningful.
+   */
+  it('gives all nine a chrome combination of their own', () => {
+    const templates = allTemplates();
+    const chrome = templates.map((t) => `${t.layout.header}|${t.layout.footer}`);
+
+    expect(new Set(chrome).size, 'two templates open and close identically').toBe(templates.length);
+    expect(templates.length, 'nine is 3×3 — a tenth has to repeat a pair').toBe(9);
   });
 
   /**

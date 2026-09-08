@@ -21,7 +21,11 @@ export { StorefrontShell, type StorefrontShellProps } from './shell';
 export { SectionRenderer, SectionList } from './sections';
 export { pluralCount } from './i18n';
 export { SECTION_ANCHORS } from './section-anchors';
-export { buildDefaultSections, type DefaultSectionInput } from './lib/default-sections';
+export {
+  buildDefaultSections,
+  DEFAULT_ARRANGEMENT_WINDOWS,
+  type DefaultSectionInput,
+} from './lib/default-sections';
 export { isSectionType, normaliseSectionConfig } from './lib/section-config';
 export {
   LEGAL_PAGES,
