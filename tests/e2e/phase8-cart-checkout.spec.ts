@@ -203,7 +203,15 @@ test.describe('add to cart → checkout → tracking → edit → cancel', () =>
   test('the product page offers "أضف للسلة" instead of the WhatsApp link, once cart is on', async ({ page }) => {
     await page.goto(`${storefront(SHOP.slug)}/products/${SHOP.productSlug}`);
     await expect(page.getByRole('button', { name: 'أضف للسلة' })).toBeVisible();
-    await expect(page.getByRole('link', { name: /اطلب عبر واتساب/ })).toHaveCount(0);
+    /*
+     * Scoped to <main>, and here the scope is the ASSERTION rather than a detail.
+     * What cart replaces is the product's own order BUTTON. The shell's WhatsApp FAB stays on
+     * every page and should — a shop that takes cart orders still wants to be messaged. Unscoped,
+     * this expected zero and counted the FAB, so it read as "cart did not replace the button".
+     */
+    await expect(
+      page.getByRole('main').getByRole('link', { name: /اطلب عبر واتساب/ }),
+    ).toHaveCount(0);
   });
 
   /**
@@ -368,7 +376,10 @@ test.describe('Q5 still holds for every tenant that has not opted into cart', ()
   test('a shop without the feature keeps the plain WhatsApp flow, with no form at all', async ({ page }) => {
     await page.goto(`${storefront(PLAIN.slug)}/products/${PLAIN.productSlug}`);
 
-    await expect(page.getByRole('link', { name: /اطلب عبر واتساب/ })).toBeVisible();
+    // Scoped to <main> — the shell's WhatsApp FAB shares this accessible name.
+    await expect(
+      page.getByRole('main').getByRole('link', { name: /اطلب عبر واتساب/ }),
+    ).toBeVisible();
     await expect(page.getByRole('button', { name: 'أضف للسلة' })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'إتمام الطلب' })).toHaveCount(0);
     expect(await page.locator('input, textarea, select').count()).toBe(0);

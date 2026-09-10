@@ -303,6 +303,34 @@ export const TENANT_HEADERS = {
    * spoofable context header is a habit, not a judgement call.
    */
   preview: 'x-souq-preview',
+  /**
+   * Set by `proxy.ts` on the app surface's unauthenticated allow-list, and — until the 2026-09-07
+   * audit — the one `x-souq-*` header NOT in this map, so `sanitisedHeaders()` never stripped it.
+   *
+   * Nothing reads it today: the allow-list is advisory to the proxy and every route runs its own
+   * session guard regardless, which is the property that made a forged value inert. It is listed
+   * here for the reason the `preview` note above already gives — a spoofable context header is a
+   * habit, not a judgement call — and so that the Caddyfile's perimeter strip has one list to
+   * mirror rather than two.
+   */
+  publicPath: 'x-souq-public-path',
+  /**
+   * The client IP as resolved by `getClientIp()` — invariant 9's single answer, carried to code
+   * that cannot call it (2026-09-07 audit).
+   *
+   * better-auth resolves its own rate-limit key with `getIp()`, whose default header list is
+   * `["x-forwarded-for"]` and which is given no `trustedProxies` here. `get-client-ip.ts` states
+   * why that is worthless on this platform: "X-Forwarded-For is never trusted. It is trivially
+   * spoofable and, behind Cloudflare, it is client-controlled: Cloudflare APPENDS to whatever the
+   * client sent." So the library's per-client bucket was per-ATTACKER-CHOSEN-STRING — a fresh
+   * budget for every value sent — which is not a weaker limit but no limit at all, on
+   * `/request-password-reset`, `/forget-password` and `/reset-password`.
+   *
+   * `proxy.ts` sets this from the one resolver, and it is in this map so it is STRIPPED from
+   * incoming requests like every other context header — a client-suppliable client-IP header would
+   * reintroduce exactly the hole it closes.
+   */
+  clientIp: 'x-souq-client-ip',
 } as const;
 
 export const TENANT_HEADER_NAMES = Object.values(TENANT_HEADERS);

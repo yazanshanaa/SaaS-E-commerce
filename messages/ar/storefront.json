@@ -232,6 +232,13 @@
       "two": "منتجين",
       "few": "{count} منتجات",
       "many": "{count} منتج"
+    },
+    "count": {
+      "zero": "ما في أقسام",
+      "one": "قسم واحد",
+      "two": "قسمين",
+      "few": "{count} أقسام",
+      "many": "{count} قسم"
     }
   },
   "notFound": {
@@ -279,7 +286,9 @@
   },
   "hero": {
     "cta": "تصفح المنتجات",
-    "secondary": "احكِ معنا"
+    "secondary": "احكِ معنا",
+    "proofLabel": "عن المتجر",
+    "proofWhatsapp": "الطلب عبر واتساب"
   },
   "gallery": {
     "empty": "ما في صور بعد."

@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from 'react';
 import { type SectionConfig } from '@/shared/site-contract';
+import { assignBands } from '../lib/bands';
 import { normaliseSectionConfig } from '../lib/section-config';
 import { anchorFor } from '../section-anchors';
 import type { StorefrontContext, StorefrontSection } from '../view-model';
@@ -277,19 +278,67 @@ export function SectionList({
    */
   const seen = new Map<StorefrontSection['type'], number>();
 
+  /**
+   * THE BAND ARRANGEMENT (Phase 12.E) — ground, width and density per section.
+   *
+   * Computed HERE and nowhere else, because a band is defined by its neighbours: a products grid
+   * cannot know whether the block above it already took the deep ground, and this is the only place
+   * that holds the ordered list. It runs over `visible` for the same reason the anchor counter does
+   * — an alternation computed across hidden sections would put two VISIBLE neighbours on the same
+   * ground, which is precisely the flatness it exists to prevent.
+   *
+   * THE HERO IS EXCLUDED, and that is a design decision rather than an oversight: the hero owns its
+   * own ground (`.sf-hero`, and the tinted typographic variant), so wrapping it would paint a band
+   * behind a band. It is also why the wrapper below is skipped rather than emitted empty — a
+   * `data-ground` div around the hero would break the `+` adjacency the same-ground collapse uses.
+   */
+  const bands = assignBands(visible.filter((section) => section.type !== 'hero').map((s) => s.type));
+  let bandIndex = 0;
+
   return (
     <>
       {visible.map((section, index) => {
         const occurrence = seen.get(section.type) ?? 0;
         seen.set(section.type, occurrence + 1);
 
+        const rendered = (
+          <SectionRenderer
+            context={context}
+            section={section}
+            anchor={anchorFor(section.type, occurrence)}
+          />
+        );
+
+        /*
+          A WRAPPER RATHER THAN A PROP ON EVERY SECTION, and the trade is worth stating.
+
+          The band could have been threaded as a prop through `SectionRenderer`'s twenty arms into
+          each component's own `SectionBlock` call. That is arguably the more honest shape — but it
+          is twenty-one files changed to place one attribute, and every future section type becomes
+          a place the plumbing can be forgotten, silently, with no type error and no visual symptom
+          except one flat band in the middle of a page.
+
+          One `div` carrying three data attributes cannot be forgotten. It has no role and no name,
+          so it is invisible to the accessibility tree; the beacon's `main .sf-block[id]` and every
+          `#anchor` link are descendant selectors and are unaffected; and `storefront.css` keeps the
+          adjacency rules it needs by matching `.sf-band + .sf-band` instead of `.sf-block + .sf-block`.
+        */
+        const band = section.type === 'hero' ? null : bands[bandIndex++];
+
         return (
           <Fragment key={section.id}>
-            <SectionRenderer
-              context={context}
-              section={section}
-              anchor={anchorFor(section.type, occurrence)}
-            />
+            {band ? (
+              <div
+                className="sf-band"
+                data-ground={band.ground}
+                data-width={band.width}
+                data-density={band.density}
+              >
+                {rendered}
+              </div>
+            ) : (
+              rendered
+            )}
             {index === 0 ? afterFirst : null}
           </Fragment>
         );

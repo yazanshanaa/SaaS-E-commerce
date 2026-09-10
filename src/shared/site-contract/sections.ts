@@ -279,10 +279,51 @@ export const stripColorSchema = z.enum(STRIP_COLORS);
  * REAL TEXT rather than an image precisely so it reaches search results and costs nothing to
  * render. 200 characters of Arabic wraps to four lines on a 360px viewport.
  */
+/**
+ * Is this an href a shop's customers may safely be handed?
+ *
+ * A root-relative path is the COMMON case — «شوف الجديد» points at `/products` — so it is accepted
+ * alongside an absolute http(s) URL. Everything else is refused: `javascript:`, `data:`, and a
+ * protocol-relative `//host` that reads like a path and is not one.
+ *
+ * Lives HERE, in the shared contract, because the same href is written from three directions and
+ * every one of them has to agree: the merchant's own dashboard form, the super admin's editor, and
+ * the change-request payload a merchant files when the capability is `editable_by: admin`. The
+ * 2026-09-07 audit found the rule enforced on four of seven writers and absent on the other three —
+ * `src/server/content/banners.ts` had it, this schema and both announcement payloads in
+ * `src/server/admin/capability-payloads.ts` did not — so a merchant could store a `javascript:` or
+ * `data:` href that renders as `<a href>` on every page of their storefront, and, on the
+ * admin-editable plans, get it approved by a super admin reviewing what looked like a text change.
+ *
+ * React 19 happens to neutralise `javascript:` in an href today. That is React's guarantee, not
+ * this platform's: `data:` and every other scheme passed through untouched, the storefront CSP
+ * carries `script-src 'unsafe-inline'` so it is no backstop, and this platform already renders
+ * hrefs outside React in `src/server/mail/templates.ts`. A validated value is the control.
+ */
+export function isSafeLinkHref(value: string): boolean {
+  if (value === '') return true;
+  if (value.startsWith('//')) return false;
+  if (value.startsWith('/')) return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/** The one link field every announcement writer uses. See `isSafeLinkHref`. */
+export const safeLinkField = z
+  .string()
+  .trim()
+  .max(500)
+  .refine(isSafeLinkHref, { message: 'dashboard:errors.invalidUrl' })
+  .optional();
+
 export const announcementBarSchema = z.object({
   enabled: z.boolean().default(false),
   text: z.string().trim().max(160).optional(),
-  link: z.string().trim().max(500).optional(),
+  link: safeLinkField,
   startsAt: z.coerce.date().optional(),
   endsAt: z.coerce.date().optional(),
   color: stripColorSchema.default('dark'),

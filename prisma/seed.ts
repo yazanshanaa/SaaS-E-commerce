@@ -654,9 +654,57 @@ async function seedCarriers(): Promise<void> {
   console.log(`  carriers: ${CARRIERS.length} (1 hidden), rate cards: ${rateCount}`);
 }
 
+/**
+ * The development fallbacks, named once so the production guard below can REFUSE them by identity
+ * rather than by a copy of the literal.
+ *
+ * They are published — they are in `.env.example`, in this file, and this repository is pushed. A
+ * value everyone can read is a fine convenience for a throwaway local database and is never a
+ * credential for anything reachable from the internet.
+ */
+const DEV_SEED_EMAIL = 'admin@souqbartaa.test';
+const DEV_SEED_PASSWORD = 'ChangeMe!2026';
+
+/**
+ * Read one seed credential, failing closed in production.
+ *
+ * Found in the 2026-09-07 audit. `docker-compose.prod.yml` already carried a comment describing
+ * exactly this hazard — that `.dockerignore` keeps `.env` out of the image, so a first-deploy seed
+ * without `env_file` would create the platform owner as `admin@souqbartaa.test` / `ChangeMe!2026`,
+ * "both of which are in this repository, on an internet-facing super-admin account with
+ * cross-tenant authority". The comment was right and the code did not enforce it: `??` handed back
+ * the published default silently, and the only thing standing between a public repository and a
+ * platform-owner login was the operator remembering to edit two lines of `.env`.
+ *
+ * A comment describing a hazard is not a control. This is.
+ */
+function seedCredential(name: string, devFallback: string): string {
+  const raw = (process.env[name] ?? '').trim();
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  if (!raw) {
+    if (isProduction) {
+      throw new Error(
+        `${name} is unset. The seed refuses to create the platform owner from a published default ` +
+          `in production — set ${name} in .env (see docs/DEPLOY.md §4) and run the seed again.`,
+      );
+    }
+    return devFallback;
+  }
+
+  if (isProduction && raw === devFallback) {
+    throw new Error(
+      `${name} is still the value published in .env.example and in this repository's history. ` +
+        `Anyone who can read the repository can read it. Set a real value and run the seed again.`,
+    );
+  }
+
+  return raw;
+}
+
 async function seedSuperAdmin(): Promise<string> {
-  const email = process.env.SEED_SUPER_ADMIN_EMAIL ?? 'admin@souqbartaa.test';
-  const password = process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'ChangeMe!2026';
+  const email = seedCredential('SEED_SUPER_ADMIN_EMAIL', DEV_SEED_EMAIL);
+  const password = seedCredential('SEED_SUPER_ADMIN_PASSWORD', DEV_SEED_PASSWORD);
   const name = process.env.SEED_SUPER_ADMIN_NAME ?? 'مدير المنصة';
 
   // Identity goes through the AUTH client, not the super-admin one. The `accounts` table
@@ -680,13 +728,42 @@ async function seedSuperAdmin(): Promise<string> {
     parallelism: 1,
   });
 
+  /**
+   * `update: {}` — A RESEED MUST NOT RESET A ROTATED PASSWORD.
+   *
+   * This used to be `update: { password: passwordHash }`, which made the seed idempotent in the
+   * wrong direction. `docs/DEPLOY.md` §4 tells the operator to sign in and rotate the password
+   * immediately, and `pnpm db:seed` is ALSO the documented way to reseed plans, carriers and the
+   * legal pages — so the routine maintenance command silently reverted the one security step the
+   * deployment guide insists on, back to whatever string is sitting in `.env` on disk. Nothing in
+   * the output said so; the line below claimed success either way.
+   *
+   * The account row is created once, by whoever seeds first, and after that the password belongs
+   * to the product. `SEED_SUPER_ADMIN_FORCE_PASSWORD=1` is the deliberate escape hatch for the one
+   * legitimate case — an owner locked out of a box they control — because a reset that requires
+   * naming itself is a different act from one that happens by accident.
+   */
+  const force = process.env.SEED_SUPER_ADMIN_FORCE_PASSWORD === '1';
+
+  const existing = await auth.account.findUnique({
+    where: { providerId_accountId: { providerId: 'credential', accountId: user.id } },
+    select: { id: true },
+  });
+
   await auth.account.upsert({
     where: { providerId_accountId: { providerId: 'credential', accountId: user.id } },
     create: { userId: user.id, providerId: 'credential', accountId: user.id, password: passwordHash },
-    update: { password: passwordHash },
+    update: force ? { password: passwordHash } : {},
   });
 
-  console.log(`  super admin: ${email} (rotate the password after the first login)`);
+  if (!existing) {
+    console.log(`  super admin: ${email} (created — rotate the password after the first login)`);
+  } else if (force) {
+    console.log(`  super admin: ${email} (password RESET, SEED_SUPER_ADMIN_FORCE_PASSWORD=1)`);
+  } else {
+    console.log(`  super admin: ${email} (exists — password left as it is, not reset by this seed)`);
+  }
+
   return user.id;
 }
 

@@ -293,7 +293,6 @@ describe('default sections for a site nobody has arranged yet', () => {
     hasAnnouncements: true,
     hasContact: true,
     hasLocation: true,
-    gridColumns: 3 as const,
   };
 
   /** Phase 12.A's nine, all false — which is a basic-plan shop, and the regression guard below. */
@@ -332,7 +331,6 @@ describe('default sections for a site nobody has arranged yet', () => {
       hasAnnouncements: false,
       hasContact: false,
       hasLocation: false,
-      gridColumns: 3,
       ...noExtras,
     });
 
@@ -357,17 +355,19 @@ describe('default sections for a site nobody has arranged yet', () => {
       'about',
       'testimonials',
       'contact_whatsapp',
-      'map',
     ]);
   });
 
-  it('plans the full fifteen in the designed reading order when the content exists', () => {
+  it('plans the full fourteen in the designed reading order when the content exists', () => {
     expect(buildDefaultSections(everything).map((section) => section.type)).toEqual([
       'hero',
       'announcements',
-      // A scheduled promotion, then a way to skip straight past the merchandising.
+      // A scheduled promotion. `search_bar` USED TO SIT HERE and no longer does (12.E): the chrome
+      // already renders a compact SearchBox under exactly this section's condition, so the default
+      // arrangement was shipping every searchable shop two search fields — the same duplicate-control
+      // failure `contact-whatsapp.tsx` documents for the social row. A merchant who wants the large
+      // in-page field still adds it in «أقسام الموقع»; the default no longer decides that for them.
       'banner_slider',
-      'search_bar',
       'categories',
       'new_arrivals',
       'products_grid',
@@ -379,14 +379,49 @@ describe('default sections for a site nobody has arranged yet', () => {
       'testimonials',
       // Hours immediately before contact, because they answer the same question.
       'opening_hours',
+      // «موقعنا» IS NOT HERE (2026-09-09). `contact_whatsapp` now renders the Google/Waze deep
+      // links itself from the same `resolveMapTarget` chain, so a standalone band would repeat the
+      // address the block above it already printed. See the test below for the case that keeps it.
       'contact_whatsapp',
-      'map',
     ]);
+  });
+
+  /**
+   * THE CASE THAT STILL EARNS ITS OWN BAND.
+   *
+   * Folding the location into the contact block is only safe while the contact block is on the
+   * page. A shop that filled in an address and nothing else — no WhatsApp, no phone, no email, no
+   * hours, no socials — has `hasContact: false`, and dropping `map` unconditionally would take its
+   * location off its own home page entirely.
+   */
+  it('keeps «موقعنا» as its own band when there is no contact block to fold it into', () => {
+    const located = buildDefaultSections({
+      ...preExisting,
+      ...noExtras,
+      hasContact: false,
+      hasLocation: true,
+    });
+
+    const types = located.map((section) => section.type);
+    expect(types).toContain('map');
+    expect(types).not.toContain('contact_whatsapp');
+  });
+
+  it('drops the standalone «موقعنا» once a contact block exists, so the address prints once', () => {
+    const both = buildDefaultSections({
+      ...preExisting,
+      ...noExtras,
+      hasContact: true,
+      hasLocation: true,
+    });
+
+    expect(both.map((section) => section.type)).toContain('contact_whatsapp');
+    expect(both.map((section) => section.type)).not.toContain('map');
   });
 
   it('normalises through the same zod schemas a stored section goes through', () => {
     const grid = buildDefaultSections(everything).find((s) => s.type === 'products_grid');
-    expect(grid?.config).toMatchObject({ limit: 12, columns: 3, showPrices: true });
+    expect(grid?.config).toMatchObject({ limit: 12, showPrices: true });
   });
 
   /**
@@ -395,10 +430,17 @@ describe('default sections for a site nobody has arranged yet', () => {
    * so writing a number here would flatten نيون's two large columns and ورشة's four dense ones
    * into whichever count this file happened to choose. Absence is the meaningful value.
    */
-  it('leaves the new rails without a column count so each template keeps its own grid', () => {
+  it('leaves every product band without a column count so each template keeps its own grid', () => {
     const sections = buildDefaultSections(everything);
 
-    for (const type of ['new_arrivals', 'best_sellers'] as const) {
+    /*
+      `products_grid` JOINED THE TWO RAILS HERE IN 12.E. It hard-wrote `columns: input.gridColumns`
+      while the rails either side of it deliberately left the key unset — its own comment called
+      itself "the odd one out" — so the default arrangement rendered «وصل حديثًا», «منتجاتنا» and
+      «الأكثر مبيعًا» in three consecutive bands at two different column widths. Three adjacent grids
+      of the same cards at two sizes is the loudest way a page can look unarranged.
+    */
+    for (const type of ['new_arrivals', 'products_grid', 'best_sellers'] as const) {
       const section = sections.find((s) => s.type === type);
       expect(section, type).toBeDefined();
       expect(section?.config).not.toHaveProperty('columns');

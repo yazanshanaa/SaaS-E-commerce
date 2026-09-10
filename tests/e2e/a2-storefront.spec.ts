@@ -712,7 +712,20 @@ test.describe('the storefront itself', () => {
   }) => {
     await page.goto(`${origin(HOST_DIWAN)}/products/product-0`);
 
-    const order = page.getByRole('link', { name: /اطلب عبر واتساب/ });
+    /**
+     * Scoped to `<main>`, and that is the whole fix (2026-09-07 audit).
+     *
+     * This assertion was ambiguous rather than wrong: the page carries TWO links whose accessible
+     * name is «اطلب عبر واتساب» — the product's own order button, and the floating action button
+     * `WhatsappFab` that the shell renders on every page. Playwright's strict mode refused to guess
+     * and the test failed with a strict-mode violation, which reads like a missing element and is
+     * the opposite: the CTA was there twice.
+     *
+     * `<main id="main">` is rendered EXACTLY ONCE (shell.tsx) and the FAB sits outside it, so this
+     * names the product's button by where it is rather than by a class, and stays correct if the
+     * FAB's markup changes. The FAB is covered on its own terms elsewhere.
+     */
+    const order = page.getByRole('main').getByRole('link', { name: /اطلب عبر واتساب/ });
     const href = await order.getAttribute('href');
     expect(href).toContain('https://wa.me/972500000000');
 
@@ -728,7 +741,12 @@ test.describe('the storefront itself', () => {
     await page.goto(`${origin(HOST_DIWAN)}/products/product-0`);
     await page.getByRole('button', { name: 'زيادة الكمية' }).click();
 
-    const href = await page.getByRole('link', { name: /اطلب عبر واتساب/ }).getAttribute('href');
+    // Scoped to `<main>` for the same reason as the test above: the shell's WhatsApp FAB shares
+    // this accessible name, and only the product's own button carries the stepper's quantity.
+    const href = await page
+      .getByRole('main')
+      .getByRole('link', { name: /اطلب عبر واتساب/ })
+      .getAttribute('href');
     expect(decodeURIComponent(href!)).toContain('الكمية: 2');
   });
 

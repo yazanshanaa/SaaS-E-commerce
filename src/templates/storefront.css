@@ -48,6 +48,27 @@
 .sf-root h2,
 .sf-root h3,
 .sf-root h4 {
+  /*
+   * `font-family` IS REQUIRED HERE, and its absence made every template share one heading face.
+   *
+   * `globals.css` carries `h1, h2, h3 { font-family: var(--sb-font-display) }` — the PLATFORM's
+   * Alexandria, for the admin and dashboard chrome. That is a matching declaration at (0,0,1), and
+   * a matching declaration always beats INHERITANCE, however close the ancestor: `.sf-root`'s
+   * `font-family: var(--t-font)` never reached an `<h2>`. So ديوان's Zain, ورشة's Rubik and the rest
+   * applied to body copy only, while every heading on all nine storefronts rendered in the
+   * dashboard's face.
+   *
+   * Two consequences, both visible in the 2026-09-07 QA capture. The nine "type scales" that
+   * `design/design.json` counts toward anti-reskin distance were nine sizes of the SAME face at the
+   * heading level. And because `h4` is absent from the globals rule, `h4` alone inherited correctly
+   * — so a product card grid rendered its section title in Alexandria and the card names in Zain,
+   * two faces one element apart, which reads as a loading bug rather than a decision.
+   *
+   * This is the third instance of the same leak (see `.sf-root a:not([class])` and `.sf-cat`): the
+   * storefront lives inside a document whose base sheet is written for a different product. The
+   * lesson each time is the same — inheritance is not a defence against a type selector.
+   */
+  font-family: var(--t-font-display);
   font-weight: var(--t-weight-display);
   line-height: var(--t-line-tight);
   letter-spacing: var(--t-tracking-display);
@@ -61,6 +82,22 @@
 }
 
 .sf-root p {
+  margin: 0;
+}
+
+/*
+ * `figure` and `blockquote` reset for the same reason `p` is — and their absence was measurable.
+ *
+ * The testimonial section renders a `<figure>` wrapping a `<blockquote>` (sections/testimonials.tsx),
+ * and both carry the UA default `margin: 1em 40px`. Two of those nest, so at 390px the 362px column
+ * became a 282px card holding a **154px measure** — an Arabic quote broken to six ragged lines,
+ * inset off the gutter every other section aligns to. Found in the 2026-09-07 critic pass.
+ *
+ * 40px side margins are a Latin print convention the UA sheet has carried since Mosaic; they have
+ * no place in a layout whose gutters are tokens.
+ */
+.sf-root figure,
+.sf-root blockquote {
   margin: 0;
 }
 
@@ -108,6 +145,17 @@
   outline-offset: -3px;
 }
 
+/*
+ * A SELECTION COLOUR. `grep -rn '::selection' src/templates` returned nothing, so every storefront
+ * highlighted text in the browser's default blue — the one colour guaranteed to be in no template's
+ * palette. `--t-ground-tint` is the shop's own primary at band strength and is already proved
+ * readable against every text token, so the text stays legible while selected.
+ */
+.sf-root ::selection {
+  background: var(--t-ground-tint);
+  color: var(--t-text);
+}
+
 .sf-vh {
   position: absolute;
   width: 1px;
@@ -150,7 +198,24 @@
   text-underline-offset: 3px;
 }
 
+/*
+ * The dismiss control stays a 28px CIRCLE and gets a 44px TAP TARGET (2026-09-07 audit).
+ *
+ * It measured 28×28 on a 390px viewport — the only real control on the storefront under the
+ * comfortable-thumb threshold. Everything else the QA pass flagged is an inline link inside a
+ * sentence (the address, the phone number, the footer prose), which WCAG 2.5.8 exempts precisely
+ * because growing them would mean stretching the line-height of Arabic body copy to hit a number.
+ *
+ * Growing the circle itself was the wrong fix: the bar is a thin strip and a 44px disc inside it
+ * becomes the loudest thing on the page, competing with the offer it lets you dismiss. So the
+ * PAINTED size is unchanged and the HIT AREA is grown underneath it — the target is what the
+ * thumb needs, the circle is what the eye needs, and they do not have to be the same rectangle.
+ *
+ * `position: relative` + a pseudo-element rather than padding: padding would move the circle
+ * within the flex row and reflow the bar's text. This adds nothing to layout at all.
+ */
 .sf-bar__close {
+  position: relative;
   flex: 0 0 auto;
   background: transparent;
   border: 1px solid currentColor;
@@ -163,6 +228,14 @@
   cursor: pointer;
   font: inherit;
   line-height: 1;
+}
+
+.sf-bar__close::after {
+  content: '';
+  position: absolute;
+  /* (44 - 28) / 2 = 8px of reach on every side, centred on the circle. */
+  inset: -8px;
+  border-radius: inherit;
 }
 
 /* ------------------------------------------------------------- header -- */
@@ -431,30 +504,280 @@
 
 /* ------------------------------------------------------------ blocks -- */
 
+/*
+ * THE BAND SYSTEM (Phase 12.E) — the fix for "every site I build looks unarranged".
+ *
+ * WHAT WAS HERE BEFORE, and why it produced the same page nine times. `.sf-block` set
+ * `padding-block: var(--t-block)` and nothing else: no ground, no width, no density. Every section
+ * of every storefront therefore rendered on `--t-bg`, inside one `--t-measure` column, with one
+ * height of air — so a homepage was eight identical stripes and the only thing that ever varied
+ * down the page was the words. The 2026-09-08 capture measured the consequence honestly: all NINE
+ * templates scored identically on the design gate, because structurally they ARE one page.
+ *
+ * A band now declares three things, and the arrangement (sections/index.tsx) assigns them:
+ *
+ *   data-ground   page | deep | tint | surface   — what colour the band sits on
+ *   data-width    measure | wide | bleed         — how wide its container is
+ *   data-density  tight | normal | airy          — how much air it owns
+ *
+ * THE ONE RULE THAT MAKES IT READ AS DESIGN rather than as stripes: a band owns its OWN air on both
+ * sides, so a change of ground is always a real edge with real space either side of it. The old
+ * `+ .sf-block { padding-block-start: 0 }` existed to stop that doubling — correct arithmetic,
+ * wrong conclusion, because with no grounds to separate there was nothing for the second half of
+ * the air to belong to. It survives below, narrowed to the case it was actually right about: two
+ * bands on the SAME ground, which are one band with two sections in it and must not have a canyon
+ * between them.
+ */
+
+/*
+ * `.sf-block` KEEPS ITS OWN RHYTHM when it is not inside a band.
+ *
+ * Bands are a HOME PAGE arrangement (`SectionList`), and `.sf-block` is also the wrapper for every
+ * legal page, every `/p/{slug}` content page and B2's single-section preview — none of which go
+ * through the arrangement. Those keep exactly the spacing they have always had.
+ */
 .sf-block {
   padding-block: var(--t-block);
 }
 
-.sf-block + .sf-block {
+/*
+ * THE BAND WRAPPER, emitted by `SectionList` around every non-hero section.
+ *
+ * IT PAINTS THE GROUND AND NOTHING ELSE. The rhythm deliberately stays on `.sf-block` — the first
+ * attempt moved padding up here too, and that was wrong twice over: the `<section>` elements
+ * measured as having zero vertical padding (the QA gate reported "most sections have < 64px total
+ * vertical padding — no breathing room", correctly, because they did), and it made a section's own
+ * air depend on being wrapped, so the same component rendered on a legal page had none.
+ *
+ * A band therefore has exactly one job — the colour behind a section — and the section keeps
+ * owning its space. That also makes the same-ground collapse below a rule about SPACING that
+ * happens to be keyed on colour, which is what it always was.
+ *
+ * `--t-bg` explicitly, not `transparent`: a band has to paint its ground, or the band above shows
+ * through and the alternation has nothing to alternate against.
+ */
+.sf-band {
+  background: var(--t-bg);
+}
+
+.sf-band[data-ground='deep'] {
+  background: var(--t-ground-deep);
+}
+
+/*
+ * The tinted band — the tenant's own primary as a ground, spent ONCE per page.
+ *
+ * `lib/bands.ts` gives it to exactly one section, chosen by what the band is for rather than by
+ * where it sits. Spent twice it stops being the page's turn and becomes a second palette, which is
+ * the failure mode a nine-template platform has to avoid hardest.
+ */
+.sf-band[data-ground='tint'] {
+  background: var(--t-ground-tint);
+}
+
+/* Density is the SECTION's padding, set from the band's declaration. */
+.sf-band[data-density='tight'] > .sf-block {
+  padding-block: var(--t-block-tight);
+}
+
+.sf-band[data-density='airy'] > .sf-block {
+  padding-block: var(--t-block-airy);
+}
+
+/*
+ * TWO BANDS ON THE SAME GROUND ARE ONE BAND.
+ *
+ * `lib/bands.ts` alternates so this is rare, but it is reachable — the tint does not consume an
+ * alternation step, and a page can begin or end on a repeat. Written out per ground rather than
+ * with `:has()` because a selector cannot compare one sibling's attribute VALUE to another's:
+ * there is no `[data-ground=sibling's]`.
+ *
+ * AFTER the density rules, so a tight band following a same-ground neighbour still collapses.
+ */
+.sf-band[data-ground='page'] + .sf-band[data-ground='page'] > .sf-block,
+.sf-band[data-ground='deep'] + .sf-band[data-ground='deep'] > .sf-block,
+.sf-band[data-ground='tint'] + .sf-band[data-ground='tint'] > .sf-block {
   padding-block-start: 0;
 }
 
+/*
+ * WIDTH IS A BAND'S DECISION, not the shell's.
+ *
+ * `--t-measure` is a READING width (رفّ 64rem, ديوان 70rem). A four-up product grid inside a reading
+ * width is four narrow cards with a wide empty gutter beside them — precisely what the category
+ * tiles were doing in the capture. A band whose content is a grid asks for `wide`; a band whose
+ * content is a sentence keeps the reading measure.
+ *
+ * A descendant selector, not a child one: `.sf-shell` sits one level down inside some sections and
+ * two inside others (`.sf-hero--stage` wraps it), and a band must widen whichever it finds.
+ */
+.sf-band[data-width='wide'] .sf-shell {
+  max-inline-size: var(--t-shell-wide);
+}
+
+/*
+ * THE READING BAND (2026-09-09) — the other end of the same argument.
+ *
+ * `wide` exists because a grid inside a reading measure is four narrow cards beside a gutter. The
+ * mirror of that went unnoticed for a phase: `.sf-prose` is capped at `min(34rem, 100%)` for a
+ * measured typographic reason, so «من نحن» drew a 34rem paragraph inside a 70rem container and left
+ * the other 52% empty. The 2026-09-08 capture reported three consecutive bands at 45-65% fill with a
+ * 35-55% hole at the inline end, and this is the largest of them.
+ *
+ * The band narrows instead of the prose widening. `.sf-block__head` lives in the same `.sf-shell`,
+ * so the title, its mark and the paragraph now share ONE inline-end edge; widening the prose would
+ * have fixed the hole by breaking the 40-65 character measure `craft.md` asks for.
+ *
+ * `min(…, var(--t-measure))` and not a bare 40rem: رفّ already sets a 64rem measure and a template
+ * that chooses a NARROWER reading width than this must keep it — a band may never be wider than the
+ * page's own measure.
+ */
+.sf-band[data-width='read'] .sf-shell {
+  max-inline-size: min(40rem, var(--t-measure));
+}
+
+/*
+ * …unless the block has a second child, which for `about` means the merchant attached a picture.
+ *
+ * `.sf-contact` is `repeat(auto-fit, minmax(17rem, 1fr))`: with one child auto-fit collapses to a
+ * single full-width track (the case above), and with two it wants room for two 17rem columns. At
+ * 40rem those two tracks are 18rem each and the picture and the prose both get squeezed, so a band
+ * that actually has a figure keeps the page measure it had before.
+ */
+.sf-band[data-width='read']:has(.sf-contact > * + *) .sf-shell {
+  max-inline-size: var(--t-measure);
+}
+
+/* ------------------------------------------------------- the section head -- */
+
+/*
+ * THE HEAD, RE-ANATOMISED.
+ *
+ * It was an `h2` with `margin-block-end` and — from the template sheets — a full-width hairline
+ * under it. A rule that spans the whole column reads as a DOCUMENT divider: it says "a new part of
+ * this article begins", which is why eight of them down a page read as a table of contents rather
+ * than as a shop. The reference the owner pointed at does the opposite: a short accent mark, a
+ * kicker, the title, and the section's own action pushed to the far end of the same baseline.
+ *
+ * A two-column grid, not flex: the action must sit on the TITLE's baseline at the far end while the
+ * lead flows under the title only, and flex cannot express "this child spans both columns" without
+ * a wrapper element that every section would have to grow.
+ */
+/*
+ * A FLEX ROW OF EXACTLY TWO, not a grid of four.
+ *
+ * The head has two parts — the title stack and the section's action — and they bottom-align to each
+ * other however tall the stack grows. A grid over the four raw children auto-placed the heading
+ * ornament into the action's cell (`.sf-mark` is `display: block` on six of the nine templates), and
+ * a flex row over them spread eyebrow, title, mark and lead across the width. `.sf-block__titles`
+ * makes the pair explicit, which is why it exists in the markup.
+ *
+ * `flex-wrap` plus a `min-inline-size` on the stack is the phone answer: below the wrap point the
+ * action drops to its own line at the inline start rather than crushing an Arabic title into two
+ * words per line.
+ */
 .sf-block__head {
-  margin-block-end: var(--t-space-xl);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--t-space-sm) var(--t-space-lg);
+  margin-block-end: var(--t-space-2xl);
+}
+
+.sf-block__titles {
+  min-inline-size: min(100%, 18rem);
+  flex: 1 1 auto;
+}
+
+/*
+ * The kicker. `--t-accent` and not `--t-primary`: this is normal-size TEXT, and only the accent
+ * token is guarded at the body threshold against all three grounds it can land on. Setting it in
+ * the raw brand colour is the exact mistake `phase9-templates.test.ts` greps for.
+ *
+ * NO `letter-spacing`. Tracking is the reflex for a small-caps kicker in Latin and it is forbidden
+ * here — Arabic letters JOIN, and spacing them apart breaks the joins into disconnected glyphs.
+ * design/design.json records this as "never"; the hierarchy comes from size, weight and the mark.
+ */
+.sf-block__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-sm);
+  margin: 0;
+  font-size: var(--t-text-xs);
+  font-weight: var(--t-weight-display);
+  color: var(--t-accent);
+}
+
+/* The mark: a short rule that belongs to the kicker, replacing the one that spanned the column. */
+.sf-block__eyebrow::before {
+  content: '';
+  flex: none;
+  inline-size: 1.75rem;
+  block-size: 2px;
+  background: currentColor;
 }
 
 .sf-block__title {
   font-size: var(--t-text-2xl);
+  min-inline-size: 0;
 }
 
 .sf-block__lead {
   color: var(--t-text-muted);
-  margin-block-start: var(--t-space-sm);
-  max-inline-size: 60ch;
+  margin-block-start: var(--t-space-xs);
+  /* Same `ch`-in-Arabic over-run as `.sf-prose` above. */
+  max-inline-size: min(30rem, 100%);
+}
+
+/*
+ * The section's own action — «شوف الكل», «كل الأقسام» — on the title's baseline at the far end.
+ * It is the affordance a grid band needs and had nowhere to put, so every section that wanted one
+ * dropped it under the grid where nobody looks.
+ */
+.sf-block__action {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/*
+ * On a phone the action drops under the title rather than squeezing it: an Arabic section title and
+ * an Arabic link on one 390px row leaves neither enough room to be read.
+ */
+/* `flex-wrap` already drops the action to its own line; this only stops it stretching there. */
+@media (max-width: 34rem) {
+  .sf-block__action {
+    align-self: flex-start;
+  }
 }
 
 .sf-prose {
-  max-inline-size: 68ch;
+  /*
+   * `68ch` MEASURED AT ROUGHLY 88 ARABIC CHARACTERS, not 68.
+   *
+   * `ch` is the width of the "0" glyph, and in these Arabic faces a digit is markedly narrower than
+   * the average letter — so a `ch` measure over-runs badly in exactly the script this platform
+   * ships. At 1440px the about paragraph rendered a 710px line, well past the 40-65 characters
+   * `craft.md` asks for. An absolute cap is honest about what it is measuring.
+   */
+  max-inline-size: min(34rem, 100%);
+  color: var(--t-text);
+}
+
+/*
+ * The standfirst: the opening paragraph one step up the type scale.
+ *
+ * `من نحن` is the one place on a storefront that is continuous prose, and it arrived as an
+ * undifferentiated block of body text in a band of its own — which is why it read as filler rather
+ * than as the shop talking. Setting the first paragraph larger is the oldest editorial move there
+ * is, it costs one declaration, and it gives the band an entry point.
+ *
+ * `:first-child` and not `:first-of-type`: a merchant's about body is rendered from stored text, and
+ * if the first node is a list rather than a paragraph then the shop did not write a standfirst and
+ * should not be given one.
+ */
+.sf-prose > p:first-child {
+  font-size: var(--t-text-lg);
   color: var(--t-text);
 }
 
@@ -597,27 +920,141 @@
     on a HAIRLINE FRAME instead of on a fill pattern: the same guarantee, one occurrence per box
     rather than a hundred, and quiet enough not to fight the photograph that replaces it.
   */
-  background: var(--t-surface-alt);
-  box-shadow: inset 0 0 0 var(--t-rule-hair) var(--t-border);
+  /*
+   * THE FRAME THIS RULE PROMISED HAS NEVER ONCE RENDERED. (Found 2026-09-08.)
+   *
+   * It read `box-shadow: inset 0 0 0 var(--t-rule-hair) var(--t-border)`, and `--t-rule-hair` is not
+   * a length — every template defines it as the BORDER SHORTHAND `1px solid var(--t-border)` (see
+   * any definition.ts). Substituted in, the declaration became
+   *
+   *     box-shadow: inset 0 0 0 1px solid var(--t-border) var(--t-border)
+   *
+   * which is invalid, so the browser dropped the whole thing. The note above spends four paragraphs
+   * explaining that `--t-surface-alt` is invisible on a light template (1.03:1 on ديوان) and that the
+   * box is therefore "made visible by `--t-border`" — and it never was. That is precisely why a
+   * catalogue with no photographs reads as a stylesheet that failed to load: the frame that was
+   * supposed to say "deliberately empty" was silently absent on all nine templates.
+   *
+   * A plain length is the whole fix. `--t-border` is the one token the guard holds to 3:1 as non-text
+   * UI, which is what makes one hairline enough.
+   */
+  box-shadow: inset 0 0 0 1px var(--t-border);
+  /*
+   * THE MARK CARRIES THE SHOP'S HUE, not a neutral grey.
+   *
+   * It was `--t-text-muted` at 0.55, which the critic pass measured on the rendered plate as #a79da0
+   * — a grey letter in a pale box, at 2.40:1. That is «صور رمادية فاضية» in `taste.md`'s words, which
+   * is a hard ban, and it is what makes a catalogue of empty plates read as broken rather than as
+   * awaiting photography. Mixing toward the tenant's own primary gives the plate the shop's colour
+   * without raising it to the weight of real content.
+   */
+
+
+  /*
+   * A TONAL PLATE, not a flat fill — the difference between "no photo yet" and "broken".
+   *
+   * The constraint the old note recorded is still binding and still solved the same way: forty tiled
+   * HATCHES read as a failed stylesheet, so the texture had to go. But removing it left a flat
+   * `--t-surface-alt` rectangle, and forty flat rectangles read as forty missing images.
+   *
+   * A single soft wash of the tenant's OWN tint, falling from the top edge, gives the plate a light
+   * direction. That is the cheapest thing that makes a surface look placed rather than absent, it
+   * carries the shop's colour into the one state most shops spend their first month in, and — unlike
+   * a pattern — it does not repeat, so a wall of them still reads as one designed catalogue.
+   *
+   * `--t-ground-tint` and not `--t-primary`: the tint is already the primary at 8-14%, so the wash
+   * lands as a breath of the brand rather than a coloured box behind every product.
+   */
+  /*
+   * A FLAT PLATE, not a gradient wash. The gradient made the guarantee unmeasurable: `--t-ph-mark` is
+   * proved against `--t-surface-alt`, but the glyph actually sat on whatever the gradient happened to
+   * be beneath it — a critic pass measured 3.03 → 2.81:1 where the token said 3.20. A ratio that is
+   * only true at one corner of the element is not a ratio.
+   */
+  background: color-mix(in oklab, var(--t-ground-tint) 50%, var(--t-surface-alt));
   color: var(--t-text-muted);
+
+  /*
+   * Its own containment context, so the initial below can be sized as a fraction of THE PLATE rather
+   * than of the viewport. Declared on `.sf-ph` and deliberately NOT on `.sf-media`: `container-type`
+   * implies layout containment, which would make the element a containing block for absolutely
+   * positioned descendants — and نيون's `overlay` card body is positioned over the media box. On the
+   * placeholder, which has exactly one child and never an overlay, it costs nothing.
+   */
+  container-type: inline-size;
+}
+
+/*
+ * A PLACEHOLDER PLATE IS NOT A PHOTOGRAPH, and should not be given a photograph's proportions.
+ *
+ * Templates set a tall `--sf-ratio` on product media because a garment or a dish wants a portrait
+ * frame — سوق نيون uses 3/4, which on its two-column 78rem grid is a 666x888px card. That is the
+ * lookbook the template is for, and it is right the moment the shop has pictures. With none, the
+ * critic pass measured fifteen empty posters at roughly 70% of the desktop page.
+ *
+ * Keying on `:has(.sf-ph)` fixes it exactly where the problem is: a card with a real photograph is
+ * untouched, and a card without one gets a plate the size of a card rather than a poster. It applies
+ * to all nine templates from one rule, and it costs nothing in CLS — the box is still reserved
+ * before a byte arrives, just at a different ratio.
+ *
+ * 4/3 rather than 1/1: a landscape plate reads as a deliberately empty SLOT, where a square reads as
+ * a missing avatar.
+ */
+.sf-card__media .sf-media:has(.sf-ph) {
+  aspect-ratio: 4 / 3;
 }
 
 .sf-ph__mark {
-  font-size: var(--t-text-2xl);
+  /*
+   * PROPORTIONAL TO THE PLATE. A fixed `--t-text-2xl` is a reasonable glyph on a 15rem product tile
+   * and a lost speck in a 40vw hero portrait — the capture shows both, and the hero one is the single
+   * worst element on the page. `cqi` is a percentage of the plate's own inline size, so one
+   * declaration is right at every size the placeholder is used.
+   *
+   * Clamped at both ends: below 1.5rem the letter stops reading as a mark, above 5.5rem it starts
+   * competing with the shop name in the hero.
+   */
+  font-size: clamp(1.5rem, 26cqi, 5.5rem);
+  line-height: 1;
   font-weight: var(--t-weight-display);
   /*
-    0.38, down from 0.55. The glyph is the shop's initial repeated in every empty slot on the page;
-    at 0.55 a catalogue with no photographs became a wall of the same letter. Lower is not weaker
-    here — one letter at 0.38 against `--t-surface-alt` still reads, and forty of them stop
-    competing with the copy that carries the actual information.
-  */
-  opacity: 0.38;
+   * THE GUARDED TOKEN, ON THE ELEMENT THAT USES IT.
+   *
+   * It was set on `.sf-ph`, which also carries `color: var(--t-text-muted)` further down the SAME
+   * block — so the later declaration won and the mark rendered `rgb(100,89,93)`: a grey letter, the
+   * exact thing `taste.md` bans, while the token feeding it was a perfectly good crimson. Identical
+   * mistake to the `opacity: 0.38` that shipped under an `opacity: 0.55` in this very rule.
+   */
+  color: var(--t-ph-mark);
+  /*
+   * NO OPACITY. `--t-ph-mark` is guarded to 3:1 against the plate in `tokens.ts`, and multiplying a
+   * guarded colour by 0.55 here would throw the guarantee away silently — which is exactly how this
+   * element measured 2.34:1 while the token that fed it was fine. The strength is one number, in the
+   * one place a test can read it.
+   */
 }
 
 /* --------------------------------------------------------------- hero -- */
 
+/*
+ * THE HERO, RE-COMPOSED (Phase 12.E).
+ *
+ * Two things were wrong and only one of them was visible. The visible one: on a shop with no
+ * photograph the hero rendered a placeholder the size of a door — fixed in `sections/hero.tsx`,
+ * which now refuses to render a figure it does not have and stamps `data-figure="type"` instead.
+ *
+ * The invisible one, and the reason the hero looked cramped even WITH a picture: it had no height
+ * of its own. `padding-block: var(--t-block)` is the same air every other section gets, so the
+ * first screen of a storefront was a band the same size as its testimonials — a shop's opening
+ * statement given the weight of a footnote. `--t-hero-min` gives the hero a floor keyed to the
+ * hero the template actually renders (tokens.ts), and `ledger` is deliberately exempt.
+ */
 .sf-hero {
   padding-block: var(--t-block);
+  /* `auto` on ledger — a facts list stretched to 70vh is the opposite of what it is for. */
+  min-block-size: var(--t-hero-min);
+  display: grid;
+  align-content: center;
 }
 
 .sf-hero__title {
@@ -629,22 +1066,220 @@
   font-size: var(--t-text-lg);
   max-inline-size: 52ch;
   margin-block-start: var(--t-space-md);
+  /*
+   * `pretty`, not `balance`. The hero subtitle is a sentence of two or three lines, and `balance`
+   * equalises every line — which on a two-line Arabic sentence pulls words up from the second line
+   * and leaves the first looking short. `pretty` only prevents the orphan, which is the actual
+   * defect: the capture shows «بنفس اليوم» alone on its own line under a full first line.
+   */
+  text-wrap: pretty;
 }
 
 .sf-hero__actions {
   margin-block-start: var(--t-space-xl);
 }
 
-.sf-hero--split .sf-hero__inner {
+/* ------------------------------------------------------------ the proof strip -- */
+
+/*
+ * Facts the shop can prove, on one hairline-separated row under the actions.
+ *
+ * A `ul` because it is a list of unrelated facts, not a sentence — and the separator is a BORDER on
+ * each item rather than a `::before` glyph, so it never lands at the start of a wrapped row. In RTL
+ * that distinction is the difference between a clean strip and a stray bullet floating at the right
+ * edge of the second line.
+ */
+.sf-hero__proof {
+  list-style: none;
+  margin: var(--t-space-xl) 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--t-space-sm) var(--t-space-lg);
+  font-size: var(--t-text-sm);
+  color: var(--t-text-muted);
+}
+
+.sf-hero__proof > li {
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-lg);
+}
+
+/*
+ * The rule sits BEFORE every item but the first, drawn with `border-inline-start` so it flips with
+ * the writing direction for free. `:first-child` rather than `:not(:first-child)::before` because a
+ * wrapped row must not open on a rule, and `flex-wrap` gives no hook for "first on this line" — so
+ * the rule is kept short and light enough that a wrapped one reads as a tick, not a divider.
+ */
+.sf-hero__proof > li + li {
+  border-inline-start: var(--t-rule-hair);
+  padding-inline-start: var(--t-space-lg);
+}
+
+/* --------------------------------------------------------- the two compositions -- */
+
+/*
+ * WITH A PHOTOGRAPH: the asymmetric split. 1.05fr/0.95fr rather than the old 1.1/0.9 — the copy
+ * column has to hold an Arabic display title, a 52ch subtitle, two buttons and now the proof strip,
+ * and at 0.9fr the picture was winning a fight it should not have been in.
+ */
+.sf-hero--split[data-figure='photo'] .sf-hero__inner {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
   gap: var(--t-space-2xl);
   align-items: center;
 }
 
-.sf-hero--stage .sf-hero__inner {
+.sf-hero--stage[data-figure='photo'] .sf-hero__inner {
   display: grid;
   gap: var(--t-space-xl);
+}
+
+/*
+ * WITHOUT A PHOTOGRAPH: the typographic hero.
+ *
+ * One column, and the copy is allowed to grow into the space the picture is not using — a display
+ * title at the same size as the split variant's, in a column twice as wide, reads as a page that
+ * lost an image. `clamp` scales it up against the viewport instead, so the band is carried by type.
+ *
+ * The measure caps at 24ch: Arabic display type set across a 1200px column is unreadable, and the
+ * whole point of this composition is that the words are the design.
+ */
+.sf-hero[data-figure='type'] .sf-hero__inner {
+  display: grid;
+  gap: var(--t-space-xl);
+}
+
+.sf-hero--split[data-figure='type'] .sf-hero__title,
+.sf-hero--stage[data-figure='type'] .sf-hero__title {
+  /*
+   * A `rem` TERM IN THE PREFERRED VALUE — the same fix the ledger hero needed, and it belongs here
+   * too. `6.5vw` alone is 25px at 390px, which is under the display floor of every template with a
+   * modest scale, so the clamp collapsed to that floor: جهاز rendered its h1 at 30px against a 17px
+   * body — 1.76x, which the QA gate flags as weak hierarchy on mobile. A `vw`-only preferred term
+   * always does this at the small end.
+   *
+   * `1.25rem + 6vw` is 43px at 390 and 106px at 1440, so on a phone it lifts the low-scale templates
+   * off their floor while the 1.55x ceiling still decides the top end — and it changes nothing for a
+   * template whose own floor is already higher (سوق نيون's 44px min wins over the 43px preferred).
+   */
+  font-size: clamp(
+    var(--t-text-display),
+    calc(1.25rem + 6vw),
+    calc(var(--t-text-display) * 1.55)
+  );
+  max-inline-size: 24ch;
+}
+
+/*
+ * THE LEDGER HERO GETS A SCALE-UP TOO, at a smaller multiplier.
+ *
+ * `ledger` is ورشة's and مطبخ's and موعد's hero and it was the one variant left on the bare
+ * `--t-text-display`, which on ورشة is 2.5rem against a 0.9375rem body — the QA gate measured the
+ * rendered h1 at 1.9x body and called it weak hierarchy, correctly. A shop's name has to dominate
+ * its own first screen whether or not the shop has a photograph.
+ *
+ * 1.25x rather than the 1.55x the other two get, and the difference is the composition: a ledger
+ * hero sets its title BESIDE a facts pad, so a title that grows as far as a full-bleed one would
+ * unbalance the pair and push the hours off the fold. Enough to lead, not enough to shout.
+ */
+.sf-hero--ledger .sf-hero__title {
+  /*
+   * A `rem` TERM IN THE PREFERRED VALUE, not bare `vw` — that is what fixes the phone.
+   *
+   * With `5vw` alone the preferred size at 390px is 19.5px, which is under every template's own
+   * display minimum, so the clamp collapsed to that minimum: ورشة rendered its h1 at 30px against a
+   * 16px body — 1.8x, and the QA gate called it weak hierarchy on mobile. A `vw`-only term always
+   * does this at the small end; it is the reason `1.25rem + 5vw` is the standard shape.
+   *
+   * 1.25rem + 5vw resolves to ~39px at 390 (clamped up to the 1.25x ceiling) and ~92px at 1440
+   * (clamped down to the same ceiling), so the ceiling — the template's own display size — stays the
+   * thing that decides, and the phone stops being the one width where it does not apply.
+   */
+  font-size: clamp(
+    var(--t-text-display),
+    calc(1.25rem + 5vw),
+    calc(var(--t-text-display) * 1.25)
+  );
+  max-inline-size: 20ch;
+}
+
+.sf-hero--split[data-figure='type'] .sf-hero__text,
+.sf-hero--stage[data-figure='type'] .sf-hero__text {
+  font-size: var(--t-text-xl);
+  max-inline-size: 46ch;
+}
+
+/*
+ * The tinted ground, and the shop's own initial behind the type.
+ *
+ * `--t-ground-tint` is the tenant's primary at 8-14% (tokens.ts) — enough to say "this band is the
+ * shop's", nowhere near enough to disturb the text contrast the guard already proved against
+ * `--t-bg`. It is applied HERE and not through `data-ground` because the hero is not a `.sf-block`
+ * and never enters the band alternation: it is the page's opening, so it always owns its ground.
+ */
+.sf-hero[data-figure='type'] {
+  background:
+    radial-gradient(80% 120% at 88% 0%, var(--t-ground-tint) 0%, transparent 68%),
+    var(--t-bg);
+}
+
+/*
+ * The watermark: the shop's first letter, very large, very faint, bled off the inline-end edge.
+ *
+ * This is the one ornament that makes a typographic hero read as DESIGNED rather than as a hero
+ * whose image failed to load, and it costs no request and no layout — `position: absolute` inside an
+ * `overflow: hidden` band, `aria-hidden` by construction because it is a CSS `content` string that
+ * never enters the accessibility tree.
+ *
+ * It draws the FIRST GRAPHEME of the shop name, passed as `--sf-initial` by the shell. Arabic is
+ * cursive, so a single letter cut from a word renders in its isolated form — which is correct here:
+ * it is a mark, not a truncation of the name.
+ */
+.sf-hero[data-figure='type'] {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.sf-hero[data-figure='type']::after {
+  content: var(--sf-initial, '');
+  position: absolute;
+  z-index: -1;
+  inset-block-start: 50%;
+  inset-inline-end: calc(var(--t-space-2xl) * -1);
+  transform: translateY(-50%);
+  font-family: var(--t-font);
+  font-weight: var(--t-weight-display);
+  font-size: min(46vw, 26rem);
+  line-height: 0.8;
+  /*
+   * `--t-ground-deep` AT FULL OPACITY, not `--t-text` at 4.5%.
+   *
+   * The old pair measured **1.10:1** against the page on a light template — a critic pass called it
+   * "a 10px sliver at the screen edge", and it is the one device that could say WHICH shop this is.
+   * It survived review because on ديوان's dark ground the same 4.5% is unmissable, so whoever looked
+   * at it looked at the template where it worked.
+   *
+   * The band's own deep ground is the right value: it is derived per palette, it is already proved
+   * against every text colour that can sit on it, and it is a step the eye reads as a shape rather
+   * than as a smudge. No opacity at all, so the strength is one number in one place.
+   */
+  color: var(--t-watermark);
+  pointer-events: none;
+}
+
+/*
+ * The watermark is decoration that costs contrast nowhere, but it IS a large moving-looking shape
+ * behind text on a small screen, where the hero column and the glyph overlap almost completely.
+ * Below 46rem it goes.
+ */
+@media (max-width: 46rem) {
+  .sf-hero[data-figure='type']::after {
+    display: none;
+  }
 }
 
 .sf-hero--ledger .sf-hero__inner {
@@ -659,6 +1294,13 @@
   gap: 1px;
   background: var(--t-border);
   border: var(--t-rule-hair);
+  /*
+   * The UA's `dl { margin: 1em 0 }` was never reset here — `.sf-facts` resets it, this did not — so
+   * with `align-items: end` on the ledger's grid the fact pad floated 18px above the baseline it was
+   * supposed to be aligned to. The same 40px-margin family of UA defaults this file already
+   * documents on `figure` and `blockquote`.
+   */
+  margin: 0;
 }
 
 .sf-hero__fact {
@@ -680,10 +1322,78 @@
 
 /* --------------------------------------------------------------- grid -- */
 
+/*
+ * THE GRID THAT ALWAYS FILLS ITS ROW.
+ *
+ * `repeat(var(--sf-cols, 3), minmax(0, 1fr))` is a FIXED track count, and a fixed track count is
+ * where two of the seven observed defects came from at once:
+ *
+ *   - the ORPHAN. Twelve products in three columns is four clean rows; FOUR products is three and
+ *     then one card alone in a 3-wide row with two empty tracks beside it. Every real shop hits
+ *     this — the capture caught a grocery with exactly four.
+ *   - the HUGGING TILES. `.sf-cats` had the same shape with `auto-fill`, which is worse: `auto-fill`
+ *     KEEPS the empty tracks, so three categories on a 1200px page rendered as three narrow tiles
+ *     pushed against one edge with a third of the band empty beside them.
+ *
+ * `auto-fit` + `minmax` fixes both, because `auto-fit` COLLAPSES the tracks nothing occupies and the
+ * remaining items stretch across the freed space. Four items lay out as four columns; three as
+ * three; one as one full-width card.
+ *
+ * THE `max()` IS WHAT KEEPS THE TEMPLATE'S OWN COLUMN COUNT. A bare `minmax(15rem, 1fr)` would fit
+ * as many columns as happen to fit, which throws away `layout.gridColumns` — نيون's deliberate two
+ * large columns would become five small ones on a wide screen. The first argument computes the
+ * EXACT width one of `--sf-cols` columns would be (the row minus its gaps, divided by the count), so
+ * the track can never be narrower than that: at full width the grid is exactly `--sf-cols` wide, and
+ * below it the `--sf-min` floor takes over and drops a column at a time.
+ *
+ * `--sf-min` is the readable floor, not a design choice: below about 13rem an Arabic product name
+ * clamped to three lines plus a price row stops fitting, and the card starts truncating words.
+ */
 .sf-grid {
   display: grid;
   gap: var(--t-space-lg);
-  grid-template-columns: repeat(var(--sf-cols, 3), minmax(0, 1fr));
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(
+      max(
+        var(--sf-min, 13rem),
+        calc((100% - (var(--sf-cols, 3) - 1) * var(--t-space-lg)) / var(--sf-cols, 3))
+      ),
+      1fr
+    )
+  );
+}
+
+/*
+ * A grid holding ONE item is a feature, not a row.
+ *
+ * With `auto-fit` a lone card stretches the full band, which on a 1200px page is a product card a
+ * metre wide — the same failure the lone testimonial had. Capping it and letting it sit at the
+ * inline start reads as "this shop has one thing", which is true and is not embarrassing; a
+ * full-width stretch reads as a broken grid.
+ */
+.sf-grid:has(> :only-child) {
+  max-inline-size: 26rem;
+}
+
+/*
+ * TWO AND THREE ITEMS GET A CAP TOO.
+ *
+ * `auto-fit` collapses the tracks nothing occupies, which is what fixed the orphan — but it means a
+ * three-product shop in ورشة's four-column template renders three cards each a third of a 1200px
+ * band, i.e. cards half again as large as the same template's normal ones. The grid is filled and
+ * still wrong: card size is part of a template's identity, and a small catalogue should not silently
+ * redesign it.
+ *
+ * Capping the GRID rather than the card keeps the cards on the template's own rhythm and lets the
+ * short row sit at the inline start, which reads as a shop with three things — the honest answer.
+ */
+.sf-grid:has(> :nth-child(2):last-child) {
+  max-inline-size: 44rem;
+}
+
+.sf-grid:has(> :nth-child(3):last-child) {
+  max-inline-size: 62rem;
 }
 
 /* --------------------------------------------------------------- card -- */
@@ -702,7 +1412,22 @@
 .sf-card__link {
   text-decoration: none;
   color: inherit;
-  display: block;
+  /*
+   * A FLEX COLUMN THAT GROWS — `display: block` broke the card's flex chain and that is why a row of
+   * cards ended at three different heights.
+   *
+   * `.sf-card` is a flex column and `.sf-card__body` asks for `flex: 1 1 auto`, but the body is not a
+   * child of the card — the ANCHOR is. With the anchor `display: block` the body had no flex parent,
+   * so its `flex` was inert and `.sf-card__foot { margin-block-start: auto }` computed to 0: the price
+   * row sat directly under whatever the description happened to be, and three cards in one row put
+   * their prices at three different heights with 31px, 42px and 2px of dead surface beneath them.
+   *
+   * Making the anchor a growing flex column reconnects the chain, so `margin-block-start: auto` on
+   * the foot does what it has always said it does and every price in a row lands on one line.
+   */
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
 }
 
 .sf-card__body {
@@ -715,6 +1440,13 @@
 
 .sf-card__name {
   font-size: var(--t-text-lg);
+  /*
+   * 1.35. Measured at 390px the two clamped lines of an Arabic product name rendered as ONE
+   * continuous 34px ink run — zero blank rows between them — because the inherited body leading is
+   * computed for a smaller size. Arabic ascenders and descenders reach further than Latin ones, so a
+   * clamped two-line name needs its own leading rather than the paragraph's.
+   */
+  line-height: 1.35;
   /*
    * Three lines, then ellipsis. Arabic product names in these packs run from "زعتر بلدي" to
    * "طقم أدوات صيانة متعدد الاستخدامات ٤٢ قطعة" — clamping is what keeps a grid row aligned
@@ -763,6 +1495,16 @@
   font-weight: var(--t-weight-display);
   /* Western digits and ₪, per CLAUDE.md — the direction override keeps "129 ₪" in that order. */
   unicode-bidi: isolate;
+  /*
+   * TABULAR FIGURES, which the price of all things was missing.
+   *
+   * `.sf-hours` already had them; the price — the number a shopper actually compares — did not, so
+   * a column of cards showed «135 ₪» and «19 ₪» with the digits on different rhythms and the whole
+   * grid visibly jittering. The owner's `taste.md` names this outright ("Prices in ₪ with tabular
+   * numerals"), and `design/design.json` repeats it under `locale_rules.currency`. Found in the
+   * 2026-09-07 critic pass; one declaration, and it is the cheapest craft win on the card.
+   */
+  font-variant-numeric: tabular-nums;
 }
 
 .sf-price--muted {
@@ -808,22 +1550,97 @@
 
 /* --------------------------------------------------------- categories -- */
 
+/*
+ * THE CATEGORY BENTO.
+ *
+ * `auto-fill` at `minmax(11rem, 1fr)` is what produced the hugging tiles in the capture: it keeps
+ * the tracks nothing occupies, so five categories on a wide band rendered as five narrow squares
+ * against one edge with the rest of the band empty. `auto-fit` collapses them and the tiles fill.
+ *
+ * The floor is 12rem rather than the grid's 13rem: a category tile carries a name and a count, not
+ * a name, a description and a price, so it stays readable narrower — and the lower floor is what
+ * lets six categories be three-and-three on a tablet instead of two-two-two.
+ */
 .sf-cats {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   gap: var(--t-space-md);
-  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  grid-auto-rows: 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
 }
 
+/*
+ * THE LEAD TILE — the asymmetry that stops a category row reading as a filmstrip.
+ *
+ * A row of equal squares is the single most template-looking thing a shop can put under its hero,
+ * and it is what the reference the owner pointed at deliberately does not do: its first two
+ * departments are large and the rest are small, so the eye is given somewhere to land first.
+ *
+ * `:has(> li:nth-child(5))` is the count guard, and it is the whole reason this is safe. A lead tile
+ * spanning two columns and two rows only balances when there are enough followers to fill the column
+ * beside it — with three categories it would leave a hole. Five is the first count where the
+ * arrangement closes: one 2x2 lead plus four 1x1 followers is a complete 4x2 block. Below five the
+ * tiles stay equal, which is the right answer for a small shop rather than a degraded version of a
+ * big one.
+ *
+ * Only on wide viewports: at 390px there is one column, a `span 2` would overflow it, and a shop
+ * with five departments on a phone wants five reachable targets rather than one hero and four
+ * offcuts.
+ */
+@media (min-width: 52rem) {
+  .sf-cats:has(> li:nth-child(5)) > li:first-child {
+    grid-column: span 2;
+    grid-row: span 2;
+  }
+}
+
+/*
+ * `color` IS LOAD-BEARING HERE — this is the third instalment of the bug documented on
+ * `.sf-root a:not([class])` above, and the one that reached production.
+ *
+ * That reset fixed unclassed links and reasoned that a CLASSED anchor "keeps its own colour by
+ * construction". `.sf-cat` is a classed anchor that had no colour of its own, so what it kept was
+ * `globals.css`'s bare `a { color: var(--sb-primary) }` — the PLATFORM's orange #a63d0b — on a
+ * tenant's own card.
+ *
+ * Measured on the live storefront during the 2026-09-07 audit, on a shop whose palette resolves
+ * dark: label #a63d0b on surface #212832 is 2.33:1, against the 4.5:1 this platform commits to
+ * (WCAG 2.0 AA / IS 5568). The tenant's own guarded link token was #f59e0b and would have passed
+ * comfortably; the rule simply never reached the element. Every category card on every dark-ground
+ * shop was affected, and it is invisible to the token contrast tests because nothing is wrong with
+ * the TOKENS — the element was not using them.
+ *
+ * `--t-text` rather than `--t-link`: the card is a block with its own label and count, not a
+ * sentence with a link in it, and `--t-text` is the colour the count (`--t-text-muted`) is already
+ * derived to sit beside. A template that wants its category cards in the brand colour overrides
+ * this and inherits the guard with it.
+ */
 .sf-cat {
-  display: block;
+  /*
+   * A COLUMN, not a block, and `block-size: 100%` — both are what make the lead tile above work.
+   *
+   * `grid-auto-rows: 1fr` gives every cell the same height and the lead spans two of them; a `block`
+   * anchor sitting in a cell twice its content's height leaves the picture at the top and a band of
+   * card colour under it. As a flex column with the media flexing, the photograph fills whatever
+   * cell it was dealt and the label stays pinned to the foot of it.
+   */
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
   text-decoration: none;
+  color: var(--t-text);
   border: var(--t-rule-hair);
   border-radius: var(--t-radius-md);
   overflow: hidden;
   background: var(--t-surface);
+}
+
+.sf-cat .sf-media {
+  flex: 1 1 auto;
+  /* The reserved box still holds the CLS budget on a 1:1 tile; the flex only lets it GROW. */
+  min-block-size: 0;
 }
 
 .sf-cat__label {
@@ -1024,6 +1841,25 @@ details.sf-note > summary:focus-visible {
   margin: 0;
   padding: 0;
   border: var(--t-rule-hair);
+  /*
+   * TWO COLUMNS ONCE THERE IS ROOM. The index is ورشة's and بيت's category treatment — a catalogue
+   * you look things up in — and a catalogue set as one 1200px-wide column of six rows is six lines
+   * of text with a metre of empty space after each. `columns` rather than a grid because the rows
+   * are a continuous list whose order must survive the split, which is exactly what column flow
+   * does and what a grid's row-major fill does not.
+   */
+  column-gap: 0;
+}
+
+@media (min-width: 46rem) {
+  .sf-index:has(> li:nth-child(4)) {
+    columns: 2;
+  }
+
+  /* A row must not be torn across the column break — half a category name in each column. */
+  .sf-index > li {
+    break-inside: avoid;
+  }
 }
 
 .sf-index > li + li {
@@ -1074,10 +1910,26 @@ details.sf-note > summary:focus-visible {
 .sf-quotes {
   display: grid;
   gap: var(--t-space-lg);
-  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+/*
+ * ONE testimonial is a PULL-QUOTE, not a banner.
+ *
+ * `auto-fit` collapses the two empty tracks and stretches the survivor across the whole band — the
+ * capture caught exactly this: a single sentence of Arabic praise set as a 1200px-wide card, which
+ * reads as a layout that failed rather than as a shop with one happy customer.
+ *
+ * Most shops start with one. Capping it to a readable measure and centring it turns the honest case
+ * into a deliberate one, and `min(100%, …)` above is what keeps that safe at 390px, where an
+ * unguarded 17rem track can overflow a 358px column.
+ */
+.sf-quotes:has(> :only-child) {
+  max-inline-size: 42rem;
+  margin-inline: auto;
 }
 
 .sf-quote {
@@ -1131,11 +1983,37 @@ details.sf-note > summary:focus-visible {
   margin: 0;
 }
 
+/*
+ * THE FACTS ARE A PANEL NOW, not loose rows on an open band.
+ *
+ * `تواصل معنا` and `موقعنا` rendered a bare `dl` — a label column and a value column, floating on
+ * the page ground with nothing around them. On the old flat page that read as "plain"; once the band
+ * system gave each section its own ground and its own air it read as EMPTY, because a two-line
+ * definition list in a 5rem-tall band is two lines of text in a field.
+ *
+ * A hairline-ruled plate is the smallest thing that makes them a block. The rows are separated by a
+ * border on the row rather than a gap, so the panel reads as a single object — the way a receipt or
+ * an index card does — instead of as three cards that happen to be adjacent.
+ */
+.sf-facts {
+  border: var(--t-rule-hair);
+  border-radius: var(--t-radius-md);
+  background: var(--t-surface);
+  overflow: hidden;
+}
+
 .sf-facts div {
   display: grid;
   grid-template-columns: 7.5rem minmax(0, 1fr);
   gap: var(--t-space-sm);
+  padding: var(--t-space-md) var(--t-space-lg);
 }
+
+.sf-facts div + div {
+  border-block-start: var(--t-rule-hair);
+}
+
+/* The label stacks above the value below 40rem — handled once, in the shared breakpoint block. */
 
 .sf-facts dt {
   color: var(--t-text-muted);
@@ -1157,7 +2035,8 @@ details.sf-note > summary:focus-visible {
 .sf-gallery {
   display: grid;
   gap: var(--t-space-sm);
-  grid-template-columns: repeat(var(--sf-cols, 3), minmax(0, 1fr));
+  /* Same fill-the-row shape as `.sf-grid`; a gallery of four in a 3-track grid had the orphan too. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1232,13 +2111,57 @@ details.sf-note > summary:focus-visible {
   the sign this posture was after. The hairline is `--t-border`, held to 3:1 as non-text UI, so the
   plaque still has an edge on a palette where the two grounds happen to sit close.
 */
+/*
+ * `grid-column: 1 / -1` ON THE BRAND PLATE DEFEATS `auto-fit` FOR THE WHOLE FOOTER.
+ *
+ * `auto-fit` collapses only the tracks that NOTHING occupies. A full-width first child occupies every
+ * track, so none can collapse: at 1200px the footer resolves five 15rem tracks, the two real link
+ * columns land in the first two, and roughly 53% of the footer is dead ground. Measured on بيت and
+ * on ورشة, so it is not one template's accident.
+ *
+ * The count guards below restore it, using the same `:has(> :nth-child(n):last-child)` shape this
+ * sheet already uses for short product grids — an explicit track count for the two real footer
+ * shapes, so the plate can still span them.
+ */
+/*
+ * ABOVE 46rem ONLY. An explicit track count is a DESKTOP correction — `repeat(2, minmax(15rem, 1fr))`
+ * on a 358px phone forces two 240px tracks and 480px of content into a 358px column, which is a
+ * horizontal scrollbar on the whole document. The first version of this fix shipped exactly that and
+ * the QA gate caught it at scrollWidth 658. Below the breakpoint the original `auto-fit` is correct:
+ * one column, nothing to collapse, nothing stranded.
+ */
+@media (min-width: 46rem) {
+  [data-footer='band'] .sf-footer__inner:has(> :nth-child(3):last-child) {
+    grid-template-columns: repeat(2, minmax(15rem, 1fr));
+  }
+
+  [data-footer='band'] .sf-footer__inner:has(> :nth-child(4):last-child) {
+    grid-template-columns: repeat(3, minmax(15rem, 1fr));
+  }
+}
+
+/*
+ * `grid-column: 1 / -1` IS GONE. It was the reason `auto-fit` could never collapse a track — a
+ * full-width first child occupies every one — and removing it is the actual fix the explicit track
+ * counts above were only compensating for. The plate now sits in its own column like the link
+ * groups beside it.
+ */
 [data-footer='band'] .sf-footer__inner > :first-child {
-  grid-column: 1 / -1;
   background: var(--t-bg);
   border: var(--t-rule-hair);
   border-radius: var(--t-radius-lg);
   padding: var(--t-space-lg) var(--t-space-xl);
   text-align: center;
+}
+
+/*
+ * `text-align: center` centres the TEXT; it does not centre the BOX. `.sf-block__lead` carries
+ * `max-inline-size: min(30rem, 100%)`, so inside a centred plate its 480px box parked at the plate's
+ * inline start and its centred text landed 330px off the plate's own centre — measured on the
+ * desktop capture, with the shop name and its tagline centring on two different axes.
+ */
+[data-footer='band'] .sf-footer__inner > :first-child .sf-block__lead {
+  margin-inline: auto;
 }
 
 [data-footer='band'] .sf-footer__inner > :first-child h2 {
@@ -1252,6 +2175,26 @@ details.sf-note > summary:focus-visible {
   color: var(--t-text-muted);
   margin-block-end: var(--t-space-sm);
   font-weight: var(--t-weight-display);
+}
+
+/*
+ * A RANGE MUST NEVER BREAK ACROSS LINES. The footer wrapped «الجمعة» away from «14:00 – 22:00»,
+ * leaving a day label on one line and its hours on the next — which reads as two separate facts.
+ *
+ * This is the REAL hours defect, and it is worth naming next to the one that was reported and turned
+ * out not to exist: a critic pass claimed the range rendered reversed and proposed an LTR isolate.
+ * Measured, the bidi order is correct (the en-dash is U+2013, class ON, so UAX#9 W4 never fuses the
+ * two number runs and N1 lays them out in reading order). The isolate would have INTRODUCED the bug
+ * it claimed to fix. What was actually wrong was the wrapping, which is a box problem, not a bidi one.
+ */
+.sf-footer__hours {
+  /*
+   * `balance`, NOT `nowrap`. The line is the whole week summary — «السبت–الخميس 10:00 – 22:00 ·
+   * الجمعة 14:00 – 22:00» — so forbidding every break makes it one unbreakable 500px run and pushes a
+   * horizontal scrollbar onto the document at 390px. What was actually wrong is that it broke in an
+   * ugly place; balancing the lines fixes that without forbidding the break the phone needs.
+   */
+  text-wrap: balance;
 }
 
 .sf-footer ul {
@@ -1385,9 +2328,22 @@ details.sf-note > summary:focus-visible {
   --brand: #1877f2;
 }
 .sf-social a[data-platform='instagram'] {
-  /* Instagram's mark is a gradient, and a flat magenta reads as "not quite Instagram". */
+  /*
+   * FLAT MAGENTA, NOT THE BRAND GRADIENT — a hard ban, and this was breaking it.
+   *
+   * The previous rule was `linear-gradient(45deg, #f9ce34 0%, #ee2a7b 45%, #6228d7 100%)`, which
+   * terminates on #6228d7: a violet. "purple-blue gradients" is on CLAUDE.md's FORBIDDEN list and
+   * on `design/design.json`'s `never` list, and this shipped it into every storefront whose
+   * merchant added an Instagram handle — the one graphic on the page that could not have come from
+   * the tenant's own palette.
+   *
+   * The old comment reasoned that "a flat magenta reads as 'not quite Instagram'". That is true and
+   * it is not the deciding argument: the disc sits beside the Instagram glyph, under «تابعنا», at
+   * 44px. Nobody mistakes it. Fidelity to another company's brand ramp is not worth being the one
+   * element on a merchant's shop that violates the platform's own design rules — and `--brand` was
+   * already declared here for exactly this fallback. 2026-09-07 critic pass.
+   */
   --brand: #c13584;
-  background: linear-gradient(45deg, #f9ce34 0%, #ee2a7b 45%, #6228d7 100%);
 }
 .sf-social a[data-platform='tiktok'] {
   --brand: #010101;
@@ -1435,13 +2391,69 @@ details.sf-note > summary:focus-visible {
   all: the `.sf-btn` padding decides, which is what lets a long Arabic name and a short one sit
   in the same row without either being clipped.
 */
+/*
+ * THE CHIP ROW — the category treatment for a shop with many departments and no photographs of them.
+ *
+ * It was a bare `flex-wrap` of ghost buttons, which on a wide band is a short row of small pills
+ * adrift in a large empty space — the capture caught exactly that, five chips in a band sized for a
+ * grid. Two changes fix it without pretending the shop has pictures it does not:
+ *
+ *   - the chips are given room to breathe INTO rather than air around them: `justify-content` keeps
+ *     them at the inline start and the gap grows, so the row reads as a deliberate index;
+ *   - on a phone the row becomes a snapping rail with the last chip peeking, which is both the
+ *     honest affordance (there is more) and the reason a shop with fourteen departments does not
+ *     push its products four screens down.
+ */
 .sf-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--t-space-sm);
+  gap: var(--t-space-sm) var(--t-space-md);
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+@media (max-width: 40rem) {
+  .sf-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scroll-snap-type: inline mandatory;
+    /*
+      The rail bleeds through the shell's gutter so the peeking chip is cut by the VIEWPORT edge
+      rather than stopping short of it — a rail that ends inside the gutter reads as a wrapped row
+      that ran out of room, which is the opposite of the affordance.
+    */
+    /*
+      `--t-space-md`, NOT `--t-space-lg`, and the difference was an 8px horizontal scrollbar.
+      `.sf-shell` drops its gutter to `--t-space-md` at this same 40rem breakpoint, so pulling the
+      rail out by `lg` bled it past the viewport on both sides — measured scrollWidth 398 at 390.
+      A bleed must cancel the gutter that is ACTUALLY applied at the width it applies to.
+    */
+    margin-inline: calc(var(--t-space-md) * -1);
+    padding-inline: var(--t-space-md);
+    scrollbar-width: none;
+    /*
+     * `scroll-padding-inline-start` is what stops the FIRST chip being clipped.
+     *
+     * The negative margin pulls the rail out through the shell's gutter so the last chip is cut by
+     * the viewport rather than stopping short of it — that part was right. But a snapping rail
+     * scrolls its items to the CONTAINER edge, which is now outside the gutter, so the first chip
+     * came to rest underneath the screen edge with its start letter sliced off. The scroll padding
+     * puts the resting position back inside the gutter without giving up the bleed.
+     */
+    scroll-padding-inline-start: var(--t-space-md);
+    /*
+     * The affordance. A rail that simply ends at the viewport edge reads as a row that ran out of
+     * room; a fade says there is more. `to left` is correct in both directions here because the mask
+     * is describing the physical edge the overflow runs toward, and the rail is `dir`-agnostic.
+     */
+    mask-image: linear-gradient(to left, transparent 0, #000 2rem);
+  }
+
+  .sf-chips > li {
+    scroll-snap-align: start;
+    flex: none;
+  }
 }
 
 .sf-legal {
@@ -1516,13 +2528,51 @@ details.sf-note > summary:focus-visible {
 }
 
 /*
+  THE FLOATING BUTTONS ARE DOCK CHILDREN (2026-09-09), not independently fixed elements.
+
+  They used to be `position: fixed` at z-index 55, each carrying a comment explaining that they
+  could not collide with the dock because the dock "sits inline-start". That is true of
+  `.sf-watermark`, which the dock's `align-items: flex-start` keeps at the inline start — and
+  false of `.sf-consent`, which is `inline-size: 100%` and therefore reaches the inline-end corner
+  too, at z-index 60 over their 55. The 2026-09-08 mobile capture shows the WhatsApp button, the
+  entire order flow of the أساسي plan, sitting underneath the consent banner on a first visit.
+
+  As the dock's FIRST child in a column, they are above the watermark and the banner in the flow
+  and cannot overlap either. `column-reverse` puts WhatsApp — rendered first, for the sibling
+  order the shell documents — at the bottom of the pair, under the thumb, which is what the old
+  `.sf-wa-fab ~ .sf-cart-fab` offset rule was computing by hand from a hardcoded 3.25rem.
+
+  `:last-child` carries the safe-area inset ONLY when nothing is docked beneath the buttons; when
+  the banner or the watermark is present it owns the home indicator and adding it here too would
+  push the buttons up by the inset twice.
+*/
+.sf-dock__fabs {
+  align-self: flex-end;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--t-space-sm);
+  margin: 0 var(--t-space-lg) var(--t-space-lg);
+  pointer-events: auto;
+}
+
+.sf-dock__fabs:last-child {
+  margin-block-end: calc(var(--t-space-lg) + env(safe-area-inset-bottom, 0px));
+}
+
+/* An empty button row must not reserve the gap above the banner. */
+.sf-dock__fabs:empty {
+  display: none;
+}
+
+/*
   THE FLOATING WHATSAPP BUTTON (2026-09-06, owner-directed) — on every page, not only in the
   contact section a merchant can reorder or switch off.
 
-  Same corner as the cart (INLINE-END, the left in RTL) and the opposite side from `.sf-dock`, so
-  neither can cover the watermark or the consent banner. It takes the BOTTOM slot and pushes the
-  cart up a row when both are present — see the sibling rule below — because WhatsApp is the entire
-  order flow on the أساسي plan, so it is the one that must be under the thumb.
+  Same corner as the cart (INLINE-END, the left in RTL), and since 2026-09-09 both are children of
+  `.sf-dock` rather than separately fixed — see `.sf-dock__fabs` above for why the old "opposite
+  side from the dock" reasoning was only true of the watermark and not of the full-width consent
+  banner. It takes the BOTTOM slot, because WhatsApp is the entire order flow on the أساسي plan,
+  so it is the one that must be under the thumb; the dock row's `column-reverse` places it.
 
   WhatsApp's own green, not `--t-primary`. A green circle with that glyph is a thing customers
   recognise without reading anything, and this is the only control on the storefront where the
@@ -1531,18 +2581,31 @@ details.sf-note > summary:focus-visible {
   the ADJACENT background, and a saturated green on any template's page colour clears that.
 */
 .sf-wa-fab {
-  position: fixed;
-  inset-block-end: var(--t-space-lg);
-  inset-inline-end: var(--t-space-lg);
-  z-index: 55;
   display: grid;
   place-items: center;
   inline-size: 3.25rem;
   block-size: 3.25rem;
   border-radius: 999px;
-  background: #25d366;
-  color: #fff;
+  /*
+   * THE HEXES LEFT THE STYLESHEET (12.E). `#25d366` and `#fff` sat here in a file whose own contract
+   * says every colour comes from a token, and `design/design.json` lists "hardcoded hex in a
+   * component" under `never`.
+   *
+   * The green STAYS, and that is a deliberate exception rather than an oversight: it is WhatsApp's
+   * brand colour, not a theme colour, and `design/taste.md` records WhatsApp as the conversion on
+   * this platform — a shopper scanning a page finds that green faster than they read any label. It
+   * is emitted as `--t-whatsapp` with a measured ink colour beside it, so it is a named external
+   * brand constant in one place instead of a literal in a rule.
+   */
+  background: var(--t-whatsapp);
+  color: var(--t-whatsapp-ink);
   box-shadow: 0 6px 20px rgb(0 0 0 / 0.22);
+  /*
+   * The home-indicator inset moved to `.sf-dock__fabs:last-child`. It belongs to the COLUMN, not to
+   * one button in it: applied here it was added to the WhatsApp circle only, so a shop with a cart
+   * and no dialable number got no inset at all, and a shop with both got it on the lower circle
+   * while the cart above it was positioned from a separate hardcoded offset.
+   */
 }
 
 .sf-wa-fab__icon {
@@ -1550,8 +2613,16 @@ details.sf-note > summary:focus-visible {
   block-size: 28px;
 }
 
-.sf-wa-fab:hover {
-  transform: translateY(-2px);
+/*
+ * THE LIFT MOVED INSIDE THE GUARD. Only the `transition` was inside it, so a visitor who has asked
+ * for reduced motion still got the button jumping under their cursor — the transition made it
+ * instant rather than absent, which is not what the preference asks for. `transform` is the motion;
+ * `transition` is only its duration.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .sf-wa-fab:hover {
+    transform: translateY(-2px);
+  }
 }
 
 /* Same inversion as `.sf-social a` above, and for the same reason — see the note there. */
@@ -1562,34 +2633,16 @@ details.sf-note > summary:focus-visible {
 }
 
 /*
-  BOTH BUTTONS, ONE COLUMN.
+  Phase 8's floating cart button, a `.sf-dock__fabs` child since 2026-09-09.
 
-  A general sibling combinator rather than a modifier class or a `data-` flag on `.sf-root`: both are
-  direct children of the shell and WhatsApp is rendered first, so the rule applies exactly when both
-  circles exist and neither component ever has to be told about the other.
-
-  It is `.sf-wa-fab` that can be absent — `WhatsappFab` returns null when the feature is off or the
-  stored number is not dialable. `CartBadge` does NOT return null on an empty cart; it renders the
-  anchor at count zero on purpose, so this rule must not be read as "applies only when the cart has
-  something in it".
-
-  3.25rem is the button, and the gap keeps them from reading as one pill.
-*/
-.sf-wa-fab ~ .sf-cart-fab {
-  inset-block-end: calc(var(--t-space-lg) + 3.25rem + var(--t-space-sm));
-}
-
-/*
-  Phase 8's floating cart button. Fixed at the INLINE-END corner (the left in RTL) — the
-  opposite side from `.sf-dock`'s own content, which sits inline-start — so a demo tenant with
-  BOTH cart and the watermark on screen never has one cover the other, the same reasoning that
-  keeps the watermark and the consent banner from overlapping each other.
+  THE `.sf-wa-fab ~ .sf-cart-fab` RULE THAT USED TO SIT HERE IS GONE. It lifted the cart by
+  `calc(var(--t-space-lg) + 3.25rem + var(--t-space-sm))` — the other button's height, restated as
+  a literal in a second place — so that two independently fixed circles would not land on each
+  other. In a flex column they cannot, so the arithmetic has no job left. The sibling ORDER is
+  still load-bearing and still documented in `shell.tsx`; it is now read by `column-reverse`
+  instead of by a combinator.
 */
 .sf-cart-fab {
-  position: fixed;
-  inset-block-end: var(--t-space-lg);
-  inset-inline-end: var(--t-space-lg);
-  z-index: 55;
   display: grid;
   place-items: center;
   inline-size: 3.25rem;
@@ -1921,14 +2974,28 @@ details.sf-note > summary:focus-visible {
 /* --------------------------------------------------------- responsive -- */
 
 @media (max-width: 60rem) {
+  /*
+   * `[data-figure='photo']` IS REQUIRED HERE, and its absence was a real regression.
+   *
+   * The desktop rule is now `.sf-hero--split[data-figure='photo'] .sf-hero__inner` at (0,3,0), and a
+   * media query contributes NO specificity — so the old (0,2,0) collapse below it lost, and the
+   * split hero stayed two columns at 390px with a 4:5 portrait crushed beside an Arabic title. The
+   * same trap `.sf-root a:not([class])` documents twice in this file: a media query is not a
+   * cascade override, it is a condition on one.
+   */
+  .sf-hero--split[data-figure='photo'] .sf-hero__inner,
   .sf-hero--split .sf-hero__inner,
   .sf-hero--ledger .sf-hero__inner {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .sf-grid {
-    grid-template-columns: repeat(min(var(--sf-cols, 3), 2), minmax(0, 1fr));
-  }
+  /*
+   * THE FIXED-TRACK OVERRIDE IS GONE. It clamped the grid to `min(--sf-cols, 2)` fixed tracks, which
+   * re-introduced at every width below 60rem exactly the orphan the new `auto-fit` shape exists to
+   * remove — three products in two fixed columns is two and one alone. The `max()` floor in
+   * `.sf-grid` already drops a column at a time as the row narrows, so there is nothing left for a
+   * breakpoint to decide.
+   */
 }
 
 @media (max-width: 40rem) {
@@ -1936,9 +3003,66 @@ details.sf-note > summary:focus-visible {
     padding-inline: var(--t-space-md);
   }
 
-  .sf-grid,
-  .sf-gallery {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  /*
+   * THE HERO DOES NOT RESERVE 76vh ON A PHONE.
+   *
+   * `--t-hero-min` is `min(76vh, 39rem)` = 641px at 844, and `.sf-hero` centres its content in that,
+   * so ~350px of copy sat in the middle with 120px of empty ground above it — and the CTA landed at
+   * y≈605, under a consent sheet occupying the bottom 27% of the viewport. No way to order was
+   * reachable at first paint, on the device most of this platform's traffic arrives on.
+   *
+   * A hero on a phone should be as tall as its content and no taller; the vh floor is a desktop
+   * device for holding a full-bleed picture, and there is no picture here.
+   */
+  .sf-hero {
+    min-block-size: auto;
+    align-content: start;
+  }
+
+  /*
+   * TAP TARGETS. `.sf-btn` has carried `min-block-size: 44px` since A2, but the plain links did not
+   * — the nav, the department row, the footer's four columns and the legal strip are all bare
+   * anchors, and the QA gate counted twenty of them under 36px on a 390px screen. This is a market
+   * storefront opened one-handed; a 19px legal link is a link nobody hits first time.
+   *
+   * `inline-flex` + `align-items` rather than padding, so the target grows around the text without
+   * moving the text off its own baseline and without opening gaps in a wrapped footer column.
+   */
+  /*
+   * 44px, not 36. `.sf-btn` has carried 44 since A2 and these bare anchors carried nothing; 36 was a
+   * half-measure that still fails the target size both `craft.md` and this market ask for. This is a
+   * storefront opened one-handed in a market.
+   */
+  .sf-nav a,
+  .sf-header__cats a,
+  .sf-footer a,
+  .sf-legal a {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: 44px;
+  }
+
+  /*
+   * THE FLOOR DROPS ON A PHONE — `--sf-min`, not a fixed track count.
+   *
+   * The desktop floor of 13rem is the width below which an Arabic product name plus a price row
+   * stops fitting in a card. On a 358px content column that floor is wider than half the screen, so
+   * `auto-fit` could only ever fit ONE track: a 15-product shop rendered as a 10,500px single-file
+   * scroll, which is worse than the fixed `repeat(2, …)` this replaced and not what any shopper
+   * expects in a market.
+   *
+   * 9rem (144px) is the narrowest a card can be and still show a two-word Arabic name above a price.
+   * It resolves to exactly two columns on every one of the nine templates at 390px — a 2-column
+   * template computes 167px per track, a 4-column one is held at the 144px floor and still fits two
+   * — while keeping the `auto-fit` fill, so a short catalogue does not strand a card in a half row.
+   */
+  .sf-grid {
+    --sf-min: 9rem;
+  }
+
+  /* A category tile carries a name and a count, so it can go narrower than a product card. */
+  .sf-cats {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
   }
 
   .sf-hero__facts .sf-hero__fact,
@@ -1952,7 +3076,19 @@ details.sf-note > summary:focus-visible {
   }
 }
 
-@media (max-width: 26rem) {
+/*
+ * 21rem, NOT 26rem — this rule silently cancelled the mobile grid fix eight hundred lines above it.
+ *
+ * 26rem is 416px at the default root size, so 390, 375 and 360 — every phone in this market — matched
+ * it. It sets `grid-template-columns` outright and sits LATER in the file than `.sf-grid { --sf-min:
+ * 9rem }`, so it won at equal specificity and every shop rendered one product per row on every phone:
+ * the QA capture measured a 15-product homepage at 10,503px, LONGER than the same page at 1440px.
+ *
+ * The rule is still right for the phones it was written for. 21rem is 336px, which catches the
+ * ≤320px devices where a two-up card genuinely cannot hold an Arabic product name and a price, and
+ * leaves the `auto-fit` floor to decide everywhere else.
+ */
+@media (max-width: 21rem) {
   .sf-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1975,9 +3111,11 @@ details.sf-note > summary:focus-visible {
   An unresolvable custom property is not a no-op — the declaration is dropped at computed-value time
   and the property INHERITS. On `color` that is survivable (the parent's colour is a real colour), so
   the push hint has been rendering in full-strength text instead of muted for four phases. On
-  `.sf-offline`'s `font-family` it is not: the offline page inherits from `<html>`, which is outside
-  `.sf-root` and therefore has none of these tokens, so the shop's Arabic name rendered in the
-  browser's default font — on the one page a visitor sees when their connection has already failed.
+  `.sf-offline`'s `font-family` it is not: the offline page inherits from the document root element,
+  which sits outside `.sf-root` and therefore has none of these tokens, so the shop's Arabic name
+  rendered in the browser's default font — on the one page a visitor sees when their connection has
+  already failed. (The root element itself is correct: the layout sets lang="ar" and dir="rtl" on
+  it; what it does not carry is the per-tenant `--t-*` token set, which is the point here.)
 */
 .sf-push {
   min-inline-size: 0;
@@ -2010,10 +3148,21 @@ details.sf-note > summary:focus-visible {
   color: var(--t-text);
 }
 
+/*
+ * NO TRACKING ON THIS ELEMENT — it holds the SHOP'S ARABIC NAME.
+ *
+ * It used to carry a small positive tracking value, borrowed from a Latin label convention, and
+ * that is actively wrong in Arabic: the script is cursive, so tracking pulls the joins apart and
+ * renders the name as disconnected letterforms — «م ت ج ر» where «متجر» was meant.
+ * DESIGN_BRIEF.md states the rule outright, and this was the one place in the storefront that
+ * broke it. Caught by the design-engine lint during the 2026-09-07 audit.
+ *
+ * Hierarchy here comes from size and colour instead, which is what Arabic offers in place of the
+ * Latin move this was copied from.
+ */
 .sf-offline__shop {
   color: var(--t-text-muted);
   font-size: var(--t-text-sm);
-  letter-spacing: 0.04em;
 }
 
 .sf-offline__title {
@@ -2121,8 +3270,16 @@ details.sf-note > summary:focus-visible {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: var(--t-space-lg);
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--t-space-md) var(--t-space-lg);
+  /*
+   * 15rem was WIDER THAN A PHONE'S CONTENT COLUMN (358px at 390 minus the gutters), so the four-up
+   * reassurance strip collapsed to a single column: four stacked rows that read as four sections and
+   * flatten the airy-hero → tight-strip contrast this band exists to provide.
+   *
+   * 9rem holds an icon, a bold Arabic label and a faint sub-label at two-up on the narrowest phone,
+   * and `min(100%, …)` guarantees the track can never exceed the column and force an overflow.
+   */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
 }
 
 .sf-trust__item {

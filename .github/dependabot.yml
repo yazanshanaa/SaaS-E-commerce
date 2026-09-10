@@ -1,0 +1,73 @@
+version: 2
+
+# Dependency updates as pull requests (2026-09-07 audit).
+#
+# WHY THIS FILE EXISTS. The audit found four HIGH advisories live in production dependencies
+# (`fast-uri`, reached through @sentry/nextjs -> webpack -> schema-utils -> ajv). Nothing surfaced
+# them, because the only thing watching was `pnpm audit` inside CI and CI had not run since
+# 11 August. The weekly `schedule:` in ci.yml closes half of that — it tells you an advisory
+# exists. This file closes the other half: it arrives as a pull request with the bump already made.
+#
+# This is the part that can live in the repository. Dependabot ALERTS (the security feed itself)
+# are a repository setting and cannot be enabled from a file — see docs/DEPLOY.md §9.
+#
+# NOTE ON `pnpm.overrides`. Two transitive advisories are currently closed by overrides in
+# package.json (`deepmerge-ts`, `fast-uri`) rather than by upgrading the parent. Dependabot does
+# not manage overrides, so when it proposes a parent bump that makes an override redundant, the
+# override has to be removed by hand — `pnpm audit` after the merge is what proves it.
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      # After the Monday 05:00 UTC audit run in ci.yml, so a fresh advisory and its fix land in
+      # the same morning rather than a week apart.
+      time: '07:00'
+      timezone: Asia/Jerusalem
+    open-pull-requests-limit: 5
+    # Security fixes are never grouped: one advisory, one reviewable pull request. Routine bumps
+    # are grouped so a quiet week costs one review instead of fifteen.
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+      production-patches:
+        dependency-type: production
+        update-types: [patch]
+    ignore:
+      # The stack is pinned deliberately (CLAUDE.md: "do not substitute without asking"). A major
+      # bump of any of these is a migration with its own phase, not a dependency update — and a
+      # bot-opened PR that sits red for a month teaches people to ignore the bot.
+      - dependency-name: next
+        update-types: [version-update:semver-major]
+      - dependency-name: react
+        update-types: [version-update:semver-major]
+      - dependency-name: react-dom
+        update-types: [version-update:semver-major]
+      - dependency-name: '@prisma/client'
+        update-types: [version-update:semver-major]
+      - dependency-name: prisma
+        update-types: [version-update:semver-major]
+      - dependency-name: better-auth
+        update-types: [version-update:semver-major]
+      - dependency-name: zod
+        update-types: [version-update:semver-major]
+    commit-message:
+      prefix: 'deps'
+      prefix-development: 'deps(dev)'
+
+  # The CI and deploy workflows pin actions by tag. A tag is mutable, so this is what keeps the
+  # pins current — and it is the only automated watch on the actions that run with the deploy key
+  # in scope.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '07:00'
+      timezone: Asia/Jerusalem
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'ci'

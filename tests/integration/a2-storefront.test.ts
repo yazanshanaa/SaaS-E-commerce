@@ -254,8 +254,17 @@ describe('the storefront view model', () => {
     expect(types).toContain('categories');
     expect(types).toContain('about');
     expect(types).toContain('contact_whatsapp');
-    // The pack case: an address string and no coordinates still produces a map section.
-    expect(types).toContain('map');
+    /*
+      NO STANDALONE «موقعنا» (2026-09-09). This tenant has both an address and a way to be
+      contacted, and `ContactWhatsappSection` now draws the Google/Waze deep links from the same
+      `resolveMapTarget` chain the section used — so a `map` band here would print the address a
+      second time directly under the block that just printed it.
+
+      The pack case this line used to assert (an address string and no coordinates still resolves a
+      target) is unchanged and still covered — it now runs inside the contact block, and
+      `a2-storefront-logic.test.ts` pins the no-contact shop that still gets its own band.
+    */
+    expect(types).not.toContain('map');
     expect(types).not.toContain('testimonials');
     expect(types).not.toContain('custom_html');
   });

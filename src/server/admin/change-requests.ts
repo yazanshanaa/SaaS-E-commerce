@@ -437,9 +437,25 @@ async function applyAnnouncementsBoard(
         };
 
         if (announcement.id) {
-          // Scoped by tenantId as well as id: a payload naming another tenant's row must update
-          // nothing rather than reach across the boundary. RLS refuses it too; this makes the
-          // intent visible at the call site.
+          /**
+           * Scoped by tenantId as well as id: a payload naming another tenant's row must update
+           * nothing rather than reach across the boundary.
+           *
+           * AND ON THIS PATH THAT PREDICATE IS THE ONLY THING STOPPING IT. This comment used to end
+           * "RLS refuses it too", which is false here and was corrected in the 2026-09-07 audit.
+           * These appliers run inside `withTenantTxn(..., { actor: ctx.actor })` with the SUPER
+           * ADMIN's actor, and the generic policy
+           * (prisma/migrations/20260809000100_rls_roles_and_guards) reads
+           * `USING (tenant_id = current_setting('app.tenant_id', true)
+           *        OR current_setting('app.actor_role', true) = 'super_admin')`
+           * — so for the whole of this transaction the second clause is TRUE for every row of
+           * every tenant, in both USING and WITH CHECK. Invariant 1's second layer is switched off.
+           *
+           * The payload is written by the MERCHANT and carries row ids. Every applier in this file
+           * currently carries the `tenantId` predicate, so nothing is reachable today — but the
+           * next helper written without it has nothing underneath to catch it, and a comment
+           * promising otherwise is how that gets merged. See the note on `WithTenantTxnOptions.actor`.
+           */
           await tx.announcement.updateMany({
             where: { id: announcement.id, tenantId },
             data,

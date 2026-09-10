@@ -16,6 +16,10 @@ import {
   safeParseSectionConfig,
   assertAllowedTemplate,
   colorSelectionSchema,
+  announcementBarSchema,
+  homeStripSchema,
+  isSafeLinkHref,
+  safeLinkField,
 } from '@/shared/site-contract';
 
 /**
@@ -274,5 +278,66 @@ describe('scheduling (shared by the announcement bar and the board)', () => {
 
   it('treats an absent bound as open-ended', () => {
     expect(isWithinSchedule(now, null, null)).toBe(true);
+  });
+});
+
+/**
+ * MERCHANT-SUPPLIED HREFS (2026-09-07 audit).
+ *
+ * The rule — root-relative path, or http(s), and nothing else — was enforced on four of the seven
+ * places an announcement link can be written and missing from three: `announcementBarSchema` here
+ * (which `homeStripSchema` extends), and both announcement payloads in
+ * `src/server/admin/capability-payloads.ts`. Those two payloads are the ONLY validation on the
+ * change-request path, because `applyAnnouncementBar` / `applyAnnouncementsBoard` write the value
+ * verbatim rather than through the owning track's save function.
+ *
+ * So a merchant on an `editable_by: admin` plan could file «تغيير نص الشريط», put a `data:` or
+ * `javascript:` URL in the link, and have a super admin approve it into an `<a href>` shown to
+ * every customer of that shop. React 19 neutralises `javascript:` in an href — which is React's
+ * guarantee and not this platform's, and does nothing about `data:`.
+ *
+ * Tested here rather than at each call site because the point is that ONE predicate now governs
+ * all of them.
+ */
+describe('merchant-supplied link hrefs', () => {
+  const accepted = [
+    '',
+    '/products',
+    '/products?sort=newest',
+    'https://example.com/sale',
+    'http://example.com',
+  ];
+
+  const refused = [
+    'javascript:alert(1)',
+    // Mixed case, because a scheme comparison that lowercases nothing is the classic bypass.
+    'JavaScript:alert(1)',
+    'data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==',
+    'vbscript:msgbox(1)',
+    'file:///etc/passwd',
+    // Reads like a path, is not one: `//evil.example` is protocol-relative and leaves the shop.
+    '//evil.example/phish',
+  ];
+
+  it('accepts a root-relative path or an absolute http(s) URL', () => {
+    for (const value of accepted) {
+      expect(isSafeLinkHref(value), `should accept ${value || '(empty)'}`).toBe(true);
+      expect(safeLinkField.safeParse(value).success, `schema should accept ${value}`).toBe(true);
+    }
+  });
+
+  it('refuses every other scheme, and the protocol-relative host that looks like a path', () => {
+    for (const value of refused) {
+      expect(isSafeLinkHref(value), `should refuse ${value}`).toBe(false);
+      expect(safeLinkField.safeParse(value).success, `schema should refuse ${value}`).toBe(false);
+    }
+  });
+
+  it('governs the announcement bar and the home strip, which extends it', () => {
+    for (const value of refused) {
+      expect(announcementBarSchema.safeParse({ enabled: true, link: value }).success).toBe(false);
+      expect(homeStripSchema.safeParse({ enabled: true, link: value }).success).toBe(false);
+    }
+    expect(announcementBarSchema.safeParse({ enabled: true, link: '/products' }).success).toBe(true);
   });
 });

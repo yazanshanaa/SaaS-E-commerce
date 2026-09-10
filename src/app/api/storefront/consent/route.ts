@@ -159,7 +159,21 @@ export async function POST(request: Request): Promise<Response> {
     sameSite: 'lax',
     path: '/',
     maxAge: CONSENT_MAX_AGE_SECONDS,
-    secure: new URL(request.url).protocol === 'https:',
+    /**
+     * From the DEPLOYMENT's scheme, not from `request.url`.
+     *
+     * This process is reached over PLAIN HTTP inside the docker network — Caddy terminates TLS and
+     * proxies to `web:3000` — so `new URL(request.url).protocol` is `http:` on a production request
+     * that arrived over HTTPS, and the flag it computed was therefore `false` on exactly the
+     * deployment that needed it. The consent record is the evidence behind "we do not track without
+     * consent", so a cookie that a network attacker can strip or forge over plain HTTP undermines
+     * the one claim it exists to support.
+     *
+     * `PUBLIC_SCHEME` is what better-auth already keys `useSecureCookies` off
+     * (`src/server/auth/config.ts`), so this is the platform's single answer to "are we on HTTPS",
+     * not a second one invented here. Found in the 2026-09-07 audit.
+     */
+    secure: getEnv().PUBLIC_SCHEME === 'https',
   });
 
   return Response.json(

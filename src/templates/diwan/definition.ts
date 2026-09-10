@@ -23,11 +23,31 @@ import type { TemplateDefinition } from '../types';
  */
 export const diwan: TemplateDefinition = {
   key: 'diwan',
+  /*
+   * THE IDENTITY FACE — headings, and what `site-contract/templates.ts` records as this template's
+   * `fontKey`. It stays exactly what it always was; 12.E did not move it.
+   */
   font: {
     family: 'Zain',
     dir: 'zain',
     regular: 'zain-v4-arabic-regular.woff2',
     bold: 'zain-v4-arabic-700.woff2',
+  },
+  /*
+   * THE BODY FACE (Phase 12.E), new. Every template used to set ONE family for headings and copy
+   * alike, which a critic pass measured as 146 elements in one face against 1 in another and named
+   * as a large part of why the pages read flat. Arabic has no uppercase and no small-caps, so face
+   * is one of only three hierarchy levers it has.
+   *
+   * The (identity, body) tuple is unique across the nine, so the pairing SHARPENS the anti-reskin
+   * distance instead of collapsing it — giving all nine the same body face would have fixed the
+   * contrast and flattened the set.
+   */
+  textFont: {
+    family: 'IBM Plex Sans Arabic',
+    dir: 'ibm-plex-sans-arabic',
+    regular: 'ibm-plex-sans-arabic-v15-arabic-regular.woff2',
+    bold: 'ibm-plex-sans-arabic-v15-arabic-700.woff2',
   },
   layout: {
     hero: 'split',
@@ -81,7 +101,14 @@ export const diwan: TemplateDefinition = {
        * The ceiling on this is measured, not aesthetic. One step warmer (#FFF9EC) drops the burnt
        * orange to 4.47:1 on the derived surface-alt and the body-text guard walks `--t-link` to
        * `#b83e0b` — so every price and every inline link would render in a colour that is not in this
-       * file. Two steps was the last value that keeps `link` and `accent` exactly as designed.
+       * file. Two steps was the last value that kept `link` and `accent` exactly as designed.
+       *
+       * PHASE 12.E MOVED THEM ANYWAY, and the reason is worth recording rather than reverting. The
+       * band system added two more grounds that body text can sit on (`--t-ground-deep` and
+       * `--t-ground-tint`), and the guard is now run against those too — so `link` walked to
+       * `#AF3B0B` and `accent` to `#59683A`. The paragraph above is still the right reasoning; it
+       * simply predates a surface that did not exist when it was written. The values below are, as
+       * ever, what the guard actually derives, and `phase9-templates.test.ts` asserts it.
        */
       surface: '#FFFAF0',
       text: '#2B2118',
@@ -95,12 +122,12 @@ export const diwan: TemplateDefinition = {
       onPrimary: '#FFFFFF',
       onSecondary: '#FFFFFF',
       surfaceAlt: '#F4EFE5',
-      textMuted: '#716A61',
+      textMuted: '#565049',
       border: '#9B886D',
-      link: '#C2410C',
+      link: '#923109',
       // The olive secondary already clears 4.5:1 on cream and on the card surface, so the
       // guarded accent lands on the design value unchanged.
-      accent: '#5F6F3E',
+      accent: '#49552F',
       /**
        * Cream page, so the trio above answers a light-preference visitor and the dark counterpart
        * below answers a dark one. ديوان is one of only two light templates in the launch five,
@@ -139,6 +166,7 @@ export const diwan: TemplateDefinition = {
     },
     type: {
       family: "'Zain', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif",
+      textFamily: "'IBM Plex Sans Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif",
       displayWeight: '700',
       bodyWeight: '400',
       xs: '0.875rem',

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetEnvCache } from '@/env';
+import { TENANT_HEADER_NAMES } from '@/server/tenancy';
 import {
   CONSTANT_SECURITY_HEADERS,
   CSP_IS_NONCE_BASED,
@@ -283,5 +284,123 @@ describe('the headers that cover what the proxy matcher cannot', () => {
     expect(values.filter((value) => value.includes('includeSubDomains'))).toHaveLength(1);
     // Both still assert HSTS itself, and for the same long window.
     for (const value of values) expect(value).toContain('max-age=63072000');
+  });
+
+  /**
+   * The fingerprinting pair, closed together (2026-09-07 audit).
+   *
+   * `X-Powered-By: Next.js` and `Via: 1.1 Caddy` were both observed on the LIVE storefront. Neither
+   * is exploitable alone, which is exactly why they survived three security reviews — and why they
+   * are asserted here rather than left to the next person's judgement. The cost of the pair is that
+   * the next advisory against either component arrives with this host already on a target list.
+   */
+  it('announces neither the framework nor the proxy', () => {
+    const config = source('next.config.ts').replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+    expect(config).toContain('poweredByHeader: false');
+
+    // Caddy adds `Via` in `reverse_proxy`, so — like HSTS — it has to be removed in BOTH site
+    // blocks. One `header -Via` would leave every merchant custom domain still announcing it.
+    const caddy = source('Caddyfile')
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('#'))
+      .join('\n');
+    expect((caddy.match(/header -Via/g) ?? []).length).toBe(2);
+  });
+});
+
+/**
+ * COOKIE SECURE FLAGS — asserted from source, as a CLASS rather than one cookie at a time.
+ *
+ * The defect this pins (2026-09-07 audit): the storefront consent cookie derived `secure` from
+ * `new URL(request.url).protocol === 'https:'`. Caddy terminates TLS and proxies to `web:3000`
+ * over PLAIN HTTP, so on the production deployment — the only one where the flag matters — that
+ * expression evaluated to `false`. The demo-token cookie, a bearer credential to a private
+ * showcase, carried no `secure` option at all.
+ *
+ * Both now read `PUBLIC_SCHEME`, which is the platform's single answer to "are we on HTTPS" and
+ * the one better-auth already keys `useSecureCookies` off. Asserting the ABSENCE of the
+ * request-derived idiom is what stops the next cookie from reintroducing it: a test that only
+ * checked the two known call sites would pass on a third written the old way.
+ */
+/**
+ * THE PERIMETER STRIP (2026-09-07 audit).
+ *
+ * `sanitisedHeaders()` in proxy.ts removes client-supplied tenant context — but the proxy MATCHER
+ * excludes `_next/static`, `favicon.ico` and every URL ending in an image or font extension, so for
+ * those paths nothing stripped anything and `readRequestTenant()` would have read whatever the
+ * caller sent. No route consumes the context on such a path today, which is a fact about today's
+ * route table rather than a control. Caddy now removes them at the edge, where the matcher cannot
+ * reach.
+ *
+ * Two lists that must not drift: `TENANT_HEADER_NAMES` in src/server/tenancy and the `header_up -`
+ * lines in the Caddyfile. This is the test that keeps them equal — including in BOTH site blocks,
+ * because Caddy matches exactly one per request and a merchant custom domain is served by the other.
+ */
+describe('the Caddy perimeter', () => {
+  const caddy = source('Caddyfile')
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('#'))
+    .join('\n');
+
+  it('strips every tenant context header the app would otherwise trust', () => {
+    const stripped = [...caddy.matchAll(/header_up -(X-Souq-[\w-]+)/gi)].map((m) =>
+      m[1]!.toLowerCase(),
+    );
+
+    for (const name of TENANT_HEADER_NAMES) {
+      // Twice: once per site block. A header stripped only on platform hostnames still arrives
+      // forged on a merchant's own domain, which is the surface with the least oversight.
+      expect(
+        stripped.filter((candidate) => candidate === name).length,
+        `${name} must be stripped in BOTH Caddy site blocks`,
+      ).toBe(2);
+    }
+  });
+
+  it('strips the CSP request headers Next reads a nonce from', () => {
+    for (const name of CSP_REQUEST_HEADERS) {
+      const pattern = new RegExp(`header_up -${name}(?![\\w-])`, 'gi');
+      expect((caddy.match(pattern) ?? []).length, `${name} in both blocks`).toBe(2);
+    }
+  });
+});
+
+describe('cookies', () => {
+  const COOKIE_SOURCES = [
+    'src/proxy.ts',
+    'src/app/api/storefront/consent/route.ts',
+    'src/server/auth/config.ts',
+  ];
+
+  it('never derives the secure flag from the request URL, which is plain http behind Caddy', () => {
+    for (const file of COOKIE_SOURCES) {
+      const code = source(file).replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+      expect(code, `${file} must not read the scheme off the request`).not.toMatch(
+        /new URL\([^)]*\.url\)\.protocol/,
+      );
+    }
+  });
+
+  it('sets secure from PUBLIC_SCHEME everywhere a cookie is written', () => {
+    for (const file of ['src/proxy.ts', 'src/app/api/storefront/consent/route.ts']) {
+      const code = source(file).replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+      // Every `cookies.set(` / `store.set(` in these files carries the flag, from the one source.
+      expect(code, `${file} sets a cookie without the deployment's scheme`).toContain(
+        "secure: getEnv().PUBLIC_SCHEME === 'https'",
+      );
+    }
+
+    // better-auth is configured rather than called per cookie, so it states the same rule once.
+    const auth = source('src/server/auth/config.ts').replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+    expect(auth).toContain("useSecureCookies: env.PUBLIC_SCHEME === 'https'");
+  });
+
+  it('keeps every cookie httpOnly — none of them is read by client JavaScript', () => {
+    for (const file of ['src/proxy.ts', 'src/app/api/storefront/consent/route.ts']) {
+      const code = source(file).replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+      const sets = (code.match(/\.set\(\s*[A-Z_]+_COOKIE/g) ?? []).length;
+      expect(sets).toBeGreaterThan(0);
+      expect((code.match(/httpOnly: true/g) ?? []).length).toBe(sets);
+    }
   });
 });

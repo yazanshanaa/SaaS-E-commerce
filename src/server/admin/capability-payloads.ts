@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { colorSelectionSchema, socialPlatformSchema, stripColorSchema } from '@/shared/site-contract';
+import {
+  colorSelectionSchema,
+  safeLinkField,
+  socialPlatformSchema,
+  stripColorSchema,
+} from '@/shared/site-contract';
 import { sizeGuideSchema } from '@/server/catalogue';
 import {
   bannersPayloadSchema,
@@ -103,7 +108,13 @@ export const mapLocationPayload = z
 export const announcementBarPayload = z.object({
   enabled: z.boolean(),
   text: optionalString(160),
-  link: optionalString(500),
+  /**
+   * `safeLinkField`, not `optionalString(500)` — the change-request path is written VERBATIM by
+   * `applyAnnouncementBar`, not through the merchant form's validating save, so this schema is the
+   * only thing standing between a merchant-authored payload and an `<a href>` on every page of
+   * their storefront. It shipped as a bare length-capped string. 2026-09-07 audit.
+   */
+  link: safeLinkField,
   startsAt: optionalIsoDate,
   endsAt: optionalIsoDate,
   color: stripColorSchema.optional(),
@@ -116,7 +127,9 @@ export const announcementsBoardPayload = z.object({
         id: z.string().trim().optional(),
         title: z.string().trim().min(1).max(120),
         body: optionalString(1000),
-        link: optionalString(500),
+        // Same reasoning as `announcementBarPayload.link` above: `applyAnnouncementsBoard` writes
+        // this straight to the row, so the scheme rule has to live in the payload schema.
+        link: safeLinkField,
         startsAt: optionalIsoDate,
         endsAt: optionalIsoDate,
         published: z.boolean().default(true),

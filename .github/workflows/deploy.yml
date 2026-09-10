@@ -46,6 +46,14 @@ concurrency:
   group: deploy-${{ github.event.inputs.environment || 'staging' }}
   cancel-in-progress: false
 
+# Least privilege, declared rather than inherited (2026-09-07 audit). This workflow reads a commit
+# and opens an SSH session; it never writes to the repository. The deploy key in
+# `secrets.SSH_PRIVATE_KEY` is the credential that matters here, and narrowing GITHUB_TOKEN does
+# not protect it — but a token that cannot push is one fewer thing a compromised step can do with
+# the production checkout it is standing in.
+permissions:
+  contents: read
+
 jobs:
   staging:
     name: staging

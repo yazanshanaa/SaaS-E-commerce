@@ -37,7 +37,23 @@ export function CategoriesSection({ context, config, anchor }: CategoriesSection
   }
 
   return (
-    <SectionBlock anchor={anchor ?? SECTION_ANCHORS.categories} title={title}>
+    <SectionBlock
+      anchor={anchor ?? SECTION_ANCHORS.categories}
+      title={title}
+      /* The count a shop can prove, for the same reason the products grid prints one. */
+      eyebrow={pluralCount('categories.count', context.categories.length)}
+      action={
+        /*
+          Only when the section is showing FEWER than the shop has. A «كل الأقسام» link beside a
+          complete list is a link back to what the visitor is already looking at.
+        */
+        context.categories.length > categories.length ? (
+          <a className="sf-btn sf-btn--quiet" href="/products">
+            {st('products.all')}
+          </a>
+        ) : null
+      }
+    >
       {variant === 'index' ? (
         <ul className="sf-index">
           {categories.map((category) => (

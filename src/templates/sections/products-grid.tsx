@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { SectionConfig } from '@/shared/site-contract';
 import { ProductCard } from '../components/product-card';
-import { st } from '../i18n';
+import { pluralCount, st } from '../i18n';
 import { SECTION_ANCHORS } from '../section-anchors';
 import type { StorefrontContext } from '../view-model';
 import { SectionBlock } from './block';
@@ -46,8 +46,33 @@ export function ProductsGridSection({ context, config, anchor }: ProductsGridSec
     ? `/products?category=${encodeURIComponent(categoryKey)}`
     : '/products';
 
+  /*
+    THE "VIEW ALL" LINK MOVED INTO THE HEAD (Phase 12.E).
+
+    It used to sit UNDER the grid, which is the one place it cannot do its job: a visitor who has
+    scrolled past twelve products to reach it has already formed a view about whether this shop has
+    what they want. In the head it is visible at the moment the section is — the same place the
+    reference this was designed against puts it, and the same place every catalogue does.
+
+    The eyebrow is the catalogue COUNT, and it is deliberately the thing a shop can prove. It also
+    does real work: «15 منتج» above «منتجاتنا» tells a visitor the grid below is not the whole shop,
+    which is exactly the question the action answers.
+  */
+  const hasMore = total > products.length;
+
   return (
-    <SectionBlock anchor={anchor ?? SECTION_ANCHORS.products_grid} title={title}>
+    <SectionBlock
+      anchor={anchor ?? SECTION_ANCHORS.products_grid}
+      title={title}
+      eyebrow={total > 0 ? pluralCount('products.count', total) : null}
+      action={
+        hasMore ? (
+          <a className="sf-btn sf-btn--quiet" href={viewAllHref}>
+            {st('products.viewAll')}
+          </a>
+        ) : null
+      }
+    >
       {products.length === 0 ? (
         // A pinned grid with nothing in it says so about the CATEGORY. "لسا ما انضافت منتجات على
         // المتجر" under a category heading is a false statement about a shop that has hundreds.
@@ -78,13 +103,6 @@ export function ProductsGridSection({ context, config, anchor }: ProductsGridSec
               />
             ))}
           </div>
-          {total > products.length ? (
-            <p className="sf-actions" style={{ marginBlockStart: 'var(--t-space-xl)' }}>
-              <a className="sf-btn sf-btn--ghost" href={viewAllHref}>
-                {st('products.viewAll')}
-              </a>
-            </p>
-          ) : null}
         </>
       )}
     </SectionBlock>

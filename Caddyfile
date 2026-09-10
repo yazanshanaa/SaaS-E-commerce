@@ -83,6 +83,16 @@ import /etc/caddy/local/*.caddy
 	# preload flag is the part you cannot take back when a merchant leaves.
 	header Strict-Transport-Security "max-age=63072000; includeSubDomains"
 
+	# `Via: 1.1 Caddy` is added by `reverse_proxy` and was reaching production — verified with a
+	# `curl -I` against the live storefront in the 2026-09-07 audit, alongside Next's own
+	# `X-Powered-By` (now off in `next.config.ts`).
+	#
+	# Neither is exploitable by itself. What the pair does is name the framework AND the proxy, so
+	# the next advisory published against either arrives with this host already on the target list.
+	# Removing it costs nothing: `Via` is informational, no client here reads it, and Caddy still
+	# routes identically without announcing itself.
+	header -Via
+
 	# The internal endpoints are not published, and THIS is what makes that true.
 	#
 	# Caddy matches a host-specific site block ahead of the port-only `:443` block below, so a
@@ -177,6 +187,43 @@ import /etc/caddy/local/*.caddy
 		reverse_proxy web:3000 {
 			header_up Host {host}
 			header_up X-Real-IP {remote_host}
+
+			# THE TENANT CONTEXT IS OURS TO WRITE, NEVER THEIRS TO SEND (2026-09-07 audit).
+			#
+			# `proxy.ts` strips these from every request before setting its own — but `proxy.ts`
+			# only runs for paths its matcher covers, and the matcher deliberately excludes
+			# `_next/static`, `favicon.ico` and every URL ending in an image or font extension.
+			# For those paths nothing stripped anything: a request for `/anything.png` reached the
+			# app carrying whatever `X-Souq-Tenant-Id` the caller chose, and `readRequestTenant()`
+			# reads all of these with no validation at all.
+			#
+			# Nothing downstream is exploitable through that today — the routes that read the
+			# context are fixed paths or reject on their own segment first — but "no consumer
+			# currently ends in .png" is a property of today's route table, not a control. Doing it
+			# here removes the dependence on the matcher entirely: these headers cannot cross the
+			# perimeter, whatever the app does with its own routing later.
+			#
+			# Enumerated rather than wildcarded because a Caddyfile is not the place to be clever;
+			# `TENANT_HEADER_NAMES` in src/server/tenancy is the list, and
+			# tests/unit/phase6-security-headers.test.ts asserts the two stay in step.
+			header_up -X-Souq-Tenant-Id
+			header_up -X-Souq-Tenant-Slug
+			header_up -X-Souq-Surface
+			header_up -X-Souq-Is-Demo
+			header_up -X-Souq-Is-Suspended
+			header_up -X-Souq-Hostname
+			header_up -X-Souq-Preview
+			header_up -X-Souq-Public-Path
+			# The resolved client IP that proxy.ts stamps for better-auth's rate limiter. If a
+			# client could supply it, it would BE the bypass it exists to close.
+			header_up -X-Souq-Client-Ip
+
+			# Same reasoning, sharper consequence: Next derives its script nonce by reading the
+			# policy off the REQUEST, so a client-supplied one is a client-chosen nonce. This
+			# platform derives no nonce today (CSP_IS_NONCE_BASED === false), which is exactly why
+			# the strip belongs at the perimeter now rather than after that changes.
+			header_up -Content-Security-Policy
+			header_up -Content-Security-Policy-Report-Only
 		}
 	}
 }
@@ -205,6 +252,11 @@ import /etc/caddy/local/*.caddy
 	# would become unreachable for two years because they pointed one CNAME at us.
 	header Strict-Transport-Security "max-age=63072000"
 
+	# Same reasoning as the platform block above — and repeated for the same reason the rest of
+	# this block is: Caddy matches one site block per request, so a directive written up there does
+	# not reach a merchant's own domain. A merchant's customers should not be told what proxies it.
+	header -Via
+
 	# Same block as the platform site above, and it has to be repeated rather than shared: Caddy
 	# matches one site block per request, so a directive in the other one does not reach here.
 	# `/internal/domain-ask` is how Caddy asks US a question; a visitor arriving on a merchant's
@@ -218,6 +270,43 @@ import /etc/caddy/local/*.caddy
 		reverse_proxy web:3000 {
 			header_up Host {host}
 			header_up X-Real-IP {remote_host}
+
+			# THE TENANT CONTEXT IS OURS TO WRITE, NEVER THEIRS TO SEND (2026-09-07 audit).
+			#
+			# `proxy.ts` strips these from every request before setting its own — but `proxy.ts`
+			# only runs for paths its matcher covers, and the matcher deliberately excludes
+			# `_next/static`, `favicon.ico` and every URL ending in an image or font extension.
+			# For those paths nothing stripped anything: a request for `/anything.png` reached the
+			# app carrying whatever `X-Souq-Tenant-Id` the caller chose, and `readRequestTenant()`
+			# reads all of these with no validation at all.
+			#
+			# Nothing downstream is exploitable through that today — the routes that read the
+			# context are fixed paths or reject on their own segment first — but "no consumer
+			# currently ends in .png" is a property of today's route table, not a control. Doing it
+			# here removes the dependence on the matcher entirely: these headers cannot cross the
+			# perimeter, whatever the app does with its own routing later.
+			#
+			# Enumerated rather than wildcarded because a Caddyfile is not the place to be clever;
+			# `TENANT_HEADER_NAMES` in src/server/tenancy is the list, and
+			# tests/unit/phase6-security-headers.test.ts asserts the two stay in step.
+			header_up -X-Souq-Tenant-Id
+			header_up -X-Souq-Tenant-Slug
+			header_up -X-Souq-Surface
+			header_up -X-Souq-Is-Demo
+			header_up -X-Souq-Is-Suspended
+			header_up -X-Souq-Hostname
+			header_up -X-Souq-Preview
+			header_up -X-Souq-Public-Path
+			# The resolved client IP that proxy.ts stamps for better-auth's rate limiter. If a
+			# client could supply it, it would BE the bypass it exists to close.
+			header_up -X-Souq-Client-Ip
+
+			# Same reasoning, sharper consequence: Next derives its script nonce by reading the
+			# policy off the REQUEST, so a client-supplied one is a client-chosen nonce. This
+			# platform derives no nonce today (CSP_IS_NONCE_BASED === false), which is exactly why
+			# the strip belongs at the perimeter now rather than after that changes.
+			header_up -Content-Security-Policy
+			header_up -Content-Security-Policy-Report-Only
 		}
 	}
 }

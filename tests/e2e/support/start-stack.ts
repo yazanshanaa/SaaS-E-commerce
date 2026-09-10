@@ -41,6 +41,73 @@ function run(label: string, script: string, args: string[], env: Record<string, 
   console.log(`[stack] ${label} ok`);
 }
 
+/**
+ * REFUSE A PORT SOMEBODY ELSE IS ALREADY ON — before spending four minutes earning that answer.
+ *
+ * Found in the 2026-09-07 audit, and it is the actual reason this suite had never run outside CI.
+ * A different project on the same machine (an Express app, unrelated to this platform) was
+ * listening on 3100. The stack then did everything right — initdb, migrate, seed, `next start` —
+ * and Playwright's readiness probe kept hitting the OTHER server, which answered
+ * `Cannot GET /internal/health` with a 404 forever. The only thing the operator ever saw was:
+ *
+ *     Error: Timed out waiting 300000ms from config.webServer.
+ *
+ * That message names the web server, so it reads as "the app failed to start" — and every
+ * diagnosis went looking at the app. `TODO.md` recorded the whole Phase 9/10/11 e2e backlog as
+ * "written, needs the stack"; AGENT-RUN.cmd grew a guard for port 3000 after the same class of
+ * confusion. This is that guard, for the port this suite actually uses.
+ *
+ * `E2E_PORT` (and `E2E_PG_PORT` / `E2E_SMTP_PORT`) already exist in `support/env.ts` — the fix
+ * when this fires is to set one, not to hunt for a process to kill.
+ */
+async function refuseIfPortIsTaken(port: number, label: string): Promise<void> {
+  const { createServer } = await import('node:net');
+
+  /**
+   * BOTH addresses, and the second one was learned the hard way.
+   *
+   * A first version probed only `0.0.0.0` and let a conflict straight through: an orphaned SMTP
+   * sink from a previous run held `127.0.0.1:1030`, and binding the WILDCARD over a loopback-only
+   * holder succeeds on Windows. The guard reported the port free; the sink then failed to bind with
+   * a raw `EADDRINUSE`, which is the unhelpful error this function exists to replace.
+   *
+   * The reverse also happens — a wildcard holder blocks a loopback probe — so neither address alone
+   * is a test. Both are cheap.
+   */
+  const bindOnce = (host: string) =>
+    new Promise<void>((resolve, reject) => {
+      const probe = createServer();
+
+      probe.once('error', (error: NodeJS.ErrnoException) => {
+        if (error.code === 'EADDRINUSE' || error.code === 'EACCES') {
+          reject(
+            new Error(
+              `[stack] port ${port} (${label}) is already in use on ${host}.\n` +
+                `Something else on this machine is listening there, so Playwright's readiness probe ` +
+                `would talk to THAT server and time out with a message blaming this one.\n` +
+                `Either stop it, or run the suite on free ports, e.g.\n` +
+                `  E2E_PORT=${port + 110} E2E_PG_PORT=55440 E2E_SMTP_PORT=1030 pnpm e2e\n` +
+                `NOTE: a stack killed on Windows can leave its child processes running — check for ` +
+                `an orphaned "next" or postgres before assuming another project owns the port.`,
+            ),
+          );
+          return;
+        }
+        reject(error);
+      });
+
+      probe.once('listening', () => probe.close(() => resolve()));
+      probe.listen(port, host);
+    });
+
+  await bindOnce('0.0.0.0');
+  await bindOnce('127.0.0.1');
+}
+
+await refuseIfPortIsTaken(E2E.webPort, 'web');
+await refuseIfPortIsTaken(E2E.pgPort, 'postgres');
+await refuseIfPortIsTaken(E2E.smtpPort, 'smtp sink');
+
 const migrateUrl = pgUrl('app_migrate', 'app_migrate');
 
 const dbEnv = {

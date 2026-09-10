@@ -18,7 +18,31 @@ import { TenantNotFoundError, TenantPurgingError } from './errors';
 export type TenantTx = Prisma.TransactionClient;
 
 export interface WithTenantTxnOptions {
-  /** Defaults to the system actor. Pass a verified actor when a user initiated the work. */
+  /**
+   * Defaults to the system actor. Pass a verified actor when a user initiated the work.
+   *
+   * A SUPER_ADMIN ACTOR TURNS RLS OFF FOR THE WHOLE TRANSACTION — know this before passing one
+   * (2026-09-07 audit). `app.actor_role` is set below, and the generic policy in
+   * `prisma/migrations/20260809000100_rls_roles_and_guards` reads:
+   *
+   *     USING (tenant_id = current_setting('app.tenant_id', true)
+   *            OR current_setting('app.actor_role', true) = 'super_admin')
+   *
+   * with an identical WITH CHECK. So with `actor.role === 'super_admin'` the second clause is TRUE
+   * for every row of every tenant, and invariant 1's SECOND layer — the one that exists precisely
+   * to catch a `where` somebody forgot — is not there. Every statement inside is then protected by
+   * its own `tenantId` predicate and nothing else.
+   *
+   * That is load-bearing on `src/server/admin/change-requests.ts`, whose thirteen appliers consume
+   * a payload the MERCHANT wrote, containing row ids. All of them carry the predicate today; the
+   * audit read each one. Nothing there is exploitable — the exposure is that the safety net is
+   * absent across that whole surface while two comments in it used to claim otherwise.
+   *
+   * The system actor does NOT do this: `app.tenant_id` is set to `tenantId` regardless, so a
+   * SYSTEM_ACTOR transaction still reads and writes exactly that tenant's rows — which is why
+   * dropping the actor is the direction of travel here, not adding a wider one. Recorded in
+   * docs/DECISIONS.md; changing it touches thirteen admin flows and wants a full suite behind it.
+   */
   actor?: Actor;
   /**
    * ONLY the purge path may set this. Everything else must fail closed for a purging tenant —

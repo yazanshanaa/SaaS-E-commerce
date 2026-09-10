@@ -1,4 +1,5 @@
 import { st } from '../i18n';
+import { isolateRanges } from '../lib/ltr-ranges';
 import { hasContactSection } from '../lib/arrangement';
 import { resolveHoursLine } from '../lib/hours-summary';
 import { legalHref, legalPagesFor } from '../lib/legal';
@@ -90,7 +91,7 @@ export function SiteFooter({
                 </li>
               ) : null}
               {site.address ? <li>{site.address}</li> : null}
-              {hoursLine ? <li>{hoursLine}</li> : null}
+              {hoursLine ? <li className="sf-footer__hours">{isolateRanges(hoursLine)}</li> : null}
               {site.email ? (
                 <li>
                   <a href={`mailto:${site.email}`}>{site.email}</a>

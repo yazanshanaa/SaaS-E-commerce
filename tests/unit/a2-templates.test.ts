@@ -491,7 +491,14 @@ describe('tokens and the contrast guard', () => {
     expect(Object.keys(vars).every((key) => key.startsWith('--t-'))).toBe(true);
     expect(vars['--t-primary']).toBe('#F59E0B');
     expect(vars['--t-radius-md']).toBe('0');
-    expect(vars['--t-font']).toContain('IBM Plex Sans Arabic');
+    /*
+     * TWO FACE TOKENS SINCE 12.E. `--t-font-display` is the template's IDENTITY face — the one the
+     * site contract records as its `fontKey` — and `--t-font` is the body face it is paired with.
+     * ورشة is IBM Plex Sans Arabic set over Rubik copy. Asserting both is what keeps a future edit
+     * from quietly collapsing the pair back to one family, which is the flatness 12.E removed.
+     */
+    expect(vars['--t-font-display']).toContain('IBM Plex Sans Arabic');
+    expect(vars['--t-font']).toContain('Rubik');
   });
 });
 

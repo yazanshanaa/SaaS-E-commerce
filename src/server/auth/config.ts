@@ -11,6 +11,8 @@ import { mailService, resetPasswordTemplate, verifyEmailTemplate } from '@/serve
 import { logger } from '@/server/logger';
 import { cacheRedis } from '@/server/redis';
 import { consumeSlot } from '@/server/rate-limit';
+// No cycle: `server/tenancy` imports only db, redis and env — never auth.
+import { TENANT_HEADERS } from '@/server/tenancy';
 import { getEnv, platformHost, absoluteUrl } from '@/env';
 import { t } from '@/shared/i18n';
 
@@ -278,8 +280,29 @@ export function createAuth() {
        * `getClientIp()` falls back to — so the auth layer and invariant 9 now agree instead of
        * reading different headers about the same request.
        */
+      /**
+       * REFINED 2026-09-07: `x-souq-client-ip` first, `x-real-ip` as the fallback.
+       *
+       * Everything the note above says stays true — `x-real-ip` is single-valued, set by Caddy in
+       * both site blocks, and immune to the `X-Forwarded-For` forgery that the default header list
+       * would have exposed. What it is NOT is per-visitor: behind the Cloudflare proxy it holds the
+       * EDGE address, so every visitor routed through one edge node shared a single bucket. On
+       * `/request-password-reset`, `/forget-password` and `/reset-password` — the endpoints the
+       * platform's own `consumeSlot` wrapper does not cover — that is a shared budget one caller
+       * can exhaust for every legitimate user behind the same edge.
+       *
+       * `x-souq-client-ip` is stamped by `proxy.ts` from `getClientIp()`, the one function that
+       * knows when `CF-Connecting-IP` may be believed (invariant 9), and is stripped from incoming
+       * requests both there and at Caddy — so it cannot be supplied by a client. On a merchant
+       * custom domain, where there is no Cloudflare in front, that resolver returns the socket
+       * address and the two headers agree.
+       *
+       * `x-real-ip` is KEPT behind it rather than replaced: if the proxy ever does not run for a
+       * path, the limiter falls back to the coarse-but-real address instead of resolving nothing
+       * and dropping every caller into one global bucket.
+       */
       ipAddress: {
-        ipAddressHeaders: ['x-real-ip'],
+        ipAddressHeaders: [TENANT_HEADERS.clientIp, 'x-real-ip'],
       },
     },
 
@@ -381,8 +404,31 @@ export function createAuth() {
 
     plugins: [
       /**
-       * Mandatory for the super admin. TOTP with backup codes; the merchant owner may enable
-       * it too, and Phase 6 can make it mandatory for owners without a schema change.
+       * TOTP with backup codes — AVAILABLE, and as of the 2026-09-07 audit NOT YET MANDATORY.
+       *
+       * This comment used to open with "Mandatory for the super admin", which was not true and had
+       * not been true in any phase. Nothing reads `session.user.twoFactorEnabled`:
+       * `requireSuperAdmin()` (src/server/auth/index.ts) checks `platformRole` and stops there, and
+       * `requireAdminContext()` does the same. A claim of a control, in the file that would
+       * implement it, is worse than a known gap — it is the kind of line a later review reads and
+       * ticks off.
+       *
+       * WHAT EXISTS: the VERIFY half, complete. better-auth answers a correct password with
+       * `{ twoFactorRedirect: true }`, and both sign-in forms already render the second step and
+       * POST `/api/auth/two-factor/verify-totp`. A user with 2FA on can sign in today.
+       *
+       * WHAT DOES NOT: any way to TURN IT ON. Nothing in the product calls
+       * `/api/auth/two-factor/enable`, so `twoFactorEnabled` can only be flipped by hand in
+       * Postgres — and flipping it without a matching `two_factors` row locks the account out,
+       * because sign-in would then demand a code that no secret can produce.
+       *
+       * THE ORDER MATTERS, AND IT IS WHY THIS IS STILL OFF. Enforcing 2FA in `requireSuperAdmin()`
+       * before an enrolment screen exists would lock the platform owner out of production on the
+       * next deploy, with no path back that does not involve editing the database by hand.
+       * Enrolment first, then enforcement. Tracked in docs/DECISIONS.md.
+       *
+       * `skipVerificationOnEnable: false` is already the right setting for that future screen: it
+       * forces the operator to prove the authenticator works before the factor becomes required.
        */
       twoFactor({
         issuer: TWO_FACTOR_ISSUER,

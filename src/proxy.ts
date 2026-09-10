@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { getEnv } from '@/env';
 import {
   DEMO_TOKEN_COOKIE,
   DEMO_TOKEN_QUERY_PARAM,
@@ -12,6 +13,7 @@ import {
   type PrefixedSurface,
   type Surface,
 } from '@/server/tenancy';
+import { getClientIp } from '@/server/http/get-client-ip';
 import { CSP_REQUEST_HEADERS, buildCsp } from '@/server/http/security-headers';
 import {
   isSingleTenant,
@@ -212,6 +214,25 @@ export default async function proxy(request: NextRequest): Promise<NextResponse>
   headers.set(TENANT_HEADERS.hostname, parsed.hostname);
 
   /**
+   * The resolved client IP, stamped once for everything downstream that cannot resolve it itself.
+   *
+   * `getClientIp()` is invariant 9's single answer and needs the PEER address to decide whether
+   * `CF-Connecting-IP` may be believed — which is exactly what a library like better-auth, reading
+   * a header list out of a Request, has no way to do. Rather than teach each of them the Cloudflare
+   * range check, the proxy resolves it once and hands the answer on under a name that is stripped
+   * from every incoming request (`sanitisedHeaders`, plus the Caddyfile's perimeter strip).
+   *
+   * Left UNSET when nothing trustworthy resolved, rather than written as a guess: better-auth then
+   * finds no address and says so in its own log, which is a diagnosable state. A fabricated value
+   * would silently key every visitor into one bucket. 2026-09-07 audit.
+   */
+  const { ip: resolvedClientIp } = getClientIp({
+    headers: request.headers,
+    socketIp: request.headers.get('x-real-ip'),
+  });
+  if (resolvedClientIp) headers.set(TENANT_HEADERS.clientIp, resolvedClientIp);
+
+  /**
    * The policy is built BEFORE any branch, so no exit can ship without one.
    *
    * The surface is the only thing it varies on — a storefront may load the analytics script and
@@ -314,7 +335,7 @@ export default async function proxy(request: NextRequest): Promise<NextResponse>
     // the request, and each route still runs its own session guard. Two layers, because a
     // matcher typo must not silently open a dashboard.
     if (isAppPublicPath(pathname)) {
-      headers.set('x-souq-public-path', '1');
+      headers.set(TENANT_HEADERS.publicPath, '1');
     }
     return secure(intoSurface(request, headers, 'app'), csp);
   }
@@ -384,6 +405,15 @@ export default async function proxy(request: NextRequest): Promise<NextResponse>
         httpOnly: true,
         sameSite: 'lax',
         path: '/',
+        /**
+         * The demo token is a BEARER CREDENTIAL to a private showcase (Q8) — the whole promise to
+         * a prospect is that their unfinished shop is not public. It shipped without `secure`, so
+         * on an https deployment the browser would still send it over a downgraded plain-http
+         * request, which is the one case the flag exists for. Keyed to the deployment's scheme so
+         * the dev and e2e stacks, which answer on plain http, still receive the cookie at all —
+         * the same predicate better-auth uses for its session cookies. 2026-09-07 audit.
+         */
+        secure: getEnv().PUBLIC_SCHEME === 'https',
         maxAge: 60 * 60 * 24 * 30,
       });
     }

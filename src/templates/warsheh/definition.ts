@@ -30,11 +30,31 @@ import type { TemplateDefinition } from '../types';
  */
 export const warsheh: TemplateDefinition = {
   key: 'warsheh',
+  /*
+   * THE IDENTITY FACE — headings, and what `site-contract/templates.ts` records as this template's
+   * `fontKey`. It stays exactly what it always was; 12.E did not move it.
+   */
   font: {
     family: 'IBM Plex Sans Arabic',
     dir: 'ibm-plex-sans-arabic',
     regular: 'ibm-plex-sans-arabic-v15-arabic-regular.woff2',
     bold: 'ibm-plex-sans-arabic-v15-arabic-700.woff2',
+  },
+  /*
+   * THE BODY FACE (Phase 12.E), new. Every template used to set ONE family for headings and copy
+   * alike, which a critic pass measured as 146 elements in one face against 1 in another and named
+   * as a large part of why the pages read flat. Arabic has no uppercase and no small-caps, so face
+   * is one of only three hierarchy levers it has.
+   *
+   * The (identity, body) tuple is unique across the nine, so the pairing SHARPENS the anti-reskin
+   * distance instead of collapsing it — giving all nine the same body face would have fixed the
+   * contrast and flattened the set.
+   */
+  textFont: {
+    family: 'Rubik',
+    dir: 'rubik',
+    regular: 'rubik-v31-arabic-regular.woff2',
+    bold: 'rubik-v31-arabic-700.woff2',
   },
   layout: {
     hero: 'ledger',
@@ -85,10 +105,10 @@ export const warsheh: TemplateDefinition = {
       onPrimary: '#000000',
       onSecondary: '#000000',
       surfaceAlt: '#313841',
-      textMuted: '#9EA0A4',
+      textMuted: '#B3B5B8',
       border: '#62676E',
-      link: '#F59E0B',
-      accent: '#9BA3B0',
+      link: '#F6A61F',
+      accent: '#B2B8C2',
       /** Dark slate by design — already the dark answer, so a dark-preference visitor sees no change. */
       scheme: 'dark',
       /**
@@ -119,6 +139,7 @@ export const warsheh: TemplateDefinition = {
     },
     type: {
       family: "'IBM Plex Sans Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif",
+      textFamily: "'Rubik', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif",
       displayWeight: '700',
       bodyWeight: '400',
       xs: '0.75rem',

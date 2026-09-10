@@ -9,6 +9,20 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
+  /**
+   * `X-Powered-By: Next.js` is Next's default and it was reaching production — verified with a
+   * `curl -I` against the live storefront during the 2026-09-07 audit.
+   *
+   * It is not exploitable on its own, and saying otherwise would be theatre. What it does is hand
+   * a scanner the framework for free, so that the next advisory published against this framework
+   * arrives with a pre-built target list that already includes this host. The header buys nothing
+   * in return: no client reads it, no tool here depends on it.
+   *
+   * Caddy's `Via: 1.1 Caddy` is the same class of leak and is suppressed in the Caddyfile, which
+   * is the only place that header can be removed — it is written by the proxy, not by this process.
+   */
+  poweredByHeader: false,
+
   // Packages that must stay outside the bundler (native bindings / heavy server-only deps).
   serverExternalPackages: [
     '@prisma/client',
@@ -23,6 +37,35 @@ const nextConfig: NextConfig = {
   typescript: {
     // Same reasoning: `pnpm typecheck` is the gate.
     ignoreBuildErrors: false,
+  },
+
+  experimental: {
+    /**
+     * THE PROXY'S BODY BUFFER MUST BE LARGER THAN THE LARGEST UPLOAD WE ACCEPT.
+     *
+     * Next 16 clones and buffers the request body whenever a proxy runs, so that both `proxy.ts`
+     * and the route handler can read it — and `proxyClientMaxBodySize` caps that buffer at **10MB
+     * by default**. Over the cap the body is not rejected, it is TRUNCATED, with only a server-side
+     * warning (node_modules/next/dist/docs/.../proxyClientMaxBodySize.md).
+     *
+     * `ABSOLUTE_MAX_UPLOAD_BYTES` in `src/server/media/limits.ts` is 25MB, and the top plan's
+     * per-file limit is sized against it. So every upload between 10MB and 25MB — exactly the range
+     * a merchant photographing stock on a modern phone produces — reached
+     * `/api/media/upload` as a truncated multipart body. What the route then saw was a short file:
+     * either a magic-byte check on a partial header, or a JPEG that decodes to a corrupt image, with
+     * an Arabic error message blaming the merchant's file. The route's own counting reader was never
+     * the bound it was written to be.
+     *
+     * 26mb rather than 25: the cap covers the whole multipart envelope — boundaries, the `alt` text
+     * field and the headers — not just the file part, so a 25MB file needs headroom to arrive whole.
+     * The REAL limit stays server-side and per-plan in the route, which is where it belongs; this
+     * only stops the framework from quietly eating the request first.
+     *
+     * Written as a literal because this file cannot import from `src/`
+     * (`tests/unit/guardrails.test.ts` scans there and this config sits outside it) — the two are
+     * kept in step by `tests/unit/a3-limits-and-alt.test.ts`. 2026-09-07 audit.
+     */
+    proxyClientMaxBodySize: '26mb',
   },
 
   /**

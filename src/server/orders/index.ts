@@ -152,7 +152,14 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
     input.tenantId,
     async (tx): Promise<PlaceOrderResult> => {
       const product = await tx.product.findFirst({
-        where: { tenantId: input.tenantId, slug: input.productSlug, published: true },
+        // Same pair as the cart path and as every storefront query: an archived product is not
+        // orderable through the single-product «اطلب الآن» route either. 2026-09-07 audit.
+        where: {
+          tenantId: input.tenantId,
+          slug: input.productSlug,
+          published: true,
+          archivedAt: null,
+        },
         select: { id: true, name: true, priceAgorot: true, currency: true, available: true },
       });
 

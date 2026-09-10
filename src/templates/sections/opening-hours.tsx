@@ -1,4 +1,5 @@
 import type { SectionConfig } from '@/shared/site-contract';
+import { isolateRanges } from '../lib/ltr-ranges';
 import { translator } from '@/shared/i18n';
 import { ClockIcon } from '../components/icons';
 import { SECTION_ANCHORS } from '../section-anchors';
@@ -115,7 +116,7 @@ export function OpeningHoursSection({
                      JSX. In RTL the two numbers and the separator have a reading order a template
                      literal cannot express, and a locale added later has to be able to change it.
                    */
-                  ct('hours.range', { from: day.opensAt, to: day.closesAt })}
+                  isolateRanges(ct('hours.range', { from: day.opensAt, to: day.closesAt }))}
             </dd>
           </div>
         ))}

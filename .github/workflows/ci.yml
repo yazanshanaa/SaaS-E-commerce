@@ -20,6 +20,20 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege for GITHUB_TOKEN, declared rather than inherited (2026-09-07 audit).
+#
+# With no `permissions:` key every job receives whatever the repository's default is — which for a
+# repository created before GitHub changed the default is read AND WRITE on contents, packages,
+# issues, pull requests and more. Nothing in this workflow writes anything back: it checks out,
+# installs, and runs the gate. But it does run third-party actions (`pnpm/action-setup`) and every
+# dependency in `pnpm install`, each of which executes with that token in its environment. On a
+# PUBLIC repository a fork PR can propose the code those steps run.
+#
+# `contents: read` is the whole requirement. Deploy is a separate workflow with its own block, and
+# it is triggered by `workflow_run` rather than by anything a contributor can reach.
+permissions:
+  contents: read
+
 env:
   # The suites bring their own Postgres (embedded-postgres for integration, the e2e harness for
   # Playwright), so no service container is declared for it. What they do need is a valid env

@@ -298,7 +298,11 @@ test.describe('checkout follows the payment_gateway toggle, immediately', () => 
     await page.goto(`${storefront(SHOP.slug)}/products/${SHOP.productSlug}`);
     await expect(page.getByRole('heading', { name: 'إتمام الطلب' })).toHaveCount(0);
     // And the Q5 path is back, unchanged.
-    await expect(page.getByRole('link', { name: /اطلب عبر واتساب/ })).toBeVisible();
+    // Scoped to <main>: the shell's WhatsApp FAB carries the same accessible name on every page,
+    // so an unscoped locator matches two links and strict mode refuses. 2026-09-07 audit.
+    await expect(
+      page.getByRole('main').getByRole('link', { name: /اطلب عبر واتساب/ }),
+    ).toBeVisible();
     expect(await page.locator('input, textarea, select').count()).toBe(0);
 
     // The ROUTE refuses too, not only the render — a form left open across the toggle writes
@@ -329,7 +333,10 @@ test.describe('Q5 still holds for every tenant that has not opted in', () => {
   test('a shop without the feature has no field to type a name into', async ({ page }) => {
     await page.goto(`${storefront(PLAIN.slug)}/products/${PLAIN.productSlug}`);
 
-    await expect(page.getByRole('link', { name: /اطلب عبر واتساب/ })).toBeVisible();
+    // Scoped to <main> — the shell's WhatsApp FAB shares this accessible name.
+    await expect(
+      page.getByRole('main').getByRole('link', { name: /اطلب عبر واتساب/ }),
+    ).toBeVisible();
     await expect(page.getByRole('heading', { name: 'إتمام الطلب' })).toHaveCount(0);
     expect(await page.locator('input, textarea, select').count()).toBe(0);
   });

@@ -925,7 +925,6 @@ function composeTenantData(source: TenantSource, access: StorefrontAccess): Cach
           // them, and the nav links to it from every page.
           hasContact: source.hasContact || socialLinks.length > 0,
           hasLocation: source.hasLocation,
-          gridColumns: template.layout.gridColumns,
 
           /*
             PHASE 12.A. Every one of these is read from the ALREADY-GATED local, never from

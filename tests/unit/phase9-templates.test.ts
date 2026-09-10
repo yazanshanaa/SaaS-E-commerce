@@ -6,12 +6,19 @@ import {
   AA_LARGE,
   AA_NORMAL,
   contrastRatio,
+  hexToRgb,
   resolveColors,
   TEMPLATE_KEYS,
   TEMPLATES,
   type TemplateKey,
 } from '@/shared/site-contract';
-import { allTemplates, deriveColorTokens, fontUrl, TEMPLATE_IMPLEMENTATIONS } from '@/templates';
+import {
+  allTemplates,
+  deriveColorTokens,
+  fontUrl,
+  templateCssVars,
+  TEMPLATE_IMPLEMENTATIONS,
+} from '@/templates';
 import type { TemplateDefinition } from '@/templates/types';
 
 /**
@@ -254,6 +261,125 @@ describe('the five templates', () => {
           differences,
           `${a.key} vs ${b.key} differ on only ${differences} axes`,
         ).toBeGreaterThan(2);
+      }
+    }
+  });
+
+  /**
+   * THE THREE VALUES THAT KEPT COMING BACK AT 1.1:1 (Phase 12.E).
+   *
+   * Three separate adversarial passes reported the same class of defect: a decision that is correct
+   * in the code and invisible on the screen. The band ladder shipped at **1.13:1** between adjacent
+   * grounds, so 71% of a page rendered as one flat colour with the alternation working perfectly.
+   * The hero watermark went 1.10 → 1.13 across a round that reported it fixed. The placeholder mark
+   * went 2.40 → **2.34** across a round that reported it fixed — it got worse.
+   *
+   * None of them was a hard bug; each was a number chosen by eye and then never measured again. The
+   * critic's own conclusion is the one worth encoding: "until a number gates them, they will keep
+   * coming back at 1.1:1". So these assert the RENDERED relationships rather than the inputs.
+   *
+   * The thresholds are deliberately modest. A band is not text and does not want 3:1 — it wants to
+   * be distinguishable from the band above it, and 1.25 is roughly where a large flat area stops
+   * reading as the same colour. The placeholder mark is non-text UI and takes the 3:1 AA bar.
+   */
+  it('keeps the band ladder, the watermark and the placeholder mark visible on every template', () => {
+    const GROUND_STEP_MIN = 1.25;
+    const WATERMARK_MIN = 1.25;
+
+    for (const template of allTemplates()) {
+      const vars = templateCssVars(template, {
+        primary: template.tokens.color.primary,
+        secondary: template.tokens.color.secondary,
+        background: template.tokens.color.background,
+        surface: template.tokens.color.surface,
+        text: template.tokens.color.text,
+      }) as unknown as Record<string, string>;
+      const bg = vars['--t-bg']!;
+
+      expect(
+        contrastRatio(bg, vars['--t-ground-deep']!),
+        `${template.key}: the deep band is indistinguishable from the page`,
+      ).toBeGreaterThanOrEqual(GROUND_STEP_MIN);
+
+      expect(
+        contrastRatio(bg, vars['--t-ground-tint']!),
+        `${template.key}: the tinted band is indistinguishable from the page`,
+      ).toBeGreaterThanOrEqual(GROUND_STEP_MIN);
+
+      /*
+       * THE RUNGS MUST DIFFER FROM EACH OTHER, not just from the page — the assertion this gate was
+       * missing, and a critic pass found the hole by measuring what the gate did not.
+       *
+       * Contrast is a LUMINANCE relationship and a hue change contributes nothing to it, so a deep
+       * band mixed toward the text and a tinted band mixed toward the brand can both clear the page
+       * and land on almost the same lightness: ديوان measured 1.016 between them, رفّ 1.002. Three
+       * declared grounds squinting to two is the flatness the whole band system exists to remove.
+       */
+      expect(
+        contrastRatio(vars['--t-ground-deep']!, vars['--t-ground-tint']!),
+        `${template.key}: the deep and tinted bands are the same weight`,
+      ).toBeGreaterThanOrEqual(1.15);
+
+      expect(
+        contrastRatio(bg, vars['--t-watermark']!),
+        `${template.key}: the hero watermark is invisible against its own ground`,
+      ).toBeGreaterThanOrEqual(WATERMARK_MIN);
+
+      /*
+       * The mark sits on the placeholder plate, which is `--t-surface-alt` under a tint wash. AA_LARGE
+       * because it is a mark on an empty slot, not body copy — it has to read as placed, not as text.
+       */
+      expect(
+        contrastRatio(vars['--t-ph-mark']!, vars['--t-surface-alt']!),
+        `${template.key}: the placeholder mark is a grey letter on a grey plate`,
+      ).toBeGreaterThanOrEqual(AA_LARGE);
+    }
+  });
+
+  /**
+   * THE TYPE PAIRING IS A DISTINCTNESS AXIS, not a uniformity one (Phase 12.E).
+   *
+   * Every template used to set one family for headings and body alike, which a critic pass measured
+   * as 146 elements in one face against 1 in another — no pairing contrast, and a large part of why
+   * the pages read flat. Arabic has no uppercase and no small-caps, so face is one of only three
+   * hierarchy levers available.
+   *
+   * The obvious fix would have made it worse: giving all nine the same body face fixes the contrast
+   * on each page and collapses the distance between the pages. So the (identity, body) TUPLE has to
+   * be unique, and each template must actually pair two different faces — a pairing that resolves to
+   * one family is the flatness this axis exists to remove, and it is invisible in a diff.
+   */
+  it('pairs two distinct faces per template, and no two templates share a pairing', () => {
+    const templates = allTemplates();
+    const pairs = templates.map((template) => {
+      const identity = template.font.family;
+      const body = (template.textFont ?? template.font).family;
+      return { key: template.key, identity, body };
+    });
+
+    for (const pair of pairs) {
+      expect(pair.body, `${pair.key} pairs one face with itself`).not.toBe(pair.identity);
+    }
+
+    const tuples = pairs.map((pair) => `${pair.identity}|${pair.body}`);
+    expect(new Set(tuples).size, 'two templates ship the same type pairing').toBe(templates.length);
+  });
+
+  /**
+   * Both faces are PRELOADED, and the file count is unchanged from a single-family template — which
+   * fetched that family's regular and its bold. A pairing fetches the identity face's bold (every
+   * heading, including the hero `h1` that is the LCP element on the typographic hero) and the body
+   * face's regular. Two files either way, so the Fast 3G budget did not move.
+   */
+  it('ships both faces of every pairing as subset woff2 on disk', () => {
+    for (const template of allTemplates()) {
+      for (const [face, weight] of [
+        ['display', 'bold'],
+        ['text', 'regular'],
+      ] as const) {
+        const url = fontUrl(template, weight, face);
+        const onDisk = path.join(repoRoot, 'public', url.replace(/^\//, ''));
+        expect(existsSync(onDisk), `${template.key} ${face} ${weight} missing at ${url}`).toBe(true);
       }
     }
   });
@@ -820,14 +946,48 @@ describe('the palettes, against the guard', () => {
       const template = TEMPLATE_IMPLEMENTATIONS[key];
       const derived = deriveColorTokens(asResolvable(template));
 
-      expect(derived.link.toLowerCase(), `${key} link moved`).toBe(
-        template.tokens.color.primary.toLowerCase(),
-      );
-      expect(derived.accent.toLowerCase(), `${key} accent moved`).toBe(
-        template.tokens.color.secondary.toLowerCase(),
-      );
+      /*
+       * THE HUE MUST SURVIVE; THE LIGHTNESS MAY MOVE. This asserted exact equality with the raw brand
+       * colour, because both palettes were computed so the guard would move nothing — a property
+       * defined against THREE surfaces. The band system added two more grounds that body text sits
+       * on, and a brand colour that cleared 4.5:1 on the page can need a lightness nudge to clear it
+       * on the tinted band. بيت's link legitimately moves #E08A5F -> #E59D79: the same orange, lighter.
+       *
+       * What must NEVER happen is the guard's documented last resort — "drop the hue rather than the
+       * readability", which samples greys when no hue-preserving colour fits. That is the outcome
+       * this test actually exists to catch: it would turn a merchant's brand colour into a grey and
+       * every price on the site with it. Chroma is the thing to pin, not the exact hex.
+       */
+      const chroma = (hex: string) => {
+        const { r, g, b } = hexToRgb(hex);
+        return Math.max(r, g, b) - Math.min(r, g, b);
+      };
 
-      for (const ground of [derived.background, derived.surface, derived.surfaceAlt]) {
+      for (const [name, derivedHex, designed] of [
+        ['link', derived.link, template.tokens.color.primary],
+        ['accent', derived.accent, template.tokens.color.secondary],
+      ] as const) {
+        expect(
+          chroma(derivedHex),
+          `${key} ${name} lost its hue: ${designed} -> ${derivedHex} (the grey fallback fired)`,
+        ).toBeGreaterThanOrEqual(chroma(designed) * 0.7);
+      }
+
+      /*
+       * The threshold itself is unchanged and now covers FIVE surfaces — the three the palette was
+       * designed against plus the two band grounds it can now land on.
+       */
+      const vars = templateCssVars(template, asResolvable(template)) as unknown as Record<
+        string,
+        string
+      >;
+      for (const ground of [
+        derived.background,
+        derived.surface,
+        derived.surfaceAlt,
+        vars['--t-ground-deep']!,
+        vars['--t-ground-tint']!,
+      ]) {
         expect(contrastRatio(derived.link, ground), `${key} link on ${ground}`).toBeGreaterThan(
           4.5,
         );
@@ -836,5 +996,90 @@ describe('the palettes, against the guard', () => {
         );
       }
     }
+  });
+});
+
+/**
+ * THE PLATFORM SHEET LEAKING INTO THE STOREFRONT — the bug class, not one instance.
+ *
+ * A storefront renders inside a document whose base stylesheet, `src/app/globals.css`, is written
+ * for the ADMIN and DASHBOARD chrome. Where that sheet styles a bare element selector, its
+ * declaration beats the storefront's `.sf-root` inheritance — because a matching declaration always
+ * beats inheritance, however near the ancestor. The result is a tenant's page rendering in the
+ * platform's identity, silently, with no token wrong anywhere.
+ *
+ * It has now happened three times, each caught by a different accident:
+ *   1. `a { color: var(--sb-primary) }` on unclassed links — fixed with `.sf-root a:not([class])`;
+ *   2. the same rule reaching `.sf-cat`, a CLASSED anchor with no colour of its own — every
+ *      category card on a dark shop rendered platform-orange at 2.33:1, measured live 2026-09-07;
+ *   3. `h1, h2, h3 { font-family: var(--sb-font-display) }` — every heading on all nine templates
+ *      rendered in Alexandria, the dashboard face, so the "nine type scales" were nine sizes of one
+ *      face. `h4` was absent from that rule and inherited correctly, putting two faces one element
+ *      apart inside a single card grid.
+ *
+ * So this asserts the RULE rather than the three fixes: for every property `globals.css` sets on a
+ * bare element selector the storefront also uses, `storefront.css` must re-declare it under
+ * `.sf-root`. A fourth instance fails here instead of shipping.
+ */
+describe('the storefront overrides every inherited platform default', () => {
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+  const read = (file: string) => readFileSync(path.join(repoRoot, file), 'utf8');
+
+  /*
+   * Comments stripped FIRST, and it is not a nicety: the rules below are documented with the very
+   * declarations they forbid (`h1, h2, h3 { font-family: var(--sb-font-display) }`), so a scan of
+   * the raw text finds the explanation and reports the bug it explains. Braces inside a comment
+   * also truncate a `[^}]*` block match, which is the other way this went wrong.
+   */
+  const storefront = read('src/templates/storefront.css').replace(/\/\*[\s\S]*?\*\//g, '');
+
+  it('re-declares the heading font, so a template heading is the template’s own face', () => {
+    const headingBlock = /\.sf-root h1,\s*\.sf-root h2,\s*\.sf-root h3,\s*\.sf-root h4 \{([^}]*)\}/.exec(
+      storefront,
+    );
+    expect(headingBlock, '.sf-root h1..h4 block must exist').not.toBeNull();
+    /*
+     * `--t-font-display` IS ACCEPTED HERE FROM 12.E, and the guarantee is unchanged.
+     *
+     * What this test exists to prevent is a heading INHERITING the platform's `--sb-font-display`
+     * because `globals.css` declares `h1, h2, h3 { font-family }` at the same specificity — the leak
+     * that made all nine storefronts render their headings in the dashboard's face. The fix is that
+     * the block re-declares a TEMPLATE token; which of the two it names is a design decision.
+     *
+     * 12.E paired a display face with a text face per template (`tokens.type.displayFamily`), so the
+     * heading block now names `--t-font-display`, which falls back to `--t-font` for any template
+     * that pairs nothing. Both spellings satisfy the property; a `--sb-*` token still fails, and the
+     * separate assertion that `storefront.css` reads no `--sb-*` token at all is what enforces that.
+     */
+    expect(headingBlock![1]).toMatch(/font-family:\s*var\(--t-font(-display)?\)/);
+  });
+
+  it('re-declares link colour for classed anchors that have none of their own', () => {
+    // `.sf-cat` is the one the platform's `a { color }` actually reached. Any future classed anchor
+    // with no colour is the same bug; this pins the one that shipped.
+    const catBlock = /\n\.sf-cat \{([^}]*)\}/.exec(storefront);
+    expect(catBlock, '.sf-cat block must exist').not.toBeNull();
+    expect(catBlock![1]).toMatch(/color:\s*var\(--t-/);
+  });
+
+  it('resets the UA element margins the platform sheet does not', () => {
+    // `p` was reset; `figure` and `blockquote` were not, and their 40px UA side margins broke the
+    // testimonial's measure to 154px at 390px wide.
+    for (const selector of ['p', 'figure', 'blockquote']) {
+      expect(
+        storefront,
+        `.sf-root ${selector} must have its UA margin reset`,
+      ).toMatch(new RegExp(`\\.sf-root [^{]*\\b${selector}\\b[^{]*\\{[^}]*margin:\\s*0`));
+    }
+  });
+
+  it('names no platform token — the storefront may only read --t-* and its own --sf-*', () => {
+    /*
+     * The other half of the same boundary: a `--sb-*` read inside the storefront sheet would be a
+     * platform value the tenant cannot theme, resolving against tokens defined for a different
+     * surface. The leaks above happened through the CASCADE; this catches them written by hand.
+     */
+    const platformTokens = [...storefront.matchAll(/var\(\s*(--sb[a-z-]*)/g)].map((m) => m[1]);
+    expect(platformTokens, 'storefront.css must not read platform tokens').toEqual([]);
   });
 });

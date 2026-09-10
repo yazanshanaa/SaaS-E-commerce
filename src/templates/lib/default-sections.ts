@@ -54,7 +54,6 @@ export interface DefaultSectionInput {
    */
   hasContact: boolean;
   hasLocation: boolean;
-  gridColumns: 2 | 3 | 4;
 
   // --- Phase 12.A. Each is "content AND entitlement", resolved by the caller ------------------
   /** At least one banner inside its schedule window, on a plan that has the board. */
@@ -116,7 +115,18 @@ export function buildDefaultSections(input: DefaultSectionInput): StorefrontSect
     what they want should not have to scroll a category rail to type it.
   */
   if (input.hasBanners) planned.push({ type: 'banner_slider', config: { limit: 6 } });
-  if (input.hasSearch) planned.push({ type: 'search_bar', config: {} });
+  /*
+    NO `search_bar` SECTION. The chrome already has one.
+
+    `components/site-header.tsx` renders a compact `SearchBox` in its tools column under exactly the
+    condition that would put this section on the page — so a shop with search got TWO search fields
+    on its home page, one of them a full-width band a screen down from the other. That is the same
+    duplicate-control failure `contact-whatsapp.tsx` documents for the social row, and the fix is the
+    same: the persistent control in the chrome wins, because it is on every page rather than one.
+
+    A merchant who wants the large in-page field can still add it in «أقسام الموقع» — this only stops
+    the DEFAULT arrangement from shipping the duplicate to every shop that never opened that screen.
+  */
   if (input.hasCategories) planned.push({ type: 'categories', config: { style: 'grid' } });
   /*
     `columns` IS DELIBERATELY UNSET on both product rails below.
@@ -137,7 +147,18 @@ export function buildDefaultSections(input: DefaultSectionInput): StorefrontSect
     });
   }
   if (input.hasProducts) {
-    planned.push({ type: 'products_grid', config: { limit: 12, columns: input.gridColumns } });
+    /*
+      `columns` IS UNSET HERE NOW, which makes this entry agree with the two rails above and below it.
+
+      The note on `new_arrivals` already stated the rule — "an absent count is how a template's own
+      grid survives" — and then this line broke it, which its own comment admitted by calling itself
+      "the odd one out". The consequence was visible rather than theoretical: the default arrangement
+      puts «وصل حديثًا», «منتجاتنا» and «الأكثر مبيعًا» in three consecutive bands, and the middle one
+      rendered at whatever count this file chose while the two around it rendered at the template's.
+      Three adjacent grids of the same cards at two different column widths is the single loudest way
+      a page can look unarranged.
+    */
+    planned.push({ type: 'products_grid', config: { limit: 12 } });
   }
   if (input.hasBestSellers) {
     planned.push({
@@ -168,7 +189,25 @@ export function buildDefaultSections(input: DefaultSectionInput): StorefrontSect
   */
   if (input.hasOpeningHours) planned.push({ type: 'opening_hours', config: {} });
   if (input.hasContact) planned.push({ type: 'contact_whatsapp', config: {} });
-  if (input.hasLocation) planned.push({ type: 'map', config: {} });
+  /*
+    «موقعنا» IS ONLY ITS OWN BAND WHEN THERE IS NO CONTACT BLOCK TO FOLD IT INTO (2026-09-09).
+
+    `contact_whatsapp` and `map` both draw `site.address` into a `.sf-facts` row from the same
+    Site columns, and the default arrangement put them next to each other — so a shop with an
+    address ended its home page on two consecutive bands whose only difference was that the second
+    also carried two buttons. `ContactWhatsappSection` now renders those two deep links itself,
+    from the same `resolveMapTarget` chain, which leaves this entry with nothing of its own to add.
+
+    A shop with a location and NO way to be contacted still gets the standalone section: that is
+    the case where the address is not printed anywhere else, and dropping it unconditionally would
+    take the shop's location off its own home page.
+
+    STORED ARRANGEMENTS ARE NOT MIGRATED, deliberately. A merchant who opened «أقسام الموقع» and
+    kept «موقعنا» chose it, and a renderer that silently deletes a section a merchant can see in
+    their own dashboard is a worse failure than one duplicated address. They can remove it there;
+    this only stops every NEW shop from shipping the duplicate.
+  */
+  if (input.hasLocation && !input.hasContact) planned.push({ type: 'map', config: {} });
 
   return planned.map((section, index) => ({
     id: `default-${section.type}`,

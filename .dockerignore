@@ -38,8 +38,22 @@ playwright-report
 blob-report
 .playwright
 .tmp
-.pgdata
-.pgdata-e2e
+# EVERY embedded-postgres data directory, present and future — the glob, not a list.
+#
+# This listed `.pgdata` and `.pgdata-e2e` and missed `.pgdata-dev`, which is 77MB of a REAL seeded
+# cluster holding every local tenant's rows. `.gitignore` learned this exact lesson in the
+# 2026-08-21 review and closed it with `.pgdata*/`; `.dockerignore` was never brought along, so the
+# directory went into the build context on every `docker compose build`.
+#
+# It mattered most one stage away: `standalone-source` runs `COPY . /src` and tars the result into
+# the bundle a MERCHANT receives, and the comment above that stage reasons "`.dockerignore` already
+# excludes ... so they cannot be in here". That reasoning was sound and the list underneath it was
+# not — so a standalone bundle could have shipped one customer a database of everybody else's rows.
+# Belt-and-braces excludes have been added to that tar as well. 2026-09-07 audit.
+.pgdata*
+# Logs: the repo root carries agent-report.log, retry.log and run-platform.log — hundreds of
+# kilobytes of build and diagnostic output with no business in an image or a customer's bundle.
+*.log
 storage
 
 # --- editor / OS ---

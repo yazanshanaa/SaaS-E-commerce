@@ -63,7 +63,32 @@ export default defineConfig({
     // is not one — so a readiness probe against them would poll a 404 forever.
     url: `http://127.0.0.1:${E2E.webPort}/internal/health`,
     reuseExistingServer: false,
-    timeout: 300_000,
+    /**
+     * FIFTEEN minutes, not five — and the number is measured rather than padded.
+     *
+     * This one timeout has to cover everything in `command` before the first probe can go green,
+     * and that is far more than "start a server":
+     *   `next build` from cold      ~110s  (70s compile + 38s TypeScript, measured on Windows)
+     *   embedded-postgres initdb     ~90s  (a fresh cluster, not a reused one)
+     *   `prisma migrate deploy`      ~20s
+     *   `db:seed`                    ~60s  (demo tenants, and the image variants they carry)
+     * On CI's warm Linux runners that fits inside five minutes with room to spare. On a developer's
+     * Windows machine it does not, and the failure it produces is
+     * `Timed out waiting 300000ms from config.webServer` — which names the web server and looks
+     * like the app failed to start, when in fact the app had started and the budget was spent on
+     * the build and the seed. Measured here on 2026-09-07: the stack came up at ~4m50s and the
+     * run was killed at 5m00s, ten seconds short, with every test still unexecuted.
+     *
+     * That is the real reason `TODO.md` records every Phase 9/10/11 e2e case as "written, needs the
+     * stack" and why the suite had never run outside CI: not the AGENT-RUN.cmd ordering that was
+     * fixed alongside it, but a budget that a cold local run cannot fit inside.
+     *
+     * A generous timeout costs nothing when things work — Playwright polls and proceeds the moment
+     * the probe answers, so this is a ceiling, not a delay. What it buys is that the suite is
+     * runnable on the machine the code is written on, which is the only place a red test gets
+     * diagnosed rather than re-run.
+     */
+    timeout: 900_000,
     stdout: 'pipe',
     stderr: 'pipe',
     env: {

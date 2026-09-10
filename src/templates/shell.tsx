@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { AnalyticsScript } from './components/analytics';
 import { AnnouncementBar } from './components/announcement-bar';
 import { Beacon } from './components/beacon';
@@ -156,6 +156,26 @@ export function StorefrontShell({
       */
       data-header={template.layout.header}
       data-footer={template.layout.footer}
+      /*
+        THE SHOP'S INITIAL, for the typographic hero's watermark (Phase 12.E, storefront.css).
+
+        AN INLINE `style` IS CORRECT HERE, and it is worth saying why given the long note below about
+        the tokens moving OUT of one. The tokens had to move because an inline declaration beats a
+        `@media (prefers-color-scheme: dark)` rule, which silently broke dark mode. This property is
+        not a colour, has no counterpart in the other scheme, and no stylesheet ever overrides it —
+        there is nothing for the inline value to win against. It is also per-SITE content rather than
+        per-template design, so `templateThemeCss` (which is handed a template and a palette, and
+        knows nothing about the shop) is the wrong place for it.
+
+        Quoted, because `content` takes a string: the custom property has to carry the quotes.
+        `Array.from` rather than `[0]`, so an Arabic letter outside the BMP or a name that opens on a
+        surrogate pair yields one grapheme instead of half of one.
+      */
+      style={
+        {
+          '--sf-initial': `"${(Array.from(context.site.name.trim())[0] ?? '').replace(/["\\]/g, '')}"`,
+        } as CSSProperties
+      }
     >
       {/*
         THE TOKENS MOVED OUT OF THE `style` ATTRIBUTE, AND THAT IS THE WHOLE OF DARK MODE.
@@ -171,6 +191,25 @@ export function StorefrontShell({
       */}
       <style>{templateThemeCss(template, colors)}</style>
 
+      {/*
+        TWO PRELOADS, NOT ONE — and the file count is unchanged.
+
+        Before 12.E a template set one family for headings and body, so the page fetched that
+        family's regular AND its bold. It now pairs a display face with a text face, so it fetches
+        the display face's BOLD (every heading, including the hero `h1`) and the text face's REGULAR
+        (all the body copy). Same two files, same Fast 3G budget.
+
+        The display weight is preloaded rather than the display regular because nothing on a
+        storefront sets a heading at 400 — `--t-weight-display` is 700 on all nine — and the hero
+        title is the LCP element on the typographic hero, which is most shops.
+      */}
+      <link
+        rel="preload"
+        as="font"
+        type="font/woff2"
+        href={fontUrl(template, 'bold', 'display')}
+        crossOrigin="anonymous"
+      />
       <link
         rel="preload"
         as="font"
@@ -247,33 +286,66 @@ export function StorefrontShell({
       <SiteFooter context={context} showPush={showPush} />
 
       {/*
-        ONE fixed stack at the bottom of the viewport, not two overlapping fixed elements.
+        ONE fixed stack at the bottom of the viewport, not four overlapping fixed elements.
 
         The watermark and the consent banner both used to pin themselves to `inset-block-end`,
         and the banner is both taller and higher in the stacking order — so on a demo, which is
         exactly the tenant that shows both, the one marker telling a prospect "this is a demo"
         sat underneath the banner until they answered it. Stacking them as siblings in flow
         makes the overlap impossible rather than merely unlikely.
-      */}
-      {isDemo || showConsent ? (
-        <div className="sf-dock">
-          {isDemo ? <DemoWatermark /> : null}
 
-          {showConsent ? (
-            <ConsentBanner
-              privacyHref={legalHref('privacy')}
-              labels={{
-                title: st('consent.title'),
-                body: st('consent.body'),
-                accept: st('consent.accept'),
-                decline: st('consent.decline'),
-                region: st('consent.label'),
-                more: st('consent.more'),
-              }}
+        THE TWO FLOATING BUTTONS NOW LIVE HERE TOO (2026-09-09), and the reason is that the
+        argument above was only ever applied to half the problem. `.sf-wa-fab` and `.sf-cart-fab`
+        each carried a comment claiming they sat on "the opposite side from `.sf-dock`, which
+        sits inline-start" — true of the watermark, which is `align-items: flex-start`, and FALSE
+        of the consent banner, which is `inline-size: 100%` and therefore reaches the inline-end
+        corner at z-index 60 over the buttons' 55. The 2026-09-08 mobile capture shows the
+        consequence exactly: on a first visit, on every template, at every viewport, the WhatsApp
+        button — the entire order flow of the أساسي plan — was underneath the consent banner
+        until the visitor answered it. A z-index bump would have put a green circle on top of the
+        banner's text; putting the buttons in the same flow column cannot overlap by construction,
+        which is the fix the comment above already argued for.
+
+        THE DOCK THEREFORE RENDERS UNCONDITIONALLY. It is a `pointer-events: none` empty flex
+        column when a tenant is neither a demo nor awaiting consent, which costs one div and
+        removes the condition that used to decide whether the buttons had a parent at all.
+      */}
+      <div className="sf-dock">
+        {/*
+          THE WHATSAPP BUTTON IS RENDERED BEFORE THE CART and the row is `column-reverse`, so
+          WhatsApp lands at the BOTTOM of the stack — under the thumb, which is the placement
+          `.sf-wa-fab` was given in the first place because WhatsApp is the whole order flow on
+          the أساسي plan. This replaces the `.sf-wa-fab ~ .sf-cart-fab` sibling rule that used to
+          lift the cart one row: a flex column cannot have its two children land on each other,
+          so the offset no longer has to be computed from a hardcoded button height.
+        */}
+        <div className="sf-dock__fabs">
+          <WhatsappFab context={context} />
+
+          {context.flags.cart ? (
+            <CartBadge
+              tenantId={context.tenantId}
+              labels={{ label: st('cart.fabLabel'), labelWithCount: st('cart.fabLabelWithCount') }}
             />
           ) : null}
         </div>
-      ) : null}
+
+        {isDemo ? <DemoWatermark /> : null}
+
+        {showConsent ? (
+          <ConsentBanner
+            privacyHref={legalHref('privacy')}
+            labels={{
+              title: st('consent.title'),
+              body: st('consent.body'),
+              accept: st('consent.accept'),
+              decline: st('consent.decline'),
+              region: st('consent.label'),
+              more: st('consent.more'),
+            }}
+          />
+        ) : null}
+      </div>
 
       <AnalyticsScript decision={analytics} />
 
@@ -291,24 +363,6 @@ export function StorefrontShell({
       ) : null}
 
       {wantsWorker ? <ServiceWorkerRegistrar /> : null}
-
-      {/*
-        THE WHATSAPP BUTTON IS RENDERED BEFORE THE CART, and the order is load-bearing rather than
-        alphabetical: `.sf-wa-fab ~ .sf-cart-fab` in storefront.css is what lifts the cart one row
-        when both are on screen, and a general sibling combinator only looks FORWARD. Swap these two
-        lines and the two circles stack on top of each other in the same corner.
-
-        It returns null on its own when the feature is off or the stored number is not dialable, so
-        there is no condition to duplicate here — see `components/whatsapp-fab.tsx`.
-      */}
-      <WhatsappFab context={context} />
-
-      {context.flags.cart ? (
-        <CartBadge
-          tenantId={context.tenantId}
-          labels={{ label: st('cart.fabLabel'), labelWithCount: st('cart.fabLabelWithCount') }}
-        />
-      ) : null}
     </div>
   );
 }

@@ -41,14 +41,22 @@ export async function POST(request: Request): Promise<Response> {
   /**
    * THE PER-CLIENT THROTTLE IS OURS, not better-auth's, and that is not duplication.
    *
-   * better-auth resolves its own limiter's key from `ipAddressHeaders`, and the best header
-   * available to it is `x-real-ip` — which Caddy sets to the PEER. Behind Cloudflare the peer is a
-   * Cloudflare edge address, so the library's per-client bucket is really per-edge-node: shared by
-   * every visitor routed through it. `getClientIp()` is the only thing on this platform that
-   * unwraps `CF-Connecting-IP`, and it does so only after verifying the peer is inside Cloudflare's
-   * pinned ranges (invariant 9). So the bound that is actually per-client is applied here.
+   * `getClientIp()` is the only thing on this platform that unwraps `CF-Connecting-IP`, and it does
+   * so only after verifying the peer is inside Cloudflare's pinned ranges (invariant 9). So the
+   * bound that is actually per-client is applied here.
    *
-   * Both layers stay: better-auth's covers the endpoints this wrapper does not touch.
+   * This note said better-auth's limiter is really per-EDGE-NODE, and that was accurate:
+   * `advanced.ipAddress.ipAddressHeaders` pinned it to `x-real-ip`, which Caddy sets to the peer —
+   * a Cloudflare edge address for every platform hostname. Not forgeable, but shared by every
+   * visitor routed through that node.
+   *
+   * NARROWED 2026-09-07: `proxy.ts` now stamps `x-souq-client-ip` from this same `getClientIp()`,
+   * and the auth config reads that first (`x-real-ip` stays as the fallback). So the library's own
+   * buckets are per-visitor too, which matters for `/request-password-reset`, `/forget-password`
+   * and `/reset-password` — the endpoints this wrapper does not touch and whose only bound was the
+   * shared one.
+   *
+   * Both layers stay, and they now key on the same address.
    */
   const { ip } = getClientIp({
     headers: request.headers,

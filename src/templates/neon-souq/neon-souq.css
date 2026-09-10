@@ -37,11 +37,41 @@
   border-block-end: 1px solid var(--t-border);
 }
 
-/* The sign: rose above, gold hairline below, nothing else. */
+/*
+ * The sign: a SHORT rose mark above, gold hairline below, nothing else.
+ *
+ * IT WAS A FULL-WIDTH 3px BORDER until 2026-09-09, and two critic rounds called the same thing:
+ * a rose rule spanning the whole column is furniture, and it spends the template's loudest colour
+ * on a divider eight times down a page. `storefront.css` had already written the argument against
+ * it in its own words a phase earlier — "a rule that spans the whole column reads as a DOCUMENT
+ * divider: it says 'a new part of this article begins', which is why eight of them down a page
+ * read as a table of contents rather than as a shop" — and this template kept doing it anyway.
+ *
+ * 5rem is the stall sign's own width, not the column's. The gold hairline underneath STAYS
+ * full-width: it is the shelf edge the sign hangs from, and one of the two lines has to hold the
+ * head together now that the other one does not.
+ *
+ * AN ABSOLUTELY-POSITIONED `::before` RATHER THAN A BORDER OR A GRADIENT. `.sf-block__head` is a
+ * `display: flex` row, so a static pseudo-element becomes a flex ITEM and lands between the title
+ * stack and the section action; taking it out of flow is what keeps the head's two-child layout
+ * exactly as `storefront.css` designed it. A background-gradient would have worked too, but
+ * `background-position` has no logical keyword, and this file should not be the one place in the
+ * storefront that hardcodes `right`.
+ */
 [data-template='neon-souq'] .sf-block__head {
-  border-block-start: 3px solid var(--t-primary);
+  position: relative;
   border-block-end: 1px solid var(--t-secondary);
   padding-block: var(--t-space-md);
+}
+
+[data-template='neon-souq'] .sf-block__head::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  inline-size: 5rem;
+  block-size: 3px;
+  background: var(--t-primary);
 }
 
 /*
@@ -165,7 +195,13 @@
 [data-template='neon-souq'] .sf-btn {
   border-radius: var(--t-radius-sm);
   text-transform: none;
-  letter-spacing: 0.01em;
+  /*
+   * ZERO. Arabic letters JOIN, and positive tracking pulls a joined word apart into loose glyphs —
+   * the same defect as the negative display tracking removed from this template's definition, in the
+   * other direction. Tracking a label is a Latin small-caps reflex; in Arabic the emphasis has to
+   * come from weight, size or colour. The QA gate counts every element that carries it.
+   */
+  letter-spacing: 0;
 }
 
 [data-template='neon-souq'] .sf-btn--ghost {
@@ -307,13 +343,13 @@
 }
 
 [data-template='neon-souq'] .sf-stat__label {
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
 }
 
 /* ------------------------------------------------ Phase 9: search + grids -- */
 
 [data-template='neon-souq'] .sf-search__label {
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   font-size: var(--t-text-sm);
 }
 
@@ -372,4 +408,103 @@
   [data-template='neon-souq'] .sf-hero--stage .sf-hero__copy {
     padding: var(--t-space-lg);
   }
+}
+
+
+/*
+ * THE BADGE WAS PAINTING ON TOP OF THE PRODUCT NAME, on every badged card, at every breakpoint.
+ *
+ * `.sf-card--overlay .sf-card__body` is `position: absolute` here (that is what puts the caption on
+ * the base of the photograph), which makes the CAPTION the containing block for the shared
+ * `[data-badge='top'] .sf-card__foot .sf-badge` rule in `storefront.css`. A badge asking for the
+ * top-start corner therefore lands on the top-start corner of the caption — exactly where the name
+ * begins. «بلوزة كلاسيك» shipped reading «زة كلاسيك».
+ *
+ * `inset-block-end: calc(100% + …)` lifts it clear of the caption and onto the plate above it, which
+ * is where a retail sticker belongs and what `data-badge='top'` was asking for in the first place.
+ */
+[data-template='neon-souq'] .sf-card--overlay .sf-card__foot .sf-badge {
+  inset-block-start: auto;
+  inset-block-end: calc(100% + var(--t-space-xs));
+}
+
+/*
+ * THE POSTER WALL, ON A SHOP WITH NO PHOTOGRAPHS.
+ *
+ * A PREVIOUS VERSION OF THIS NOTE SAID THE FIX WAS IMPOSSIBLE, AND IT WAS WRONG. It reasoned that
+ * `sections/products-grid.tsx` writes `--sf-cols` as an inline style and that an inline declaration
+ * beats every rule — both true, and irrelevant. The inline style sets the CUSTOM PROPERTY; it never
+ * sets `grid-template-columns`. A sheet that redeclares the CONSUMER wins normally, with no
+ * `!important` and without touching the merchant's column choice. رفّ has been doing exactly this
+ * at `raff.css:148` since Phase 9.
+ *
+ * Two columns on a 78rem measure is a 666px card. With photography that is the lookbook this
+ * template exists for. Without it the critic pass measured twelve empty plates at 48% of the desktop
+ * page — and سوق نيون was designed for "a boutique that sells on Instagram", i.e. for exactly the
+ * shop that has pictures.
+ *
+ * `:not(:has(img))` is the whole condition: a grid containing even one real photograph keeps the
+ * lookbook. Only the all-placeholder catalogue — the normal first month of a real shop here — gets
+ * the denser, more informative arrangement.
+ */
+@media (min-width: 64rem) {
+  [data-template='neon-souq'] .sf-grid:not(:has(img)) {
+    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  }
+}
+
+/*
+ * THE PLATE'S PROPORTIONS ARE ALREADY HANDLED, AND NOT HERE. (2026-09-09.)
+ *
+ * A `--sf-ratio: 16 / 7` override for the photo-less grid was written here and then removed the same
+ * day, because it could not have rendered and the thing it was fixing was already fixed.
+ *
+ *   1. IT WAS INERT. `storefront.css:1003` is
+ *      `.sf-card__media .sf-media:has(.sf-ph) { aspect-ratio: 4 / 3 }` — it sets the RESOLVED
+ *      property at (0,3,0). A `--sf-ratio` declaration only feeds `.sf-media`'s
+ *      `aspect-ratio: var(--sf-ratio, 4 / 3)` at (0,1,0), which that rule outranks. Writing the
+ *      custom property on a placeholder card therefore changes nothing at any specificity, which is
+ *      the SAME trap the docblock forty lines above this one already records for the stage hero —
+ *      "`aspect-ratio`, not `--sf-ratio`" — arrived at from the other direction.
+ *   2. IT WAS REDUNDANT. That shared rule exists precisely for "a placeholder plate is not a
+ *      photograph": it gives every photo-less card on all nine templates a 4/3 landscape plate
+ *      instead of this template's 3/4 poster. The 2026-09-08 capture confirms it — the plates in
+ *      `design/qa/after-all/neon-souq/desktop-full.png` are landscape, not portrait.
+ *
+ * So the residue of open item #1 is NOT the plate ratio. ورشة renders the same shop in 3,447px
+ * against this template's 5,207px with a 4/3 plate on both, so the difference is the composition
+ * around the plate — four columns and a card carrying السعر / التوفر / رقم الصنف where this one has
+ * two columns and a caption. That is a template design decision with an owner in the loop, and it
+ * does not belong in a CSS rule written on the way past.
+ */
+
+/*
+ * A CARD WITH NO PHOTOGRAPH HAS NOTHING TO OVERLAY.
+ *
+ * `.sf-card--overlay .sf-card__body` is pinned to the base of the picture on an opaque surface —
+ * right over a photograph, and wrong over a placeholder. Its height is text-driven and the plate's
+ * is width-driven, so on a 390px phone the caption measured 87px over a 130px plate: it covered 67%
+ * of it, and `.sf-ph`'s centred glyph sat underneath the scrim entirely.
+ */
+[data-template='neon-souq'] .sf-card--overlay:has(.sf-ph) .sf-card__body {
+  position: static;
+  inset: auto;
+}
+
+/*
+ * THE BADGE WAS PAINTING OVER THE PRICE, and nulling the BLOCK insets did not stop it.
+ *
+ * The shared rule is `position: absolute` with BOTH `inset-block-start` and `inset-inline-start`.
+ * Clearing only the block axis left the element absolute and still pinned to the foot row's
+ * inline-start — which is where `.sf-price` sits. A critic pass counted three of twelve products
+ * showing a gold chip and NO PRICE: «بلوزة شيفون مطرزة», «عباية مطرزة كلاسيك», «هودي شبابي مبطن» —
+ * i.e. exactly the new arrival, the best seller and the sale item, the three a shop most wants
+ * priced. ورشة renders «₪99» for the same هودي from the same fixture.
+ *
+ * `position: static` returns it to the flex flow beside the price, which is what `.sf-card__foot`
+ * was always laid out for.
+ */
+[data-template='neon-souq'] .sf-card--overlay:has(.sf-ph) .sf-card__foot .sf-badge {
+  position: static;
+  inset: auto;
 }

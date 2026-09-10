@@ -1318,14 +1318,22 @@ Order: `12.A → 12.B → 12.C → 12.D`. Owner answers: **start with the defaul
       stricter about: every one of those numbers is a section `limit`, not a catalogue size, so it
       stays bounded as a shop grows. NOT loosened to make the change pass — the perf intent is
       restated, and `lighthouse (best of 3)` passing is independent evidence the budget still holds
+- [x] **CONFIRMED BY CI: 7 failed → 6 failed, 124 passed, 3 flaky.** `a2-storefront.spec.ts:1000` is
+      gone from the list, so the scoped assertion was the right read of what 12.A changed. Phase 12
+      now costs the e2e suite nothing
 - [ ] **The other six are NOT in Phase 12's diff and need the stack, not a guess.** Leading
       hypothesis for two of them: `a2-storefront.spec.ts:710` asserts a product page has ZERO
       `input, textarea, select` (Q5, no customer PII) and `:727` drives the quantity stepper — both
       plausibly the 2026-09-06 header rework, which put a search `<input>` into the chrome on every
-      page and was committed without e2e ever running. The rest: `phase5-payments-orders:290`,
-      `phase7-critical-paths:660`, an admin `/accounts/[id]` heading, and
-      `phase11-design-dashboards:304` — the last of which TODO already lists as "written, needs the
-      stack"
+      page and was committed without e2e ever running.
+      **If that hypothesis holds, the fix is the test, not the code**: Q5's promise is that the
+      ORDERING FLOW collects nothing, and a search box collects no PII — so the assertion should be
+      scoped to the order block rather than counting every field in the document. Do not change it
+      without confirming the input is the search box: an unexplained field on a page that promises
+      none is the one thing that must not be assumed away.
+      The other four: `phase5-payments-orders:203` and `:290` (the gateway toggle),
+      `phase11-design-dashboards:167` and `:304` — the last of which `TODO.md` already listed as
+      "written, needs the stack"
 - [ ] **DO NOT MERGE while e2e is red.** Merging starts `deploy.yml`
 >
 > Two of the session's recurring "database" failures turned out to be one bug in `AGENT-RUN.cmd`
@@ -1621,3 +1629,172 @@ Order: `12.A → 12.B → 12.C → 12.D`. Owner answers: **start with the defaul
 > refactor compiles; they prove nothing about whether the result is usable, and a half-migrated tab
 > structure is worse than the long page it replaced. They want a browser and a screenshot pass, not
 > more confidence.
+
+### 12.E — the storefront band system (owner report: "the templates look unarranged")
+
+Measured before any design work: a QA capture of all nine templates against one real 15-product shop
+scored **all nine at exactly 6.5**. Nine palettes and six structural axes over one identical page,
+because `storefront.css` had one rhythm value and one width and no way for a section to differ from
+its neighbour. After: ديوان 9.5 · سوق نيون 9.5 · ورشة 9 · بيت 9.5 · رفّ 9 · دار 9 · مطبخ 9.5 ·
+موعد 9.5 · جهاز 9, zero blockers. Full reasoning in `docs/DECISIONS.md`.
+
+- [x] **The band system.** `data-ground` (page / deep / tint) · `data-width` (measure / wide) ·
+      `data-density` (tight / normal / airy), assigned in `src/templates/lib/bands.ts` and stamped by
+      `SectionList` onto a `.sf-band` wrapper. Ground alternates by POSITION so the property holds
+      for the four-section arrangement most new shops have; width and density come from the type.
+      One tint per page, chosen by what the band is for.
+- [x] **Two new ground tokens, and the contrast guard extended to cover them.** `--t-ground-deep`
+      and `--t-ground-tint` are derived from the BACKGROUND (not from `surface`, which is why every
+      previous attempt to break the monotony produced floating boxes). `bandGrounds()` is one formula
+      called from `deriveColorTokens` so the guard sees them — the first capture after the bands
+      landed measured a section lead at 4.06:1 on the tint.
+- [x] **`.sf-ph`'s frame had never rendered on any template.** `inset 0 0 0 var(--t-rule-hair)` puts
+      a border SHORTHAND where a length belongs, so the declaration was invalid and dropped. Its own
+      note spends four paragraphs explaining why the frame is what keeps a placeholder from reading
+      as a failed stylesheet — and it was never painted. Now a length, plus a tonal plate.
+- [x] **The orphan card and the hugging category tiles were one bug.** `auto-fit` plus a `max()`
+      floor that computes the exact width of one of `--sf-cols` columns: fills the row at every item
+      count while keeping the template's own column count. Caps for 1, 2 and 3 items.
+- [x] **The card flex chain.** `.sf-card__link { display: block }` orphaned `.sf-card__body`'s
+      `flex: 1 1 auto`, so `margin-block-start: auto` on the foot computed to 0 and three cards in a
+      row ended at three different heights.
+- [x] **The hero no longer renders a placeholder the size of a door.** `hero.tsx` stamps
+      `data-figure`; the no-photograph answer is a typographic hero on the tinted ground with the
+      shop's initial bled off the edge, plus a proof strip of facts the shop can actually prove.
+- [x] **The section head has an anatomy.** eyebrow (a provable count) + title + ornament + lead, with
+      the section's own action on the title's baseline at the far end. The full-width hairline that
+      made a homepage read as a table of contents is gone.
+- [x] **Arabic letter-spacing, in both directions.** سوق نيون `-0.03em` and بيت `-0.015em` display
+      tracking plus nine hardcoded positive values in their sheets. Arabic joins; tracking breaks the
+      joins. Zeroing them alone moved those two from 7 / 7.5 to 9.5.
+- [x] **Two arrangement bugs the audit surfaced, both admitted by the code's own comments.**
+      `products_grid` hard-wrote `columns` while the two rails either side left it unset (three
+      adjacent product bands at two column widths); and the default arrangement added a `search_bar`
+      under exactly the condition that already puts a search box in the chrome.
+- [x] **Mobile.** The `--sf-min` floor is dropped to 9rem below 40rem — at the desktop floor
+      `auto-fit` could only ever fit one track, and a 15-product shop rendered as a 10,500px
+      single-file scroll. Tap targets in the nav, the department row and the footer raised to 36px.
+- [x] **The gate.** typecheck 0 · lint 0 errors · full unit suite green · nine templates captured
+      through the real render path with a `data-template` probe per capture.
+
+- [ ] **The nine template stylesheets are still close neighbours.** The audit measured دار as ديوان's
+      sheet re-tinted (24 shared selectors, 54 identical normalised lines) and موعد/جهاز as one
+      vertical sheet in two palettes (46 identical lines, 26 of 28 selectors in the same order). The
+      band system makes the nine COMPOSE differently; it does not make their own sheets stop being
+      near-duplicates. Nine files, one at a time, with a capture each — not a ride-along on a change
+      to the shared layer.
+- [ ] **`.sf-rail` is overridden by no template sheet at all**, so the `rail` categories axis renders
+      byte-identically on سوق نيون, دار and مطبخ.
+- [ ] **`data-panel` reaches exactly one element in the product** (`.sf-trust`), so on any shop
+      without the entitlement-gated trust row the ornament axis changes nothing.
+- [ ] **e2e for the touched flows.** The unit suite is green and the visual gate passes on all nine;
+      `a2-storefront.spec.ts` and the axe pass want a stack run before this is called finished.
+
+- [x] **Two adversarial critic rounds (5.3 → 5.2), logged in `design/critic.md`.** The automated gate
+      said 9.5/10 with 0 blockers on screenshots a fresh critic failed. Three defects it found that
+      the gate could not see: the band grounds resolved 1/255 apart (invisible); a `@media
+      (max-width: 26rem)` rule 800 lines away cancelled the mobile grid fix, leaving a 10,503px phone
+      page; and the overlay badge painted on top of the product name on every badged card.
+- [x] **A reported bug that was not one.** Round 1 said opening hours render reversed and proposed an
+      LTR isolate. Measured (Range: 10:00 at x=638, 22:00 at x=557) the order is correct, and round 2
+      confirmed from UAX#9 — U+2013 is class ON so W4 never fires. The proposed fix would have caused
+      the bug. Pinned as a codepoint test; an ASCII hyphen there WOULD flip it.
+
+- [ ] **`neon-souq` is designed for photography it will not get.** The critic's sharpest finding, and
+      the one thing the band system cannot fix: `warsheh` renders the identical shop in 3,447px with
+      four columns and السعر / التوفر / رقم الصنف on every card — information where `neon-souq` has an
+      empty plate. A no-photo composition per template, not a patched plate.
+- [ ] **One typeface does both jobs** — Alexandria on 146 elements, IBM Plex Sans Arabic on 1. Both
+      already loaded, so the pairing costs no bytes.
+- [ ] **The identity devices do not read**: the brand-initial watermark measures 1.10:1 on
+      `neon-souq` (unmissable on `diwan`'s dark ground, which is how it survived review).
+- [ ] **`design.json` scopes the nine storefronts OUT** and its signature elements are dashboard-only,
+      so the storefront surface has no signature contract — a plausible root cause for having no
+      signature. Fix the contract before a round 3.
+
+#### 12.E — after four critic rounds
+
+- [x] **Four adversarial passes (5.3 / 5.2 / 5.3 / 5.2), logged in `design/critic.md`.** The automated
+      gate said 9.5/10 on the same screenshots every time. The gate measures ratios and padding; it
+      cannot see that three declared band grounds resolve to one colour.
+- [x] **The class of bug behind most findings: correct in the code, invisible on the screen.** Band
+      ladder at 1.13:1 · watermark 1.10 → 1.13 across a round that reported it fixed · placeholder
+      mark 2.40 → 2.34, i.e. worse · a guarded crimson token rendering as `rgb(100,89,93)` because a
+      second `color:` sat lower in the same block · an `opacity` under a comment saying it was removed.
+- [x] **The durable fix is the gate, not the corrections.** `phase9-templates.test.ts` asserts the
+      rendered relationships on all nine: `(bg, deep) ≥ 1.25`, `(bg, tint) ≥ 1.25`, `(deep, tint) ≥
+      1.15`, `(ph-mark, plate) ≥ 3.0`. It caught two near-misses while being written.
+- [x] **`(deep, tint)` was the missing assertion.** Contrast is luminance-only, so a neutral band and
+      a brand band landed at the same lightness on five of nine palettes (ديوان 1.016, رفّ 1.002). The
+      tint is now derived against the deep band.
+- [x] **The badge was painting over the PRICE** on three of twelve products — the new arrival, the
+      best seller and the sale item. Found by comparing against ورشة, which priced the same product.
+- [x] **The hours bug I rejected was real.** «10:00–22:00» rendered «22:00–10:00» on every template.
+      My bidi analysis was right and my conclusion was wrong: craft.md §14 — a numeric range in Arabic
+      is an LTR unit. Fixed at the render site (`lib/ltr-ranges.tsx`, `<bdi dir="ltr">`), because the
+      hours a visitor reads are free text from the DB and never touch the i18n string.
+- [x] **Type pairing as a distinctness axis** — nine unique (identity, body) tuples from four faces,
+      asserted, with no change to file count per template.
+
+- [ ] **`design.json` scopes the nine storefronts OUT and its signature elements are dashboard-only.**
+      Rounds 2, 3 and 4 each named this independently as the ceiling on identity: the surface has no
+      signature contract, so it cannot have a signature. **Highest-value next step**, and it is design
+      work with the owner in the loop rather than another CSS round.
+#### 12.F — the five open items that were not the contract (2026-09-09)
+
+- [ ] **Open item #1 is STILL OPEN, and I mis-diagnosed it as a plate problem — the fifth round to do
+      so.** I shipped a `--sf-ratio: 16 / 7` override for the photo-less grid with 1539 tests green,
+      and it could not have rendered: `storefront.css:1003` sets `aspect-ratio: 4 / 3` directly at
+      (0,3,0) on `:has(.sf-ph)`, and a custom property only feeds `.sf-media`'s declaration at
+      (0,1,0). `neon-souq.css` already documented that exact trap forty lines above where I put the
+      rule. Reverted to a comment. It was also redundant: that shared rule already gives every
+      photo-less card on all nine templates a landscape plate, which the 2026-09-08 capture confirms.
+      **ورشة renders the same shop in 3,447px against 5,207px with a 4/3 plate on BOTH** — so the gap
+      is four columns and a spec card versus two columns and a caption. Template design, owner in the
+      loop, not a CSS rule written on the way past.
+- [x] **The WhatsApp button was never returning null — it was under the consent banner.** The reported
+      cause could not exist: every render site guards on the same `normaliseWhatsappNumber` result,
+      and the capture shows the hero rendering «اطلب عبر واتساب», so the number is fine. `.sf-dock` is
+      `inset-inline: 0` at `z-index: 60` and `.sf-consent` inside it is `inline-size: 100%`, so it
+      reaches the inline-end corner where the FAB sits at 55. Both FAB rules carried a comment
+      asserting safety because the dock "sits inline-start" — true of the watermark, false of the
+      banner. The buttons are now `.sf-dock__fabs`, the dock's first child: overlap is structurally
+      impossible, which retires `.sf-wa-fab ~ .sf-cart-fab` and moves the home-indicator inset from
+      one button to the column that owns it.
+- [x] **The 45–65% band fill was the CONTAINER, not the prose.** `.sf-prose` is capped at
+      `min(34rem, 100%)` — measured, because `ch` over-runs in Arabic — inside a `--t-measure` of
+      64–70rem. `data-width` gains `read`; `.sf-block__head` shares the same `.sf-shell`, so title,
+      mark and paragraph end on one inline-end edge. Guarded by `min(40rem, var(--t-measure))` and a
+      `:has(.sf-contact > * + *)` escape for an about block that actually has a picture.
+- [x] **«موقعنا» folded into تواصل معنا, for NEW shops only.** The contact block now renders the
+      Google/Waze deep links from the same `resolveMapTarget` chain, as ghost buttons.
+      `buildDefaultSections` plans a standalone `map` only when there is no contact block to fold it
+      into. Stored arrangements are deliberately not migrated: silently deleting a section a merchant
+      can see in their own dashboard is worse than one duplicated address.
+- [x] **سوق نيون's sign is 5rem, not the whole column.** `storefront.css` had already written the
+      argument a phase earlier — a rule spanning the whole column reads as a document divider — and
+      this template kept doing it. An absolutely-positioned `::before`, because the head is
+      `display: flex` and a static pseudo-element becomes a flex item between the titles and the
+      action. The gold hairline stays full-width.
+- [x] **`pnpm test` runs again — the bind failure was a reserved port, not a permission.** The harness
+      defaults to 55432 and Windows reserves 55367-55466 here (`netsh int ipv4 show excludedportrange
+      protocol=tcp`), so the bind was refused before anything else. `EMBEDDED_PG_PORT=5433` clears it:
+      **476 integration + 1063 unit = 1539 pass.** Worth making the default, since the error message
+      points at the wrong cause.
+- [ ] **Harness flakiness:** one full run showed 5 failures in a single file, a deadlock between
+      parallel files in `factories.ts`'s tenant cleanup. Clean re-run was 476/476.
+- [x] **The three shipped fixes are verified in PIXELS and in NUMBERS**, on `alsharq-mobile`
+      (`neon-souq`, consent banner live) at 1440px via `getComputedStyle`/`getBoundingClientRect`:
+      the sign `::before` is **80px x 3px** `absolute` in `rgb(225,29,72)` on a 1352px head (5rem, not
+      the column); `[data-width='read']` is a **640px** shell holding **544px** of prose = **85% fill**
+      against **43.6%** in the old 1248px shell; `.sf-dock__fabs` is the dock's **first child**, the
+      FAB is `position: static`, and its bottom (**779px**) clears the consent top (**799px**) by 20px.
+- [x] **The reproducible baseline already existed — `prisma/seed-scenario.ts`.** No new fixture was
+      needed: it is committed, idempotent, and builds ten real Bartaa shops. `zaytouna-market` renders
+      **0 `<img>` and 28 placeholders** (the zero-photography condition the critic graded; 9.5/10, 0
+      blockers, 0 contrast fails), and `alsharq-mobile` ships on `neon-souq` with consent live. Grade
+      future rounds against these, never against a hand-made tenant that lives on one machine.
+- [ ] **`H_OVERFLOW` at 768px (scrollWidth 804) — pre-existing, in the FOOTER, not this work.** A
+      Playwright probe puts every overflowing box in `.sf-footer__social` / `.sf-footer__hours` / the
+      footer columns at `left=-36`; it reproduces identically on two templates and nothing here
+      touches `site-footer.tsx`. Same footer track-count problem DECISIONS already recorded once.

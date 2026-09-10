@@ -77,7 +77,21 @@ export function ProductCard({
             <StandardBody
               product={product}
               price={showPrice ? price : null}
-              showDescription={variant === 'framed'}
+              /*
+                THE DESCRIPTION APPEARS WHEN THERE IS NO PHOTOGRAPH — on any card body, not just
+                `framed`.
+
+                `overlay` is defined as "name, price and badge only, no description: the name is what
+                the picture cannot say". That reasoning is exactly right and it assumes a picture. A
+                critic pass measured the consequence on a real shop with none: twelve cards carrying a
+                blank plate, a name and a number, where ورشة's `spec` body was carrying السعر /
+                التوفر / رقم الصنف for the same products — information where نيون had an empty plate.
+
+                So the rule keeps its intent and gains its missing clause: the description is shown
+                when the picture is not there to say it. A shop that uploads photography gets the
+                lookbook card back automatically, per product, with no setting to find.
+              */
+              showDescription={variant === 'framed' || product.image === null}
             />
           )}
         </div>
