@@ -116,6 +116,79 @@
 }
 
 /*
+ * THE WATERMARK, RESCUED FROM BEHIND THE STAGE CARD.
+ *
+ * `.sf-hero[data-figure='type']::after` (storefront.css) paints the shop's-initial watermark at
+ * `z-index: -1` inside `.sf-hero`'s own isolated stacking context, which puts it BELOW every
+ * normal-flow descendant — including the opaque `.sf-hero--stage .sf-hero__inner` card two rules
+ * up (`background: var(--t-surface)`). `--stage` only changes LAYOUT, not whether there is a photo,
+ * so a photo-less سوق نيون storefront still resolves `data-figure="type"` while wrapped in this
+ * card, and the watermark renders and is then fully hidden behind it. Measured on `alsharq-mobile`
+ * at 768px and 1440px: a plain `--t-surface` void where the ornament should be — not a missing
+ * image, a z-index bug.
+ *
+ * This redraws the SAME glyph as the card's OWN `::before`, which paints inside the card's own
+ * stacking context — above its background, below `.sf-hero__copy` (a later DOM sibling at the same
+ * `z-index: auto`, so normal paint order already puts it on top). The original `::after` on
+ * `.sf-hero` is untouched and still correct for every OTHER `[data-figure="type"]` hero, which is
+ * not wrapped in a stage card; this is an addition scoped to `[data-template='neon-souq']`, not a
+ * replacement.
+ */
+[data-template='neon-souq'] .sf-hero--stage[data-figure='type'] .sf-hero__inner {
+  position: relative;
+  isolation: isolate;
+}
+
+[data-template='neon-souq'] .sf-hero--stage[data-figure='type'] .sf-hero__inner::before {
+  content: var(--sf-initial, '');
+  position: absolute;
+  z-index: 0;
+  inset-block-start: 50%;
+  /*
+   * A POSITIVE inset, not the storefront-wide rule's negative bleed. That rule anchors to
+   * `.sf-hero`, a container close to the full page width, so bleeding the glyph off its inline-end
+   * edge by one `--t-space-2xl` still leaves most of a 26rem glyph inside a much bigger box. THIS
+   * container is `.sf-hero__inner` — the card itself, 1208px wide at desktop, `overflow: hidden` —
+   * and the same negative-offset trick pushed most of the glyph past the card's own edge, where the
+   * card's own clip cut it away. Measured empty at both the original (`--t-space-2xl` bled) and the
+   * first retry (`--t-space-xl` bled): visible pixels, zero. `1rem` INSIDE the edge is what keeps
+   * the glyph inside the box it is actually clipped by.
+   */
+  inset-inline-end: 1rem;
+  transform: translateY(-50%);
+  font-family: var(--t-font);
+  font-weight: var(--t-weight-display);
+  /*
+   * Capped smaller than the storefront-wide rule's 26rem, for the same reason the inset changed:
+   * that ceiling was sized for `.sf-hero`'s full width, and inside the narrower card it pushed the
+   * glyph mostly past the visible box even at a contained inset.
+   */
+  font-size: min(26vw, 13rem);
+  line-height: 0.8;
+  /*
+   * `--t-primary` ALPHA-COMPOSITED at 14%, not `--t-watermark` at full opacity.
+   *
+   * `--t-watermark` is `mix(--t-bg, --t-primary, 20%)` (tokens.ts) — pre-mixed toward the PAGE
+   * ground, which on نيون's light variant is `#FAF3F5`, four points off this card's own
+   * `#FFFFFF` `--t-surface`. Full-opacity `mix(#FAF3F5, primary, 20%)` painted on `#FFFFFF` measured
+   * as a ~4% colour step — invisible in the capture, not merely faint. Compositing the SATURATED
+   * primary at 14% alpha directly onto whatever the card's ground actually is reads as the intended
+   * "very faint" mark on both this card and نيون's dark variant, without a second per-surface token.
+   */
+  color: var(--t-primary);
+  opacity: 0.14;
+  pointer-events: none;
+}
+
+/* Same reasoning as the storefront-wide rule this pairs with: too large relative to the column
+   on a phone, where the card and the glyph overlap almost completely. */
+@media (max-width: 46rem) {
+  [data-template='neon-souq'] .sf-hero--stage[data-figure='type'] .sf-hero__inner::before {
+    display: none;
+  }
+}
+
+/*
  * `aspect-ratio`, not `--sf-ratio`.
  *
  * `MediaImage` writes the custom property as an INLINE style (`style={{'--sf-ratio': ratio}}`), and an

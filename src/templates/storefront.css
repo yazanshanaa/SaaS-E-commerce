@@ -2134,7 +2134,29 @@ details.sf-note > summary:focus-visible {
   [data-footer='band'] .sf-footer__inner:has(> :nth-child(3):last-child) {
     grid-template-columns: repeat(2, minmax(15rem, 1fr));
   }
+}
 
+/*
+ * THE THREE-COLUMN TIER NEEDS A HIGHER FLOOR THAN THE TWO-COLUMN ONE, AND SHARING 46rem WITH IT WAS
+ * THE H_OVERFLOW BUG THE QA GATE KEPT REPORTING ON سوق نيون AND مطبخ.
+ *
+ * `repeat(3, minmax(15rem, 1fr))` needs 3 × 240px of track PLUS 2 gaps PLUS the shell's own
+ * inline padding before the container is wide enough not to force it. On نيون and مطبخ, whose
+ * `--t-space-xl` gap and `--t-space-lg` padding both total 104px (32px × 2 + 20px × 2, and
+ * 30px × 2 + 22px × 2), that is 720 + 104 = 824px = 51.5rem of viewport — not 46rem. Measured live
+ * at the 768px tablet breakpoint: three 240px tracks resolved and the third was pushed 36px past
+ * the left edge, `scrollWidth` 804 against a 768px window. رفّ needs less (49.25rem, a 68px total),
+ * so 52rem clears all three band templates with a small margin rather than tuning per template.
+ *
+ * Below 52rem a `.sf-footer__inner` with 4 children (three real columns + the full-width social
+ * band) falls through to the plain `auto-fit` rule above — verified NOT to reintroduce the dead-track
+ * problem the count guards exist for: at 46rem–52rem there is only room for two `auto-fit` tracks
+ * anyway (three would already overflow), so the third real column wraps to its own row instead of
+ * stranding an empty track. Dead tracks only reappear once a container is wide enough to fit MORE
+ * auto-fit tracks than there are real items — which is exactly what the explicit `repeat(3, …)` below
+ * prevents once the container is actually wide enough to hold it.
+ */
+@media (min-width: 52rem) {
   [data-footer='band'] .sf-footer__inner:has(> :nth-child(4):last-child) {
     grid-template-columns: repeat(3, minmax(15rem, 1fr));
   }
