@@ -1794,7 +1794,23 @@ its neighbour. After: ديوان 9.5 · سوق نيون 9.5 · ورشة 9 · ب�
       **0 `<img>` and 28 placeholders** (the zero-photography condition the critic graded; 9.5/10, 0
       blockers, 0 contrast fails), and `alsharq-mobile` ships on `neon-souq` with consent live. Grade
       future rounds against these, never against a hand-made tenant that lives on one machine.
-- [ ] **`H_OVERFLOW` at 768px (scrollWidth 804) — pre-existing, in the FOOTER, not this work.** A
-      Playwright probe puts every overflowing box in `.sf-footer__social` / `.sf-footer__hours` / the
-      footer columns at `left=-36`; it reproduces identically on two templates and nothing here
-      touches `site-footer.tsx`. Same footer track-count problem DECISIONS already recorded once.
+- [x] **`H_OVERFLOW` at 768px (scrollWidth 804), root-caused and fixed.** It was the band footer's
+      3-column rule firing at `46rem` when 3×15rem tracks + 2 gaps + shell padding actually needs
+      `51.5rem` on سوق نيون/مطبخ — exactly the tablet QA breakpoint. `storefront.css` now splits the
+      2-column rule (stays 46rem) from the 3-column rule (moved to 52rem). Verified 0 overflow at
+      768/1440 on all three band-footer templates, no dead-track regression at desktop.
+- [x] **Two more real bugs found and fixed by re-running the design-engine QA/critic loop**: `map.tsx`'s
+      Google/Waze buttons were one filled + one ghost, contradicting `contact-whatsapp.tsx`'s own
+      documented rule — both ghost now. The hero's shop-initial watermark was fully hidden behind
+      نيون's opaque stage-card background (`z-index:-1` inside an isolated stacking context, painted
+      under the card) for every photo-less hero — added a second watermark layer that paints inside
+      the card's own stacking context, verified visible in both light and dark `colorScheme`.
+- [ ] **Critic score moved 5.2 → 6.9 (still short of the 8.0 gate) — full log in `design/critic.md`.**
+      The remaining gap is NOT more CSS: (1) every QA/critic screenshot ever taken of this template,
+      across all seven rounds, is the `prefers-color-scheme: light` fallback — `design-qa.mjs` never
+      sets `colorScheme` and Playwright defaults to light — so the template's actual DESIGNED dark
+      default (near-black ground, hot rose accent) has never once been graded, and a manual dark-mode
+      capture this session reads as genuinely more distinctive than the light one every round scored.
+      This needs an owner decision (force dark, retune light, or accept the split), not a CSS round.
+      (2) The first-grapheme placeholder scheme breaks on Arabic's definite article «ال» — shared
+      code across all nine templates, needs its own cross-template verification pass.

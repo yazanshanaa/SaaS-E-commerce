@@ -4178,3 +4178,54 @@ from this work: a Playwright probe puts every overflowing box in the FOOTER
 (`.sf-footer__social`, `.sf-footer__hours` and the footer columns at `left=-36`), it reproduces
 identically on two different templates, and nothing here touches `site-footer.tsx`. It is the footer
 track-count problem this log already recorded once. Left open and unfixed rather than folded in.
+
+## `H_OVERFLOW` root-caused (it was never the footer's element count), two more bugs, and a
+## measurement gap that likely explains most of the "still generic" verdict — 2026-09-10/11
+
+The Stop-hook design-engine gate fired after the previous commit touched `shell.tsx`, `storefront.css`,
+`contact-whatsapp.tsx` and `neon-souq.css` without a QA re-run. Re-running it top to bottom (three
+rounds, `design/critic.md` has the full log) found the actual cause of the `H_OVERFLOW` this log had
+twice logged as pre-existing and unexplained: the band footer's `@media (min-width: 46rem)` 3-column
+rule (`سوق نيون`/`رفّ`/`مطبخ`) needs `repeat(3, minmax(15rem, 1fr))` — 3×240px tracks + 2×32px gaps +
+2×20px shell padding = **824px = 51.5rem** on نيون and مطبخ (رفّ needs less, 49.25rem). `46rem` = 736px
+is 88px short of that. It is not a footer-element-count bug; it is a breakpoint set for the WRONG tier
+sharing a media query with one that had a correctly-tuned floor. Split: 2-column stays at 46rem,
+3-column moved to 52rem, which clears all three templates with margin. Verified live (Playwright
+against the running dev stack, not read off a screenshot): 0 overflow at 768/1440 on نيون/رفّ/مطبخ,
+`grid-template-columns` still resolves to 3 equal desktop tracks (no dead-track regression from
+widening the container-fit fallback range).
+
+Two more bugs the critic loop surfaced and this round fixed: `map.tsx`'s Google/Waze buttons were one
+filled + one ghost, contradicting `contact-whatsapp.tsx`'s own comment ("Both links are GHOST
+buttons") for the identical pair — both ghost now. And نيون's hero shop-initial watermark
+(`.sf-hero[data-figure='type']::after`) is `z-index: -1` inside `.sf-hero`'s own isolated stacking
+context, which puts it BELOW نيون's opaque `.sf-hero--stage .sf-hero__inner` card
+(`background: var(--t-surface)`) for every photo-less hero — a plain `--t-surface` void where the
+ornament should be, on every neon-souq storefront without a hero photo. Added a second watermark
+layer scoped to the stage card, painting inside the card's OWN stacking context with a repositioned
+inset (the card is 1208px at desktop, not the full hero width the original bleed-off-edge offset was
+tuned for — the same negative-inset trick there pushed most of the glyph past the card's own
+`overflow: hidden` clip) and a re-derived colour (`--t-watermark` mixes toward the PAGE ground, which
+measured ~4% off this card's own `--t-surface` — alpha-compositing `--t-primary` at 14% directly
+reads correctly on both this card and the dark variant). Confirmed by screenshot in both light and
+dark before committing.
+
+**The critic score moved 5.2 → 6.9 across these three rounds — every criterion is now ≥ 6 for the
+first time — and it is still short of the 8.0 gate.** The critic doing the grading in round 7
+independently found something none of the previous six rounds caught: `design-qa.mjs` never sets
+`colorScheme` on the Playwright context it launches, and Playwright defaults an unset context to
+`'light'`. نيون's own `definition.ts` documents its identity as a near-black "night market stall";
+`tokens.ts` says outright that `:root` carries that dark palette by DEFAULT and the light override
+exists only for visitors whose OS explicitly prefers light. **Every screenshot this file has ever
+scored — R1 through R7 — is that light fallback. The dark identity this template is actually built
+around has never once been captured by the QA tooling.** A manual side-by-side this session (same
+markup, same watermark fix, `colorScheme: 'dark'`) reads as genuinely distinctive — near-black card,
+the rose accent doing real work — where the identically-structured light render reads as generic
+pink/white boutique. Seven rounds of `identity` and `colour` scores sitting in the 4–6 range may be
+substantially a measurement gap, not a design gap. Not fixed here: which variant real customers
+should see by default is a product decision (force dark, retune the light palette to still read
+"night market," or accept the split), explicitly flagged to the project owner rather than decided
+inside a CSS round. `design/critic.md` has the full round-by-round log, the remaining open items
+(the first-grapheme placeholder scheme breaking on Arabic's definite article «ال» across all nine
+templates; two of نيون's four declared `signature` ornaments not rendering on a real zero-photography
+demo tenant; small mobile touch targets), and the carried-over `design.json` scope gap from R4.
