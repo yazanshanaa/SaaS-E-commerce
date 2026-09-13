@@ -170,6 +170,14 @@ test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
   await seedShop({ ...SHOP, planKey: 'pro', withGateway: true });
+  // 2026-09-13: paid plans carry `cart` by default, and cart takes priority over the checkout
+  // form on the product page. This spec is about the buy-now form, so the fixture opts out.
+  await sql(
+    `INSERT INTO entitlements (id, tenant_id, feature_key, value, created_at, updated_at)
+     VALUES ($1, $2, 'cart', 'false'::jsonb, NOW(), NOW())
+     ON CONFLICT (tenant_id, feature_key) DO UPDATE SET value = 'false'::jsonb`,
+    [`${SHOP.tenantId}-ent-cart-off`, SHOP.tenantId],
+  );
   await seedShop({ ...PLAIN, planKey: 'basic', withGateway: false });
 
   /**
@@ -303,7 +311,8 @@ test.describe('checkout follows the payment_gateway toggle, immediately', () => 
     await expect(
       page.getByRole('main').getByRole('link', { name: /اطلب عبر واتساب/ }),
     ).toBeVisible();
-    expect(await page.locator('input, textarea, select').count()).toBe(0);
+    // Scoped to <main>: the header carries a product search box on every page (2026-09-13).
+    expect(await page.getByRole('main').locator('input, textarea, select').count()).toBe(0);
 
     // The ROUTE refuses too, not only the render — a form left open across the toggle writes
     // nothing.
@@ -338,7 +347,8 @@ test.describe('Q5 still holds for every tenant that has not opted in', () => {
       page.getByRole('main').getByRole('link', { name: /اطلب عبر واتساب/ }),
     ).toBeVisible();
     await expect(page.getByRole('heading', { name: 'إتمام الطلب' })).toHaveCount(0);
-    expect(await page.locator('input, textarea, select').count()).toBe(0);
+    // Scoped to <main>: the header carries a product search box on every page (2026-09-13).
+    expect(await page.getByRole('main').locator('input, textarea, select').count()).toBe(0);
   });
 
   test('and its checkout endpoint 404s rather than 403s', async ({ page }) => {

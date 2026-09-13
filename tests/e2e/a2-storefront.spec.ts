@@ -736,8 +736,10 @@ test.describe('the storefront itself', () => {
     expect(message).toContain(SHORT_PRODUCT);
     expect(message).toContain('₪');
 
-    // The V1 storefront collects no customer PII: there is no field to type one into.
-    expect(await page.locator('input, textarea, select').count()).toBe(0);
+    // The ordering flow collects no customer PII: there is no field to type one into. Scoped to
+    // <main> — the header carries a product SEARCH box on every page (2026-09-13), which collects
+    // nothing about the visitor.
+    expect(await page.getByRole('main').locator('input, textarea, select').count()).toBe(0);
   });
 
   test('the quantity stepper changes the message and nothing else', async ({ page }) => {

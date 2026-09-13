@@ -186,13 +186,17 @@ test.beforeAll(async () => {
 
 // =============================================================================
 
-test.describe('cart and coupons are off by default, and are instant per-account toggles', () => {
-  test('the admin turns cart and coupons on for one shop only', async ({ page }) => {
+test.describe('cart and coupons come with a paid plan, and stay instant per-account toggles', () => {
+  test('the admin can flip cart off and back on for one shop', async ({ page }) => {
+    // 2026-09-13: متجر/احترافي carry cart and coupons by plan default. The toggle is still the
+    // owner's: one press turns it OFF for this shop, a second turns it back ON — each saved.
     await signInAsAdmin(page);
     await page.goto(`${ADMIN}/accounts/${SHOP.tenantId}`);
 
     for (const label of ['سلة الشراء', 'كوبونات الخصم']) {
       const row = page.locator('.sba-matrix-row', { hasText: label });
+      await row.getByRole('button').first().click();
+      await expect(page.getByText('تم الحفظ.')).toBeVisible();
       await row.getByRole('button').first().click();
       await expect(page.getByText('تم الحفظ.')).toBeVisible();
     }
@@ -382,7 +386,8 @@ test.describe('Q5 still holds for every tenant that has not opted into cart', ()
     ).toBeVisible();
     await expect(page.getByRole('button', { name: 'أضف للسلة' })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'إتمام الطلب' })).toHaveCount(0);
-    expect(await page.locator('input, textarea, select').count()).toBe(0);
+    // Scoped to <main>: the header carries a product search box on every page (2026-09-13).
+    expect(await page.getByRole('main').locator('input, textarea, select').count()).toBe(0);
     // No floating cart button either — the whole surface is absent, not merely empty.
     await expect(page.locator('.sf-cart-fab')).toHaveCount(0);
   });
