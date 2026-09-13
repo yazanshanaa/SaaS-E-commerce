@@ -207,7 +207,7 @@ test.describe('checkout follows the payment_gateway toggle, immediately', () => 
     await expect(page.getByLabel('الاسم')).toBeVisible();
     await expect(page.getByLabel('رقم الجوال')).toBeVisible();
     // The privacy sentence is at the point of collection, not buried in a policy page.
-    await expect(page.getByText('بنسجّل اسمك ورقمك')).toBeVisible();
+    await expect(page.getByText('نسجّل اسمك ورقمك')).toBeVisible();
   });
 
   test('a visitor can place an order and is told its number', async ({ page }) => {
@@ -255,7 +255,7 @@ test.describe('checkout follows the payment_gateway toggle, immediately', () => 
     await expect(page.getByRole('heading', { name: /طلب رقم\s*1/ })).toBeVisible();
     await expect(page.getByText('أحمد عودة')).toBeVisible();
 
-    await page.getByRole('button', { name: 'سجّل إنه مدفوع' }).click();
+    await page.getByRole('button', { name: 'سجّله مدفوعاً' }).click();
     await expect(page.getByText('تم تحديث حالة الطلب.')).toBeVisible();
     await expect(page.getByText('مدفوع').first()).toBeVisible();
 
@@ -274,7 +274,7 @@ test.describe('checkout follows the payment_gateway toggle, immediately', () => 
 
     await expect(page.getByRole('heading', { name: 'بوابة الدفع' })).toBeVisible();
     await expect(page.getByText('البوابة جاهزة')).toBeVisible();
-    await expect(page.getByText('التاجر مشغّل الطلب من الموقع.')).toBeVisible();
+    await expect(page.getByText('التاجر فعّل الطلب من الموقع.')).toBeVisible();
     await expect(page.locator('.sba-chip', { hasText: 'بوابة دفع' })).toBeVisible();
 
     // The usage card counts what the storefront actually took.

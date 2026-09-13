@@ -421,7 +421,7 @@ test('an account whose period already ended is still on the call list, and still
   const row = page.locator('tr', { hasText: LAPSED.slug });
   await expect(row).toBeVisible();
   // Not a number of days remaining — the screen says what actually happened.
-  await expect(row).toContainText('انتهى وبستنى الإيقاف');
+  await expect(row).toContainText('انتهى وبانتظار الإيقاف');
 
   const storefront = await page.goto(`${origin(LAPSED.slug)}/`);
   expect(storefront?.status()).toBe(200);
@@ -562,7 +562,7 @@ test('a demo is built from the pack picker, private and watermarked', async ({ p
 
   // Fifteen products, fifteen generated images and seven sections in one transaction, against the
   // "button click to a shareable link in under 30 seconds" criterion in docs/PHASES.md.
-  await expect(page.getByText('تجهّزت النسخة التجريبية. ابعت الرابط على الواتساب.')).toBeVisible({
+  await expect(page.getByText('جُهّزت النسخة التجريبية. أرسل الرابط على الواتساب.')).toBeVisible({
     timeout: 30_000,
   });
 
@@ -662,7 +662,7 @@ test('a preset-plan merchant picks a vetted set, and the storefront repaints', a
   await page.goto(`${APP}/appearance`);
 
   await expect(page.getByRole('heading', { name: 'المظهر' })).toBeVisible();
-  await expect(page.getByText('اختر مجموعة ألوان جاهزة من اللي عنا.')).toBeVisible();
+  await expect(page.getByText('اختر مجموعة ألوان جاهزة من المجموعات المتاحة لدينا.')).toBeVisible();
   await expect(page.locator('#color-text-primary')).toHaveCount(0);
 
   const form = colorsForm(page);
@@ -702,7 +702,7 @@ test('an admin override opens the free picker, and the contrast guard moves a co
 
   // The editor changed shape for the merchant, on the plan that does not include this.
   await expect(
-    page.getByText('اختر ألوانك بحرية. بنفحص التباين تلقائياً عشان الخط يضل مقروء.'),
+    page.getByText('اختر ألوانك بحرية. نفحص التباين تلقائياً ليبقى الخط مقروءاً.'),
   ).toBeVisible();
   await expect(page.locator('input[name="presetKey"]')).toHaveCount(0);
 
@@ -746,7 +746,7 @@ test('an admin override opens the free picker, and the contrast guard moves a co
   });
   await guarded.getByRole('button', { name: 'حفظ' }).click();
   await expect(guarded.locator('.sbd-notice--ok')).toContainText(
-    'حفظنا ألوانك، وعدّلنا شوي على بعضها عشان يضل الخط مقروء لكل الناس.',
+    'حفظنا ألوانك، وعدّلنا بعضها قليلاً ليبقى الخط مقروءاً للجميع.',
   );
 
   const [theme] = await sql<{ text: string | null }>(

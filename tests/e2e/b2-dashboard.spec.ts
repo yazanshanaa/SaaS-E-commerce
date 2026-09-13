@@ -202,7 +202,7 @@ test.describe('from an account being opened to a merchant running their shop', (
     await expect(page.getByRole('heading', { name: 'الإعدادات' })).toBeVisible();
 
     // `map_location` is admin on أساسي: the field renders, and the submit asks instead of saving.
-    const notices = page.getByText('هذا الحقل بتعدّله إدارة المنصة.');
+    const notices = page.getByText('هذا الحقل تعدّله إدارة المنصة.');
     await expect(notices.first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'اطلب تعديل' }).first()).toBeVisible();
 

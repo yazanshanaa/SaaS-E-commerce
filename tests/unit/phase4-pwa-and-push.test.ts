@@ -85,7 +85,7 @@ describe('the service worker source', () => {
     iconUrl: '/icons/192',
     badgeUrl: '/icons/192',
     fallbackTitle: 'إشعار جديد',
-    fallbackBody: 'في إشي جديد بالمتجر.',
+    fallbackBody: 'هناك جديد في المتجر.',
   });
 
   it('handles push and notification clicks', () => {

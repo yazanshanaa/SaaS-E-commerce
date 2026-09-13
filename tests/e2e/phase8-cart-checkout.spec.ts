@@ -155,8 +155,8 @@ async function latestOrder(tenantId: string): Promise<{ id: string; trackingCode
 async function addToCartAndOpenCart(page: Page): Promise<void> {
   await page.goto(`${storefront(SHOP.slug)}/products/${SHOP.productSlug}`);
   await page.getByRole('button', { name: 'أضف للسلة' }).click();
-  await expect(page.getByRole('link', { name: 'شوف السلة' })).toBeVisible();
-  await page.getByRole('link', { name: 'شوف السلة' }).click();
+  await expect(page.getByRole('link', { name: 'عرض السلة' })).toBeVisible();
+  await page.getByRole('link', { name: 'عرض السلة' }).click();
   await expect(page.getByRole('heading', { name: 'سلة الشراء' })).toBeVisible();
 }
 
@@ -250,7 +250,7 @@ test.describe('add to cart → checkout → tracking → edit → cancel', () =>
 
     await page.getByLabel('آخر 4 أرقام من رقم الجوال').fill('9999');
     await page.getByRole('button', { name: 'اعرض الطلب' }).click();
-    await expect(page.getByText('ما لقينا طلب بهاد الرمز والرقم')).toBeVisible();
+    await expect(page.getByText('لم نجد طلباً بهذا الرمز والرقم')).toBeVisible();
 
     await page.getByLabel('آخر 4 أرقام من رقم الجوال').fill(CUSTOMER.last4);
     await page.getByRole('button', { name: 'اعرض الطلب' }).click();
@@ -292,7 +292,7 @@ test.describe('add to cart → checkout → tracking → edit → cancel', () =>
     await page.getByRole('button', { name: 'ألغِ الطلب' }).click();
     await expect(page.getByRole('heading', { name: 'إلغاء الطلب' })).toBeVisible();
 
-    await page.getByLabel('ليش عم تلغي الطلب؟').fill('ما بدي الطلب هلق');
+    await page.getByLabel('لماذا تلغي الطلب؟').fill('ما بدي الطلب هلق');
     await page.getByRole('button', { name: 'أكّد الإلغاء' }).click();
 
     await expect(page.getByText('سبب الإلغاء: ما بدي الطلب هلق')).toBeVisible();
@@ -361,7 +361,7 @@ test.describe('a tracking code belongs to its own tenant, and only its own tenan
 
     // Same generic failure as a wrong code or a wrong phone would produce — never a
     // distinguishable "exists on a different site" message, which would be an oracle.
-    await expect(page.getByText('ما لقينا طلب بهاد الرمز والرقم')).toBeVisible();
+    await expect(page.getByText('لم نجد طلباً بهذا الرمز والرقم')).toBeVisible();
 
     // The SAME code, on its OWN tenant's host, still resolves — proving the miss above is
     // isolation, not a broken or expired code.

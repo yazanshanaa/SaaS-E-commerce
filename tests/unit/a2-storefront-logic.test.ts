@@ -751,7 +751,7 @@ describe('a products_grid pinned to a category', () => {
     expect(html).toContain('tool-2');
     expect(html).not.toContain('fresh-1');
     // Not the empty state, which is what filtering the slice produced.
-    expect(html).not.toContain('لسا ما انضافت');
+    expect(html).not.toContain('لم تُضف منتجات');
   });
 
   it('offers the rest of the CATEGORY, and links into it rather than at everything', () => {
@@ -763,7 +763,7 @@ describe('a products_grid pinned to a category', () => {
       { categoryKey: 'tools', limit: 2 },
     );
 
-    expect(html).toContain('شوف كل المنتجات');
+    expect(html).toContain('عرض كل المنتجات');
     expect(html).toContain('/products?category=tools');
   });
 
@@ -776,7 +776,7 @@ describe('a products_grid pinned to a category', () => {
       { categoryKey: 'tools', limit: 12 },
     );
 
-    expect(html).not.toContain('شوف كل المنتجات');
+    expect(html).not.toContain('عرض كل المنتجات');
   });
 
   it('an unpinned grid still decides its link from the catalogue total', () => {
@@ -785,7 +785,7 @@ describe('a products_grid pinned to a category', () => {
       { limit: 2 },
     );
 
-    expect(html).toContain('شوف كل المنتجات');
+    expect(html).toContain('عرض كل المنتجات');
     expect(html).not.toContain('?category=');
   });
 });

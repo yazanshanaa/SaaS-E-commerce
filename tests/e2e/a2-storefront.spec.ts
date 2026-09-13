@@ -1048,7 +1048,7 @@ test.describe('the documented performance proxies, on a 30-product catalogue', (
     expect(homeCards).toBeLessThanOrEqual(24);
 
     // 30 > 12, so the rest is one link away rather than thirty cards deep.
-    await expect(page.getByRole('link', { name: 'شوف كل المنتجات' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'عرض كل المنتجات' })).toBeVisible();
 
     await page.goto(`${origin(HOST_WARSHEH)}/products`);
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();

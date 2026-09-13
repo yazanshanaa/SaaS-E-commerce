@@ -171,7 +171,7 @@ test.describe('a احترافي merchant connects a custom domain', () => {
      * is invisible to every resolver AND the ACME challenge never arrives — which from the
      * merchant's side is indistinguishable from "your platform is broken".
      */
-    await expect(page.getByText('إذا الدومين عندك على Cloudflare، انتبه لهاي')).toBeVisible();
+    await expect(page.getByText('إذا كان الدومين عندك على Cloudflare، انتبه لهذا')).toBeVisible();
   });
 
   test('CERTIFICATE ISSUANCE IS REFUSED for an unverified domain', async ({ page }) => {
@@ -315,8 +315,8 @@ test.describe('the PWA surface', () => {
     );
 
     await page.goto(`${STOREFRONT}/offline`);
-    await expect(page.getByRole('heading', { name: 'ما في اتصال بالإنترنت' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'جرّب كمان مرة' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'لا يوجد اتصال بالإنترنت' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'حاول مرة أخرى' })).toBeVisible();
   });
 });
 
