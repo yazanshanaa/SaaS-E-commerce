@@ -89,6 +89,7 @@ export function ProductForm({
         <Field
           label={t('dashboard', 'products.fields.price')}
           name="price"
+          help={t('dashboard', 'help.productPrice')}
           hint={t('common', 'units.currencyName')}
         >
           <TextInput
@@ -111,6 +112,7 @@ export function ProductForm({
         <Field
           label={t('catalogue', 'pricing.compareAt')}
           name="compareAtPrice"
+          help={t('dashboard', 'help.compareAt')}
           hint={t('catalogue', 'pricing.compareAtHint')}
         >
           <TextInput
@@ -120,7 +122,11 @@ export function ProductForm({
           />
         </Field>
 
-        <Field label={t('dashboard', 'products.fields.category')} name="categoryId">
+        <Field
+        label={t('dashboard', 'products.fields.category')}
+        name="categoryId"
+        help={t('dashboard', 'help.category')}
+      >
           <Select
             name="categoryId"
             defaultValue={product?.categoryId ?? ''}
@@ -191,6 +197,7 @@ export function ProductForm({
           <Field
             label={t('dashboard', 'products.fields.sku')}
             name="sku"
+            help={t('dashboard', 'help.sku')}
             hint={t('dashboard', 'products.fields.skuHint')}
           >
             <TextInput name="sku" defaultValue={product?.sku ?? ''} />
@@ -199,6 +206,7 @@ export function ProductForm({
           <Field
             label={t('dashboard', 'products.fields.badge')}
             name="badge"
+            help={t('dashboard', 'help.badge')}
             hint={t('dashboard', 'products.fields.badgeHint')}
           >
             <TextInput name="badge" defaultValue={product?.badge ?? ''} />
@@ -227,6 +235,7 @@ export function ProductForm({
         <Field
           label={t('dashboard', 'products.fields.slug')}
           name="slug"
+          help={t('dashboard', 'help.slug')}
           hint={t('dashboard', 'products.fields.slugHint')}
         >
           <TextInput name="slug" defaultValue={product?.slug ?? ''} />
@@ -237,6 +246,7 @@ export function ProductForm({
             <Field
               label={t('catalogue', 'stock.policy')}
               name="stockPolicy"
+              help={t('dashboard', 'help.stockPolicy')}
               hint={t('catalogue', 'stock.policyHint')}
             >
               <Select

@@ -1,3 +1,4 @@
+import { Hint } from '@/app/_components/kit/hint';
 import { getAccessMatrix, type CapabilityRow } from '@/server/admin';
 import { t } from '@/shared/i18n';
 import { param, requireAdminPage } from '../../../_components/guard';
@@ -39,6 +40,11 @@ export default async function AccountPermissionsPage({
       <Notice okKey={param(query, 'ok')} errorKey={param(query, 'error')} />
 
       <Panel title={t('admin', 'permissions.title')} note={t('admin', 'permissions.subtitle')}>
+        <p className="sba-hint">
+          {t('admin', 'permissions.visible')} <Hint text={t('admin', 'help.capabilityVisible')} />
+          {' · '}
+          {t('admin', 'permissions.editableBy')} <Hint text={t('admin', 'help.capabilityEditableBy')} />
+        </p>
         <p className="sba-rule-note">{t('admin', 'permissions.adminNote')}</p>
 
         <div className="sba-matrix" style={{ marginBlockStart: 'var(--sb-space-4)' }}>
@@ -88,6 +94,7 @@ function CapabilityRowView({
       <div>
         <span className="sba-matrix-name">{t('admin', `capabilities.${row.key}`)}</span>
         <span className="sba-matrix-default">
+          <Hint text={t('admin', 'help.planDefault')} />
           {t('admin', 'account.planDefault', {
             value: `${row.planVisible ? t('admin', 'permissions.visible') : t('admin', 'permissions.hidden')} · ${
               row.planEditableBy === 'merchant'

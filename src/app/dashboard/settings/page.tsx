@@ -176,12 +176,16 @@ export default async function SettingsPage({
             <Field label={t('dashboard', 'settings.fields.name')} name="name">
               <TextInput name="name" defaultValue={site.name} required />
             </Field>
-            <Field label={t('dashboard', 'settings.fields.tagline')} name="tagline">
+            <Field
+              label={t('dashboard', 'settings.fields.tagline')}
+              name="tagline"
+              help={t('dashboard', 'help.tagline')}
+            >
               <TextInput name="tagline" defaultValue={site.tagline ?? ''} />
             </Field>
           </div>
 
-          <Field label={t('dashboard', 'settings.fields.about')} name="about">
+          <Field label={t('dashboard', 'settings.fields.about')} name="about" help={t('dashboard', 'help.about')}>
             <TextArea name="about" defaultValue={site.about ?? ''} rows={5} />
           </Field>
 
@@ -195,6 +199,7 @@ export default async function SettingsPage({
             <Field
               label={t('dashboard', 'settings.fields.whatsapp')}
               name="whatsapp"
+              help={t('dashboard', 'help.whatsapp')}
               hint={t('dashboard', 'settings.fields.whatsappHint')}
             >
               <TextInput name="whatsapp" defaultValue={site.whatsapp ?? ''} inputMode="tel" />
@@ -407,7 +412,11 @@ export default async function SettingsPage({
             disabled={barPanel.locked}
           />
 
-          <Field label={t('dashboard', 'settings.announcementBarText')} name="text">
+          <Field
+            label={t('dashboard', 'settings.announcementBarText')}
+            name="text"
+            help={t('dashboard', 'help.announcementBar')}
+          >
             <TextInput
               name="text"
               defaultValue={site.announcementBarText ?? ''}

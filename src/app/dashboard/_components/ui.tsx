@@ -1,3 +1,4 @@
+import { Hint } from '@/app/_components/kit/hint';
 import Link from 'next/link';
 import { formatAgorot, type MessageParams } from '@/shared/i18n';
 import { Sparkline } from '@/app/_components/kit/sparkline';
@@ -145,17 +146,21 @@ export function Field({
   label,
   name,
   hint,
+  help,
   children,
 }: {
   label: string;
   name: string;
   hint?: string;
+  /** The «!» explanation beside the label — opens on tap. For anything a first-time user might not understand. */
+  help?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="sbd-field">
       <label className="sbd-label" htmlFor={name}>
         {label}
+        {help ? <Hint text={help} /> : null}
       </label>
       {children}
       {hint ? <span className="sbd-hint">{hint}</span> : null}
