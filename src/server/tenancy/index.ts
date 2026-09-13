@@ -14,7 +14,7 @@ import { getEnv } from '@/env';
  * The domain itself is always read from env — never hardcoded (CLAUDE.md).
  */
 
-export type Surface = 'admin' | 'app' | 'storefront' | 'unknown';
+export type Surface = 'admin' | 'app' | 'storefront' | 'platform' | 'unknown';
 
 export interface HostnameParse {
   hostname: string;
@@ -117,6 +117,16 @@ export function parseHostname(rawHost: string | null | undefined): HostnameParse
 
   if (!hostname) {
     return { hostname: '', surface: 'unknown', isCustomDomain: false };
+  }
+
+  /**
+   * THE PLATFORM'S OWN FRONT DOOR (2026-09-13, owner-directed). `souq48.shop` and `www.souq48.shop`
+   * used to fall through to the custom-domain branch, miss the Domain table, and 404 — the platform
+   * had no home page. Both now resolve to the `platform` surface; proxy.ts redirects `www.` to the
+   * bare name so there is exactly one canonical address.
+   */
+  if (hostname === domain || hostname === `www.${domain}`) {
+    return { hostname, surface: 'platform', isCustomDomain: false };
   }
 
   if (hostname === `${env.ADMIN_HOST_PREFIX}.${domain}`) {
@@ -373,6 +383,7 @@ export const SURFACE_ROOT = {
   admin: '/admin',
   app: '/dashboard',
   storefront: '/site',
+  platform: '/platform',
 } as const;
 
 export type PrefixedSurface = keyof typeof SURFACE_ROOT;

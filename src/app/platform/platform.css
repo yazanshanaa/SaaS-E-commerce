@@ -1,0 +1,657 @@
+/*
+ * The platform's front door (2026-09-13).
+ *
+ * Scoped to `[data-surface='platform']`. Same family as the dashboards' «مرصد» light palette — a
+ * near-white green ground and one deep-teal accent — so the page a merchant lands on and the
+ * dashboard they sign into read as one product. Type is the chrome pair: Alexandria for display,
+ * IBM Plex Sans Arabic for text (declared in src/app/fonts.css, loaded by the root layout).
+ *
+ * What it is not: no gradient, no glass, no floating cards with shadows, no emoji. The one piece
+ * of imagery is a storefront drawn in CSS — the shape a visitor recognises before reading a word.
+ */
+
+[data-surface='platform'] {
+  --pf-ground: #f1f5f3;
+  --pf-deep: #e6ede9;
+  --pf-panel: #ffffff;
+  --pf-rule: #d5dfda;
+  --pf-ink: #101815;
+  --pf-ink-soft: #55635d;
+  --pf-accent: #0e6b5b;
+  --pf-accent-ink: #ffffff;
+  --pf-accent-soft: #d9ece6;
+  --pf-sand: #e9c46a;
+  --pf-night: #0f1513;
+  --pf-radius: 10px;
+  --pf-measure: 72rem;
+
+  color: var(--pf-ink);
+  background: var(--pf-ground);
+  font-family: var(--sb-font);
+  line-height: 1.75;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+[data-surface='platform'] main {
+  flex: 1 1 auto;
+}
+
+[data-surface='platform'] h1,
+[data-surface='platform'] h2,
+[data-surface='platform'] h3 {
+  font-family: var(--sb-font-display);
+  line-height: 1.25;
+  margin: 0;
+  color: var(--pf-ink);
+}
+
+[data-surface='platform'] p {
+  margin: 0;
+}
+
+[data-surface='platform'] a {
+  color: inherit;
+}
+
+.pf-shell {
+  width: 100%;
+  max-width: var(--pf-measure);
+  margin-inline: auto;
+  padding-inline: clamp(1rem, 4vw, 2.5rem);
+}
+
+.pf-shell--read {
+  max-width: 46rem;
+}
+
+/* ------------------------------------------------------------------ top -- */
+
+.pf-top {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--pf-ground) 92%, transparent);
+  backdrop-filter: saturate(1.2) blur(6px);
+  border-block-end: 1px solid var(--pf-rule);
+}
+
+.pf-top__inner {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 1.5rem;
+  min-block-size: 64px;
+}
+
+.pf-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  text-decoration: none;
+  font-family: var(--sb-font-display);
+  font-weight: 700;
+  font-size: 1.25rem;
+}
+
+.pf-brand__mark {
+  inline-size: 26px;
+  block-size: 26px;
+  border-radius: 7px;
+  background: var(--pf-accent);
+  position: relative;
+}
+
+.pf-brand__mark::after {
+  content: '';
+  position: absolute;
+  inset: 7px 6px 7px 6px;
+  border: 2.5px solid var(--pf-accent-ink);
+  border-block-start: 0;
+  border-radius: 0 0 4px 4px;
+}
+
+.pf-top__nav {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.pf-top__nav a {
+  text-decoration: none;
+  color: var(--pf-ink-soft);
+  padding-block: 0.25rem;
+  border-block-end: 2px solid transparent;
+}
+
+.pf-top__nav a:hover {
+  color: var(--pf-ink);
+  border-block-end-color: var(--pf-accent);
+}
+
+.pf-top__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* -------------------------------------------------------------- buttons -- */
+
+.pf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-block-size: 44px;
+  padding-inline: 1.25rem;
+  border-radius: var(--pf-radius);
+  border: 2px solid var(--pf-accent);
+  background: var(--pf-accent);
+  color: var(--pf-accent-ink);
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.pf-btn:hover {
+  filter: brightness(1.08);
+}
+
+.pf-btn--ghost {
+  background: transparent;
+  color: var(--pf-ink);
+  border-color: var(--pf-rule);
+}
+
+.pf-btn--ghost:hover {
+  border-color: var(--pf-ink-soft);
+  filter: none;
+}
+
+.pf-btn--lg {
+  min-block-size: 52px;
+  padding-inline: 1.75rem;
+  font-size: 1.05rem;
+}
+
+.pf-btn--full {
+  inline-size: 100%;
+}
+
+/* ----------------------------------------------------------------- hero -- */
+
+.pf-hero {
+  padding-block: clamp(2.5rem, 6vw, 5rem) clamp(2rem, 5vw, 4rem);
+}
+
+.pf-hero__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: clamp(2rem, 5vw, 4rem);
+  align-items: center;
+}
+
+.pf-eyebrow {
+  font-weight: 700;
+  color: var(--pf-accent);
+  font-size: 0.95rem;
+  margin-block-end: 0.75rem;
+}
+
+.pf-hero__title {
+  font-size: clamp(2rem, 1.2rem + 3vw, 3.4rem);
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.pf-hero__lead {
+  margin-block-start: 1.25rem;
+  font-size: 1.1rem;
+  color: var(--pf-ink-soft);
+  max-inline-size: 42rem;
+  text-wrap: pretty;
+}
+
+.pf-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-block-start: 1.75rem;
+}
+
+.pf-proof {
+  list-style: none;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  color: var(--pf-ink-soft);
+  font-size: 0.95rem;
+}
+
+.pf-proof li::before {
+  content: '';
+  display: inline-block;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--pf-accent);
+  margin-inline-end: 0.5rem;
+  vertical-align: middle;
+}
+
+/* The CSS storefront. */
+.pf-mock {
+  border: 1px solid var(--pf-rule);
+  border-radius: 16px;
+  background: var(--pf-panel);
+  padding: 1rem;
+  box-shadow: 0 30px 60px -40px rgb(16 24 21 / 0.35);
+  position: relative;
+}
+
+.pf-mock::before {
+  content: '';
+  position: absolute;
+  inset: -10px -10px auto auto;
+  inline-size: 120px;
+  block-size: 120px;
+  border-radius: 50%;
+  background: var(--pf-sand);
+  opacity: 0.35;
+  z-index: -1;
+}
+
+.pf-mock__bar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding-block-end: 0.75rem;
+  border-block-end: 1px solid var(--pf-rule);
+}
+
+.pf-mock__brand {
+  font-family: var(--sb-font-display);
+  font-weight: 700;
+}
+
+.pf-mock__search {
+  display: block;
+  block-size: 30px;
+  border-radius: 999px;
+  background: var(--pf-deep);
+  border: 1px solid var(--pf-rule);
+}
+
+.pf-mock__cart {
+  inline-size: 30px;
+  block-size: 30px;
+  border-radius: 8px;
+  background: var(--pf-accent);
+  color: var(--pf-accent-ink);
+  font-weight: 700;
+  font-size: 0.8rem;
+  display: inline-grid;
+  place-items: center;
+}
+
+.pf-mock__cats {
+  display: flex;
+  gap: 1rem;
+  padding-block: 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--pf-ink-soft);
+  border-block-end: 1px solid var(--pf-rule);
+}
+
+.pf-mock__cats span[data-on] {
+  color: var(--pf-accent);
+  box-shadow: inset 0 -2px 0 var(--pf-accent);
+}
+
+.pf-mock__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  padding-block-start: 0.9rem;
+}
+
+.pf-mock__card {
+  border: 1px solid var(--pf-rule);
+  border-radius: 10px;
+  padding: 0.6rem;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+}
+
+.pf-mock__img {
+  display: block;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  background: var(--pf-deep);
+  position: relative;
+  overflow: hidden;
+}
+
+.pf-mock__img::after {
+  content: '';
+  position: absolute;
+  inset: 30% 25%;
+  border-radius: 6px;
+  background: var(--pf-accent-soft);
+}
+
+.pf-mock__card[data-i='1'] .pf-mock__img::after {
+  background: var(--pf-sand);
+  opacity: 0.6;
+  border-radius: 50%;
+}
+
+.pf-mock__card[data-i='2'] .pf-mock__img::after {
+  inset: 20% 35%;
+  background: var(--pf-ink-soft);
+  opacity: 0.35;
+}
+
+.pf-mock__name {
+  font-weight: 600;
+}
+
+.pf-mock__price {
+  font-weight: 700;
+  color: var(--pf-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.pf-mock__buy {
+  text-align: center;
+  padding-block: 0.3rem;
+  border-radius: 7px;
+  background: var(--pf-accent);
+  color: var(--pf-accent-ink);
+  font-weight: 700;
+}
+
+/* ------------------------------------------------------------- sections -- */
+
+.pf-section {
+  padding-block: clamp(2.5rem, 6vw, 5rem);
+}
+
+.pf-section--deep {
+  background: var(--pf-deep);
+}
+
+.pf-h2 {
+  font-size: clamp(1.5rem, 1rem + 1.6vw, 2.2rem);
+  margin-block-end: 1.5rem;
+}
+
+.pf-lead {
+  color: var(--pf-ink-soft);
+  font-size: 1.05rem;
+  margin-block-end: 1.5rem;
+  max-inline-size: 48rem;
+}
+
+.pf-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2rem;
+  border-block-start: 1px solid var(--pf-rule);
+  padding-block-start: 2rem;
+}
+
+.pf-step h3 {
+  font-size: 1.2rem;
+  margin-block: 0.75rem 0.5rem;
+}
+
+.pf-step p {
+  color: var(--pf-ink-soft);
+}
+
+.pf-step__n {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 40px;
+  block-size: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--pf-accent);
+  color: var(--pf-accent);
+  font-family: var(--sb-font-display);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pf-features {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+  margin: 0;
+}
+
+.pf-feature {
+  background: var(--pf-panel);
+  border: 1px solid var(--pf-rule);
+  border-inline-start: 3px solid var(--pf-accent);
+  border-radius: var(--pf-radius);
+  padding: 1.25rem 1.25rem 1.25rem 1.5rem;
+}
+
+.pf-feature dt {
+  font-family: var(--sb-font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  margin-block-end: 0.35rem;
+}
+
+.pf-feature dd {
+  margin: 0;
+  color: var(--pf-ink-soft);
+  font-size: 0.95rem;
+}
+
+/* ---------------------------------------------------------------- plans -- */
+
+.pf-plans {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+  align-items: stretch;
+}
+
+.pf-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: var(--pf-panel);
+  border: 1px solid var(--pf-rule);
+  border-radius: 14px;
+  padding: 1.5rem;
+}
+
+.pf-plan[data-featured] {
+  border-color: var(--pf-accent);
+  box-shadow: inset 0 3px 0 var(--pf-accent);
+}
+
+.pf-plan__name {
+  font-size: 1.35rem;
+}
+
+.pf-plan__desc {
+  color: var(--pf-ink-soft);
+  font-size: 0.95rem;
+  min-block-size: 3.4em;
+}
+
+.pf-plan__price {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-block-start: 0.5rem;
+}
+
+.pf-plan__price strong {
+  font-family: var(--sb-font-display);
+  font-size: 2rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--pf-accent);
+}
+
+.pf-plan__price span {
+  color: var(--pf-ink-soft);
+}
+
+.pf-plan__facts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+  color: var(--pf-ink-soft);
+  font-size: 0.95rem;
+  border-block-start: 1px solid var(--pf-rule);
+  padding-block-start: 0.75rem;
+  flex: 1 1 auto;
+}
+
+.pf-plan__facts li::before {
+  content: '—';
+  color: var(--pf-accent);
+  margin-inline-end: 0.5rem;
+}
+
+/* ------------------------------------------------------------------ faq -- */
+
+.pf-faq {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.pf-faq__item {
+  background: var(--pf-panel);
+  border: 1px solid var(--pf-rule);
+  border-radius: var(--pf-radius);
+  padding: 0.25rem 1.25rem;
+}
+
+.pf-faq__item summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding-block: 0.85rem;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pf-faq__item summary::-webkit-details-marker {
+  display: none;
+}
+
+.pf-faq__item summary::after {
+  content: '+';
+  color: var(--pf-accent);
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.pf-faq__item[open] summary::after {
+  content: '−';
+}
+
+.pf-faq__item p {
+  color: var(--pf-ink-soft);
+  padding-block: 0 1rem;
+}
+
+/* ------------------------------------------------------------------ cta -- */
+
+.pf-cta {
+  background: var(--pf-night);
+  color: #e6efea;
+  text-align: center;
+}
+
+.pf-cta .pf-h2,
+.pf-cta .pf-lead {
+  color: inherit;
+  margin-inline: auto;
+}
+
+.pf-cta .pf-btn {
+  background: #5fd3a8;
+  border-color: #5fd3a8;
+  color: #08130e;
+}
+
+/* --------------------------------------------------------------- footer -- */
+
+.pf-footer {
+  border-block-start: 1px solid var(--pf-rule);
+  padding-block: 1.5rem;
+  font-size: 0.9rem;
+  color: var(--pf-ink-soft);
+}
+
+.pf-footer__inner {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.pf-footer nav {
+  display: flex;
+  gap: 1.25rem;
+}
+
+/* --------------------------------------------------------------- phone -- */
+
+@media (max-width: 60rem) {
+  .pf-hero__inner,
+  .pf-steps,
+  .pf-features,
+  .pf-plans {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pf-top__nav {
+    display: none;
+  }
+
+  .pf-top__inner {
+    grid-template-columns: auto 1fr;
+  }
+
+  .pf-top__actions {
+    justify-self: end;
+  }
+
+  .pf-top__actions .pf-btn--ghost {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pf-btn,
+  .pf-top__nav a {
+    transition:
+      filter 150ms ease-out,
+      border-color 150ms ease-out,
+      color 150ms ease-out;
+  }
+}

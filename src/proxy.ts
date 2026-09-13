@@ -322,6 +322,22 @@ export default async function proxy(request: NextRequest): Promise<NextResponse>
     return secure(NextResponse.rewrite(url, { request: { headers } }), csp);
   }
 
+  // --- {DOMAIN} and www.{DOMAIN}: the platform's own pages --------------------
+  if (parsed.surface === 'platform') {
+    const env = getEnv();
+    if (parsed.hostname.startsWith('www.')) {
+      // One canonical address. 308 keeps the method and the path; `PUBLIC_SCHEME` is what the
+      // outside world speaks, not the plain HTTP Caddy talks to this container.
+      const url = request.nextUrl.clone();
+      url.protocol = `${env.PUBLIC_SCHEME}:`;
+      url.host = env.DOMAIN;
+      url.port = '';
+      return secure(NextResponse.redirect(url, 308), csp);
+    }
+    headers.set(TENANT_HEADERS.surface, 'platform');
+    return secure(intoSurface(request, headers, 'platform'), csp);
+  }
+
   // --- admin.{DOMAIN} -------------------------------------------------------
   if (parsed.surface === 'admin') {
     headers.set(TENANT_HEADERS.surface, 'admin');
