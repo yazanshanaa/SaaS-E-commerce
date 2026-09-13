@@ -271,7 +271,11 @@ function demoOrigin(href: string): { url: string; slug: string } {
 
 /** The colours form on `/appearance`, scoped by the live preview only the colour editor renders. */
 function colorsForm(page: Page) {
-  return page.locator('form', { has: page.locator('.sbd-preview') });
+  // The colours form is the one carrying the preset radios (or the custom hex inputs); the old
+  // `.sbd-preview` hook left the editor when the live preview became its own panel (11.B).
+  return page.locator('form', {
+    has: page.locator('input[name="presetKey"], input[name="primary"]'),
+  });
 }
 
 /** What the storefront actually painted — the token as the browser sees it, not as it was typed. */

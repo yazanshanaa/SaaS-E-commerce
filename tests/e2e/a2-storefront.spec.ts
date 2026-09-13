@@ -685,9 +685,10 @@ test.describe('the storefront itself', () => {
       nodes.map((node) => node.getAttribute('href') ?? ''),
     );
 
-    expect(preloads).toHaveLength(1);
-    expect(preloads[0]).toContain('/fonts/alexandria/');
-    expect(preloads[0]).toMatch(/\.woff2$/);
+    // 12.E: a display face (bold) and a text face (regular) — two files, both Arabic subsets.
+    expect(preloads).toHaveLength(2);
+    expect(preloads.every((href) => href.startsWith('/fonts/') && href.endsWith('.woff2'))).toBe(true);
+    expect(preloads.some((href) => href.includes('/fonts/alexandria/'))).toBe(true);
   });
 
   /**
@@ -725,7 +726,9 @@ test.describe('the storefront itself', () => {
      * names the product's button by where it is rather than by a class, and stays correct if the
      * FAB's markup changes. The FAB is covered on its own terms elsewhere.
      */
-    const order = page.getByRole('main').getByRole('link', { name: /اطلب عبر واتساب/ });
+    // `.first()`: since 2026-09-13 every product card in the related rail carries its own WhatsApp
+    // button, so the page legitimately has several; the product's own block comes first.
+    const order = page.getByRole('main').getByRole('link', { name: /اطلب عبر واتساب/ }).first();
     const href = await order.getAttribute('href');
     expect(href).toContain('https://wa.me/972500000000');
 
@@ -746,6 +749,7 @@ test.describe('the storefront itself', () => {
     const href = await page
       .getByRole('main')
       .getByRole('link', { name: /اطلب عبر واتساب/ })
+      .first()
       .getAttribute('href');
     expect(decodeURIComponent(href!)).toContain('الكمية: 2');
   });
@@ -1034,7 +1038,8 @@ test.describe('the documented performance proxies, on a 30-product catalogue', (
       applies. The PAGE-level bound the test actually exists to defend — "the home page does not
       ship the whole catalogue" — is asserted separately below, and more strictly than before.
     */
-    await expect(page.locator('#products .sf-grid .sf-card')).toHaveCount(12);
+    // 2026-09-13: the default grid shows 8 and points at «كل المنتجات» — the rails carry the rest.
+    await expect(page.locator('#products .sf-grid .sf-card')).toHaveCount(8);
 
     /*
       THE PERFORMANCE PROXY, restated so it still bites. The point was never "exactly twelve": it
@@ -1044,8 +1049,8 @@ test.describe('the documented performance proxies, on a 30-product catalogue', (
       Lighthouse budget depends on.
     */
     const homeCards = await page.locator('.sf-card').count();
-    expect(homeCards).toBeGreaterThanOrEqual(12);
-    expect(homeCards).toBeLessThanOrEqual(24);
+    expect(homeCards).toBeGreaterThanOrEqual(8);
+    expect(homeCards).toBeLessThanOrEqual(20);
 
     // 30 > 12, so the rest is one link away rather than thirty cards deep.
     await expect(page.getByRole('link', { name: 'عرض كل المنتجات' })).toBeVisible();
@@ -1065,8 +1070,9 @@ test.describe('the documented performance proxies, on a 30-product catalogue', (
     const preloads = await page
       .locator('link[rel="preload"][as="font"]')
       .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('href') ?? ''));
-    expect(preloads).toHaveLength(1);
-    expect(preloads[0]).toContain('/fonts/');
+    // 12.E: two preloads (display bold + text regular), still zero cross-origin requests.
+    expect(preloads).toHaveLength(2);
+    expect(preloads.every((href) => href.startsWith('/fonts/'))).toBe(true);
   });
 
   test('30 Arabic product names do not push the page sideways on a phone', async ({ page }) => {

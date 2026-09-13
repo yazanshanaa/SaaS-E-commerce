@@ -301,6 +301,8 @@ test.describe('the merchant surface (11.D / 11.F / 11.H)', () => {
     await page.getByRole('button', { name: 'تعيين كلمة المرور الجديدة' }).click();
     await expect(page.getByText('تم تغيير كلمة المرور')).toBeVisible();
 
+    // The owner's session cookie is still in this context; `signInAs` expects the sign-in card.
+    await page.context().clearCookies();
     await signInAs(page, STAFF.email, STAFF.password);
     await expect(page.getByRole('link', { name: 'الاشتراك' })).toHaveCount(0);
 

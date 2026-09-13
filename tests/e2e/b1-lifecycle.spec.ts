@@ -186,7 +186,7 @@ test('deleting refuses a mistyped slug, and refuses cleanly when it cannot finis
    * catalogue under a key no row points at. The screen says "wait", not "try again": the button it
    * would invite you to press again is the one action on the platform that cannot be undone.
    */
-  await expect(page.locator('.sba-notice--error')).toContainText('لسا عم بنجهّز نسخة بيانات المتجر');
+  await expect(page.locator('.sba-notice--error')).toContainText('ما زلنا نجهّز نسخة بيانات المتجر');
 
   /**
    * And nothing was half-done. The guard runs before anything is written — and before that,

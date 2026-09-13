@@ -216,7 +216,7 @@ test.describe('a احترافي merchant connects a custom domain', () => {
      * once a domain is connected rather than an error state.
      */
     await expect(page.locator('#hostname')).toHaveCount(0);
-    await expect(page.getByText('باقتك بتسمح بـ 1 دومين').first()).toBeVisible();
+    await expect(page.getByText('باقتك تسمح بـ 1 دومين').first()).toBeVisible();
 
     // And the second hostname is unknown to the certificate gate, which is what "rejected"
     // actually means for the resource the cap protects.
@@ -228,7 +228,7 @@ test.describe('a احترافي merchant connects a custom domain', () => {
     await page.goto(`${APP}/settings/domain`);
 
     await page.getByRole('button', { name: 'حذف' }).first().click();
-    await expect(page.getByText('شلنا الدومين من متجرك')).toBeVisible();
+    await expect(page.getByText('أزلنا الدومين من متجرك')).toBeVisible();
 
     /**
      * Without this the storefront would keep answering on a hostname the merchant just released —
@@ -330,7 +330,7 @@ test.describe('Web Push is احترافي only', () => {
     await expect(page.getByRole('heading', { name: 'إشعارات الزبائن' })).toBeVisible();
     // Nobody has subscribed yet, so the screen says so rather than offering a send that reaches
     // nobody — and the service refuses it too.
-    await expect(page.getByText('ما في ولا زبون مشترك بالإشعارات بعد').first()).toBeVisible();
+    await expect(page.getByText('لا يوجد أي زبون مشترك في الإشعارات بعد').first()).toBeVisible();
   });
 
   /**
