@@ -736,3 +736,16 @@
     max-width: 90rem;
   }
 }
+
+/* The merchant's read-only template card (2026-09-13): one card, no radio, no hover affordance. */
+.sbk-look-grid--single {
+  grid-template-columns: minmax(0, 22rem);
+}
+
+.sbk-look-pick--readonly {
+  cursor: default;
+}
+
+.sbk-look-pick--readonly:hover {
+  border-color: var(--sbx-rule);
+}
