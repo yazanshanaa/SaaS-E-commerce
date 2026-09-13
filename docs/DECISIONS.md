@@ -4229,3 +4229,35 @@ inside a CSS round. `design/critic.md` has the full round-by-round log, the rema
 (the first-grapheme placeholder scheme breaking on Arabic's definite article «ال» across all nine
 templates; two of نيون's four declared `signature` ornaments not rendering on a real zero-photography
 demo tenant; small mobile touch targets), and the carried-over `design.json` scope gap from R4.
+
+## 2026-09-13 — Commerce redesign (owner-directed, branch `redesign/commerce`)
+
+Owner report on the live platform: storefronts read as a blog, the template and the domain were the
+merchant's to change, `souq48.shop` itself was a 404, copy was colloquial, and releasing meant a
+manual console session. Decisions, all shipped together and gated (typecheck · lint · 1063 unit ·
+475 integration · 150 e2e · Lighthouse 90+ mobile):
+
+- **Storefront commerce chrome** (`src/templates/storefront-commerce.css`, loaded last): sticky
+  header brand · search · WhatsApp · cart; a scrollable department bar that replaces the text nav;
+  a phone tab bar (home / products / search / cart / WhatsApp) that hides the floating buttons;
+  compact one-row hero (no watermark letter); product cards lead with price and carry a buy button
+  on every plan (cart, or a per-product WhatsApp order link); dense auto-fill grid on desktop, two
+  across on a phone. Templates keep every token; the layer is `.sf-root[data-template]`-scoped so it
+  beats template sheets at equal source order.
+- **Commerce-first arrangement**, in both the composed default (`lib/default-sections.ts`) and the
+  stored default a new account is born with (`admin/site-content.ts`). Existing shops are not
+  migrated silently; the admin content tab gained «استرجاع الترتيب الافتراضي».
+- **Template is admin-only.** `saveTemplate` refuses owner/staff; the merchant studio shows the
+  current template read-only. Colours stay the merchant's.
+- **Admin domain desk** (`/accounts/{id}/domain`): edit the platform slug, add / verify / force-verify
+  / primary / remove custom domains, no plan cap (the feature toggle still governs the merchant's
+  own screen). `server/admin/domains.ts`.
+- **Platform surface**: `{DOMAIN}` and `www.` resolve to `platform` (`src/app/platform`), an
+  indexable Arabic landing page reading plans from the DB; `www.` 308s to the bare name.
+- **Modern Standard Arabic** across all message namespaces except `legal.json` (untouched).
+- **«!» hints**: `kit/hint.tsx` (native `<details>`), `help` prop on both `Field` kits.
+- **Placeholder mark** skips a leading «ال»/«و» (`placeholderMark`).
+- **Pull-to-deploy**: `scripts/auto-deploy.sh` from cron fetches `production` and runs
+  `server-update.sh` only on a new tip. Pushing to `production` is the release.
+- Open: brand string is still «سوق برطعة» (`common.app.name`) while the domain is souq48 — owner
+  decision; the e2e/legal suites pin it.
