@@ -1,6 +1,7 @@
 'use client';
 
 import { useCart } from '../lib/cart';
+import { cartDrawer } from '../lib/cart-drawer-bus';
 
 /**
  * The cart entry point, in two postures:
@@ -35,7 +36,15 @@ export function CartBadge({ tenantId, labels, variant = 'fab', showLabel = false
 
   if (variant === 'tab') {
     return (
-      <a className="sf-tabbar__item" href="/cart" aria-label={accessibleLabel}>
+      <a
+        className="sf-tabbar__item"
+        href="/cart"
+        aria-label={accessibleLabel}
+        onClick={(event) => {
+          event.preventDefault();
+          cartDrawer('open');
+        }}
+      >
         <span className="sf-tabbar__icon">
           <CartIcon />
           {count > 0 ? (
@@ -51,7 +60,15 @@ export function CartBadge({ tenantId, labels, variant = 'fab', showLabel = false
 
   if (variant === 'inline') {
     return (
-      <a className="sf-iconbtn sf-iconbtn--cart" href="/cart" aria-label={accessibleLabel}>
+      <a
+        className="sf-iconbtn sf-iconbtn--cart"
+        href="/cart"
+        aria-label={accessibleLabel}
+        onClick={(event) => {
+          event.preventDefault();
+          cartDrawer('open');
+        }}
+      >
         <span className="sf-iconbtn__icon">
           <CartIcon />
           {count > 0 ? (

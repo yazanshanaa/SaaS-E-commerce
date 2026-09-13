@@ -1,7 +1,8 @@
-import type { CSSProperties } from 'react';
 import type { SectionConfig } from '@/shared/site-contract';
 import { translator } from '@/shared/i18n';
 import { ProductCard } from '../components/product-card';
+import { ProductRail } from '../components/product-rail';
+import { st } from '../i18n';
 import { SECTION_ANCHORS } from '../section-anchors';
 import type { StorefrontContext, StorefrontProduct } from '../view-model';
 import { SectionBlock } from './block';
@@ -57,7 +58,10 @@ export function BestSellersSection({
       anchor={anchor ?? SECTION_ANCHORS.best_sellers}
       title={config.title?.trim() || ct('sections.bestSellers')}
     >
-      <div className="sf-grid" style={{ '--sf-cols': columns } as CSSProperties}>
+      <ProductRail
+        columns={columns}
+        labels={{ previous: st('rail.previous'), next: st('rail.next') }}
+      >
         {shown.map((product) => (
           <ProductCard
             key={product.id}
@@ -67,7 +71,7 @@ export function BestSellersSection({
                 context={context}
           />
         ))}
-      </div>
+      </ProductRail>
     </SectionBlock>
   );
 }

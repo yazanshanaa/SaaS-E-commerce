@@ -93,20 +93,15 @@ const FEATURES: Record<string, Record<string, FeatureValue>> = {
     change_requests_per_month: 5,
     priority_support: false,
     /**
-     * OFF as the PLAN DEFAULT even on متجر — "available from متجر" (item 1 of the change plan)
-     * is the ELIGIBILITY floor for the super admin's own per-account toggle (item 9: "cart and
-     * coupons as instant per-account toggles"), not an automatic grant. Every other PII-
-     * collecting mechanism this platform has ever shipped needed a DELIBERATE admin action
-     * before it could run — Phase 5's `payment_gateway` needs the feature AND a configured
-     * gateway row AND the merchant's own `sellingEnabled` switch, three gates deep. A plan-tier
-     * default alone would make cart the only one gated by a single fact nobody consciously set,
-     * and it would silently turn on real customer-PII collection (name, phone, delivery
-     * address) for every متجر tenant the moment this migration ships — directly contradicting
-     * "existing tenants see zero behavioral change until I flip the toggle." Set true only via
-     * an `Entitlement` override, per tenant, by a human.
+     * ON for متجر and احترافي (2026-09-13, owner-directed: "like Shopify and Salla"). The cart is
+     * the ordinary way a store takes an order, so a paid plan gets it by default; the per-account
+     * toggle on the permissions tab remains the owner's switch to turn it off for one shop. The
+     * checkout still collects only what an order needs (name, phone, address) and the generated
+     * privacy policy states it. Plans already in a database keep whatever they have — this is the
+     * default for a fresh seed and for plans re-saved from the admin.
      */
-    cart: false,
-    coupons: false,
+    cart: true,
+    coupons: true,
 
     // --- Phase 9 -----------------------------------------------------------------------------
     // متجر is where a shop starts having a catalogue rather than a list. Sizes and colours, a size
@@ -159,10 +154,9 @@ const FEATURES: Record<string, Record<string, FeatureValue>> = {
     // null = unlimited. Not 0, not -1.
     change_requests_per_month: null,
     priority_support: true,
-    // OFF as the plan default here too — see the متجر entry's comment above; the same reasoning
-    // applies at every tier that is merely ELIGIBLE for cart.
-    cart: false,
-    coupons: false,
+    // ON, like متجر (2026-09-13) — see the متجر entry's comment above.
+    cart: true,
+    coupons: true,
 
     // --- Phase 9 -----------------------------------------------------------------------------
     // احترافي is the tier that runs an actual operation, so it gets the operational features:

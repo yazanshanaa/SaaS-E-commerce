@@ -1,7 +1,8 @@
-import type { CSSProperties } from 'react';
 import type { SectionConfig } from '@/shared/site-contract';
 import { translator } from '@/shared/i18n';
 import { ProductCard } from '../components/product-card';
+import { ProductRail } from '../components/product-rail';
+import { st } from '../i18n';
 import { SECTION_ANCHORS } from '../section-anchors';
 import type { StorefrontContext, StorefrontProduct } from '../view-model';
 import { SectionBlock } from './block';
@@ -60,7 +61,10 @@ export function NewArrivalsSection({
       anchor={anchor ?? SECTION_ANCHORS.new_arrivals}
       title={config.title?.trim() || ct('sections.newArrivals')}
     >
-      <div className="sf-grid" style={{ '--sf-cols': columns } as CSSProperties}>
+      <ProductRail
+        columns={columns}
+        labels={{ previous: st('rail.previous'), next: st('rail.next') }}
+      >
         {/*
           NOTHING eager. This section can sit above or below the hero depending on the merchant's
           arrangement, and the component is handed no page position — the exact reasoning
@@ -75,7 +79,7 @@ export function NewArrivalsSection({
                 context={context}
           />
         ))}
-      </div>
+      </ProductRail>
     </SectionBlock>
   );
 }

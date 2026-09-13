@@ -93,7 +93,8 @@ const productsGridConfig = z.object({
 
 const categoriesConfig = z.object({
   title: optionalText,
-  style: z.enum(['grid', 'chips']).default('grid'),
+  // `circles` (2026-09-13): the round department tiles every Salla store opens with.
+  style: z.enum(['grid', 'chips', 'circles']).default('grid'),
   limit: z.number().int().min(1).max(24).default(8),
 });
 

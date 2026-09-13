@@ -26,7 +26,10 @@ export interface CategoriesSectionProps {
 export function CategoriesSection({ context, config, anchor }: CategoriesSectionProps) {
   const categories = context.categories.slice(0, config.limit ?? 8);
   const title = config.title?.trim() || st('sections.categories');
-  const variant = config.style === 'chips' ? 'chips' : context.template.layout.categories;
+  const variant =
+    config.style === 'chips' || config.style === 'circles'
+      ? config.style
+      : context.template.layout.categories;
 
   if (categories.length === 0) {
     return (
@@ -60,6 +63,20 @@ export function CategoriesSection({ context, config, anchor }: CategoriesSection
             <li key={category.key}>
               <a href={`/products?category=${encodeURIComponent(category.key)}`}>
                 <span>{category.name}</span>
+                <span className="sf-cat__count">
+                  {pluralCount('categories.productCount', category.productCount)}
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : variant === 'circles' ? (
+        <ul className="sf-circles" aria-label={title}>
+          {categories.map((category) => (
+            <li key={category.key}>
+              <a className="sf-circle" href={`/products?category=${encodeURIComponent(category.key)}`}>
+                <MediaImage image={category.image} ratio="1 / 1" fallbackLabel={category.name} sizes="120px" />
+                <span className="sf-circle__name">{category.name}</span>
                 <span className="sf-cat__count">
                   {pluralCount('categories.productCount', category.productCount)}
                 </span>

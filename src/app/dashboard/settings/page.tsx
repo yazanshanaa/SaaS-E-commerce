@@ -64,7 +64,7 @@ export default async function SettingsPage({
     hasExport,
     hasDomain,
     advanced,
-    searchFeature,
+    _searchFeature,
   ] = await Promise.all([
       getSiteDetails(ctx),
       listSocialLinks(ctx),
@@ -100,12 +100,12 @@ export default async function SettingsPage({
        * In the `Promise.all`, not awaited after it: this screen already makes eight round trips and
        * a ninth in series is a ninth in series.
        */
+      // Kept in the tuple so the destructuring below stays aligned; the switch it fed is gone.
       can(ctx.tenantId, 'search_insights'),
     ]);
 
   if (!site) return <Empty>{t('common', 'states.empty')}</Empty>;
 
-  const hasSearchFeature = searchFeature === true;
 
   const hasAdvanced = advanced !== null && !advanced.flags.empty;
 
@@ -242,29 +242,11 @@ export default async function SettingsPage({
           </div>
 
           {/*
-            «فعّل البحث» — the switch that never existed (2026-09-06, owner-directed).
-
-            `Site.searchEnabled` has been a column since Phase 9 and defaults to false, and nothing
-            in the product could set it: no merchant screen, no admin screen, no seed. So the search
-            box, the `/search` route and the zero-result report that `search_insights` sells were
-            unreachable on every account. This is the missing half.
-
-            It is rendered only when the PLAN half is also true. A checkbox for a feature the shop
-            does not have would be a switch that changes nothing — and it would advertise a feature
-            to a merchant who cannot use it, which this codebase refuses everywhere else.
+            SEARCH IS ALWAYS ON (2026-09-13, owner-directed): a search box is part of every store's
+            chrome, so the «فعّل البحث» switch is gone from the screen. The column stays (the value
+            is carried through unchanged) so nothing that reads it breaks; the storefront ignores it.
           */}
-          {hasSearchFeature ? (
-            <Checkbox
-              name="searchEnabled"
-              label={t('dashboard', 'settings.fields.searchEnabled')}
-              defaultChecked={site.searchEnabled}
-            />
-          ) : (
-            <input type="hidden" name="searchEnabled" value={site.searchEnabled ? 'on' : ''} />
-          )}
-          {hasSearchFeature ? (
-            <p className="sbd-hint">{t('dashboard', 'settings.fields.searchEnabledHint')}</p>
-          ) : null}
+          <input type="hidden" name="searchEnabled" value={site.searchEnabled ? 'on' : ''} />
 
           {/*
             The logo used to be carried through here as a hidden field, because it is a media id

@@ -692,10 +692,10 @@ export async function deleteAnnouncement(
 const DEFAULT_SECTIONS: ReadonlyArray<{ type: SectionType; enabled: boolean }> = [
   { type: 'hero', enabled: true },
   { type: 'categories', enabled: true },
+  { type: 'trust_badges', enabled: true },
   { type: 'products_grid', enabled: true },
   { type: 'new_arrivals', enabled: true },
   { type: 'best_sellers', enabled: true },
-  { type: 'trust_badges', enabled: true },
   { type: 'announcements', enabled: true },
   { type: 'about', enabled: true },
   { type: 'gallery', enabled: false },
@@ -759,7 +759,10 @@ export async function seedDefaultSections(
             type: section.type,
             enabled: section.enabled,
             sort: index,
-            config: parseSectionConfig(section.type, {}) as object,
+            config: parseSectionConfig(
+              section.type,
+              section.type === 'categories' ? { style: 'circles' } : {},
+            ) as object,
           },
         });
       }
@@ -820,7 +823,10 @@ export async function resetHomeArrangement(
             type: section.type,
             enabled: section.enabled,
             sort: index,
-            config: parseSectionConfig(section.type, {}) as object,
+            config: parseSectionConfig(
+              section.type,
+              section.type === 'categories' ? { style: 'circles' } : {},
+            ) as object,
           },
         });
       }

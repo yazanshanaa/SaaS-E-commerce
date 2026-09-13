@@ -113,10 +113,10 @@ export function buildDefaultSections(input: DefaultSectionInput): StorefrontSect
    *
    *   1. hero          — compact (storefront-commerce.css caps it): name, one line, one button
    *   2. banner_slider — a promotion the merchant scheduled is the most time-sensitive thing here
-   *   3. categories    — the department tiles, the fastest way into the catalogue
+   *   3. categories    — round department tiles, the fastest way into the catalogue
+   *   3b. trust_badges — the features strip (شحن · دفع · إرجاع), under the departments
    *   4. products_grid — the catalogue itself, 8 cards + «كل المنتجات»
    *   5. new_arrivals / best_sellers — the two rails, AFTER the main grid rather than around it
-   *   6. trust_badges  — answers the objection the products just raised
    *   7. announcements — the merchant's notices, now under the catalogue rather than above it
    *   8. about · store_stats · testimonials — the shop's story and its proof
    *   9. opening_hours · contact_whatsapp · map — how to reach it, last, as on every store
@@ -130,7 +130,9 @@ export function buildDefaultSections(input: DefaultSectionInput): StorefrontSect
   ];
 
   if (input.hasBanners) planned.push({ type: 'banner_slider', config: { limit: 6 } });
-  if (input.hasCategories) planned.push({ type: 'categories', config: { style: 'grid' } });
+  if (input.hasCategories) planned.push({ type: 'categories', config: { style: 'circles' } });
+  // The features strip (شحن · دفع · إرجاع) sits under the departments, as on every Salla store.
+  if (input.hasTrustBadges) planned.push({ type: 'trust_badges', config: { limit: 4 } });
   if (input.hasProducts) planned.push({ type: 'products_grid', config: { limit: 8 } });
   if (input.hasNewArrivals) {
     planned.push({
@@ -150,7 +152,6 @@ export function buildDefaultSections(input: DefaultSectionInput): StorefrontSect
       },
     });
   }
-  if (input.hasTrustBadges) planned.push({ type: 'trust_badges', config: { limit: 3 } });
   if (input.hasAnnouncements) planned.push({ type: 'announcements', config: { limit: 3 } });
   if (input.hasAbout) planned.push({ type: 'about', config: {} });
   if (input.hasStoreStats) planned.push({ type: 'store_stats', config: { limit: 3 } });

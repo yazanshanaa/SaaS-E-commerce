@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useCart } from '../lib/cart';
+import { cartDrawer } from '../lib/cart-drawer-bus';
 
 /**
  * "أضف للسلة" (Phase 8, item 2) — on the product card AND the product page, replacing
@@ -57,6 +58,9 @@ export function AddToCart({
     event.stopPropagation();
 
     cart.add(productSlug, quantity);
+    // The drawer is the confirmation — the visitor sees the line land, with its price, and can
+    // keep shopping or go to checkout from there (see components/cart-drawer.tsx).
+    cartDrawer('open');
     setJustAdded(true);
     window.setTimeout(() => setJustAdded(false), CONFIRMATION_MS);
   }
@@ -103,11 +107,7 @@ export function AddToCart({
         {justAdded ? labels.added : labels.add}
       </button>
 
-      {justAdded ? (
-        <a className="sf-link" href="/cart">
-          {labels.viewCart}
-        </a>
-      ) : null}
+      {/* The drawer is the confirmation now; the inline «عرض السلة» link would shift the card. */}
     </div>
   );
 }

@@ -1,7 +1,8 @@
-import type { CSSProperties } from 'react';
 import type { SectionConfig } from '@/shared/site-contract';
 import { translator } from '@/shared/i18n';
 import { ProductCard } from '../components/product-card';
+import { ProductRail } from '../components/product-rail';
+import { st } from '../i18n';
 import { SECTION_ANCHORS } from '../section-anchors';
 import type { StorefrontContext, StorefrontProduct } from '../view-model';
 import { SectionBlock } from './block';
@@ -87,7 +88,10 @@ export function RelatedProductsSection({
         control. `related_products` has no `columns` in its config for the same reason — there is
         nothing for a merchant to decide here.
       */}
-      <div className="sf-grid" style={{ '--sf-cols': columns } as CSSProperties}>
+      <ProductRail
+        columns={columns}
+        labels={{ previous: st('rail.previous'), next: st('rail.next') }}
+      >
         {shown.map((entry) => (
           <ProductCard
             key={entry.id}
@@ -97,7 +101,7 @@ export function RelatedProductsSection({
             context={context}
           />
         ))}
-      </div>
+      </ProductRail>
     </SectionBlock>
   );
 }

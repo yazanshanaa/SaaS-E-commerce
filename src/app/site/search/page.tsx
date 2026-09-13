@@ -1,10 +1,10 @@
 import type { CSSProperties } from 'react';
 import type { Metadata } from 'next';
 import { cookies, headers } from 'next/headers';
-import { notFound } from 'next/navigation';
+
 import { getEnv } from '@/env';
 import { recordConsentedEvents } from '@/server/analytics';
-import { PUBLIC_ACTOR, tenantDb } from '@/server/db';
+
 import { can } from '@/server/entitlements';
 import { getClientIp } from '@/server/http/get-client-ip';
 import { SEARCH_PAGE_SIZE, searchProducts } from '@/server/search';
@@ -96,13 +96,11 @@ export default async function SearchPage({ searchParams }: PageProps) {
    * `StorefrontFlags` does not carry it until the handoff diff lands — and this route must enforce
    * the gate today regardless of when that happens.
    */
+  // Search is part of every store's chrome (2026-09-13); `search_insights` now only decides
+  // whether the query is RECORDED for the merchant's report, below.
   const featureAvailable = (await can(surface.tenantId, 'search_insights')) === true;
-  if (!featureAvailable) notFound();
 
   const context = await loadStorefrontContext(surface);
-
-  const site = await readSearchSwitch(surface.tenantId);
-  if (!site) notFound();
 
   const raw = firstParam((await searchParams).q);
   const result = await searchProducts(surface.tenantId, raw, { take: SEARCH_PAGE_SIZE });
@@ -118,7 +116,7 @@ export default async function SearchPage({ searchParams }: PageProps) {
    * navigation, not a search, and recording it would fill the merchant's report with a blank row
    * whose `zeroResults` count made it look like the most-missed product in the shop.
    */
-  if (!result.tooShort) {
+  if (!result.tooShort && featureAvailable) {
     const { ip } = getClientIp({ headers: requestHeaders });
     const userAgent = requestHeaders.get('user-agent');
 
@@ -234,10 +232,3 @@ export default async function SearchPage({ searchParams }: PageProps) {
  * route exists, and a five-minute-stale answer means a shop that turned search off keeps answering
  * search requests. One indexed read on a route nobody hits by accident.
  */
-async function readSearchSwitch(tenantId: string): Promise<boolean> {
-  const row = await tenantDb(tenantId, PUBLIC_ACTOR).site.findUnique({
-    where: { tenantId },
-    select: { searchEnabled: true },
-  });
-  return row?.searchEnabled === true;
-}

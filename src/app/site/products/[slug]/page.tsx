@@ -378,7 +378,7 @@ export default async function ProductPage({ params }: PageProps) {
                 tenant with BOTH somehow on gets the cart control — the newer, more general
                 mechanism — rather than two competing forms on one product.
               */}
-              <div style={{ marginBlockStart: 'var(--t-space-xl)' }}>
+              <div className="sf-buy" style={{ marginBlockStart: 'var(--t-space-xl)' }}>
                 {context.flags.cart ? (
                   <AddToCart
                     tenantId={context.tenantId}

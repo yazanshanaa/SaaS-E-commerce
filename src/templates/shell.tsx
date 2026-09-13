@@ -3,6 +3,7 @@ import { AnalyticsScript } from './components/analytics';
 import { AnnouncementBar } from './components/announcement-bar';
 import { Beacon } from './components/beacon';
 import { CartBadge } from './components/cart-badge';
+import { CartDrawer } from './components/cart-drawer';
 import { ConsentBanner } from './components/consent-banner';
 import { DemoWatermark } from './components/demo-watermark';
 import { ServiceWorkerRegistrar } from './components/service-worker';
@@ -290,6 +291,27 @@ export function StorefrontShell({
       <SiteFooter context={context} showPush={showPush} />
 
       <MobileTabBar context={context} current={current} />
+
+      {context.flags.cart ? (
+        <CartDrawer
+          tenantId={context.tenantId}
+          labels={{
+            title: st('cart.pageTitle'),
+            empty: st('cart.empty'),
+            continueShopping: st('cart.continueShopping'),
+            subtotal: st('cart.subtotal'),
+            viewCart: st('cart.viewCart'),
+            checkout: st('cart.checkout'),
+            remove: st('cart.remove'),
+            increase: st('order.increase'),
+            decrease: st('order.decrease'),
+            quantity: st('order.quantity'),
+            close: st('cart.close'),
+            unavailable: st('order.outOfStock'),
+            loading: st('cart.loading'),
+          }}
+        />
+      ) : null}
 
       {/*
         ONE fixed stack at the bottom of the viewport, not four overlapping fixed elements.
