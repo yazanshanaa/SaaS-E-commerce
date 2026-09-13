@@ -4261,3 +4261,18 @@ manual console session. Decisions, all shipped together and gated (typecheck · 
   `server-update.sh` only on a new tip. Pushing to `production` is the release.
 - Open: brand string is still «سوق برطعة» (`common.app.name`) while the domain is souq48 — owner
   decision; the e2e/legal suites pin it.
+
+### Addendum, same day — the Shopify / Salla anatomy (owner: «اعمل مثل قوالب متجر شوبيفاي وسلة تماماً»)
+
+- **Cart drawer** (`components/cart-drawer.tsx`, native `<dialog>`, `lib/cart-drawer-bus.ts`): opens on
+  «أضف للسلة», the header cart button and the phone tab; quotes through `/api/storefront/cart/quote`.
+- **Product rails** (`components/product-rail.tsx`): «وصل حديثاً» / «الأكثر مبيعاً» / «منتجات ذات
+  صلة» are horizontal snap carousels with arrows, not grids.
+- **Department circles**: `categories.style = 'circles'` (new enum value), the default on both the
+  composed and the stored arrangement. **Features strip** (`trust_badges`) sits under the departments.
+- **Search is part of every store**: `flags.search` is always true, `/search` never 404s;
+  `search_insights` only gates the recording. The merchant «فعّل البحث» switch is gone from settings.
+- **Cart + coupons ON by plan default for متجر/احترافي** (seed). The per-account toggle remains the
+  owner's off-switch; the buy-now checkout fixture in e2e opts out explicitly.
+- Phone: static header (the tab bar navigates), one-row consent banner, sticky `.sf-buy` row.
+- Gate after this batch: typecheck · lint · 1538 unit+integration · 150 e2e — all green.
