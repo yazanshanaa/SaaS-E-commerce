@@ -14,6 +14,8 @@ export function AccountTabs({ tenantId }: { tenantId: string }) {
     { href: base, key: 'overview' },
     { href: `${base}/content`, key: 'content' },
     { href: `${base}/permissions`, key: 'permissions' },
+    // 2026-09-13 (owner-directed): the owner attaches and activates a shop's addresses himself.
+    { href: `${base}/domain`, key: 'domain' },
     // Phase 9. Assigning platform carriers to THIS shop. After `permissions` because it is the same
     // kind of decision — what this tenant is given — and before `subscription`, which is money.
     { href: `${base}/carriers`, key: 'carriers' },

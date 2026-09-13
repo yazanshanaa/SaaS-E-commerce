@@ -222,3 +222,15 @@ export {
   restoreTenantBackup,
   type TenantBackupRow,
 } from '@/server/tenant-backup';
+
+export {
+  adminAddDomain,
+  adminForceVerifyDomain,
+  adminRemoveDomain,
+  adminSetPrimaryDomain,
+  adminVerifyDomain,
+  changeAccountSlug,
+  getAccountDomains,
+  type AdminDomainRow,
+  type AdminDomainsView,
+} from './domains';
