@@ -94,6 +94,7 @@ export function RelatedProductsSection({
             product={entry}
             template={template}
             cart={{ tenantId: context.tenantId, enabled: context.flags.cart }}
+            context={context}
           />
         ))}
       </div>

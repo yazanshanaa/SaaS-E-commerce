@@ -346,42 +346,35 @@ describe('default sections for a site nobody has arranged yet', () => {
    * arrangement such a tenant renders is byte-identical to the one it rendered before the default
    * list grew. Widening a default is only safe while this holds.
    */
-  it('renders the pre-12.A arrangement, unchanged, when every new input is false', () => {
+  it('renders the commerce-first arrangement when every new input is false', () => {
+    // 2026-09-13: announcements moved UNDER the catalogue. A visitor lands on things to buy.
     expect(buildDefaultSections({ ...preExisting, ...noExtras }).map((s) => s.type)).toEqual([
       'hero',
-      'announcements',
       'categories',
       'products_grid',
+      'announcements',
       'about',
       'testimonials',
       'contact_whatsapp',
     ]);
   });
 
-  it('plans the full fourteen in the designed reading order when the content exists', () => {
+  it('plans the full fourteen in the commerce-first reading order when the content exists', () => {
+    // 2026-09-13 (owner-directed): things to buy, then reasons to trust, then the story, then
+    // how to reach the shop. See `lib/default-sections.ts` for the reasoning per band.
     expect(buildDefaultSections(everything).map((section) => section.type)).toEqual([
       'hero',
-      'announcements',
-      // A scheduled promotion. `search_bar` USED TO SIT HERE and no longer does (12.E): the chrome
-      // already renders a compact SearchBox under exactly this section's condition, so the default
-      // arrangement was shipping every searchable shop two search fields — the same duplicate-control
-      // failure `contact-whatsapp.tsx` documents for the social row. A merchant who wants the large
-      // in-page field still adds it in «أقسام الموقع»; the default no longer decides that for them.
       'banner_slider',
       'categories',
-      'new_arrivals',
       'products_grid',
+      'new_arrivals',
       'best_sellers',
-      // The objection-handling row goes UNDER the catalogue: an objection needs a want first.
       'trust_badges',
+      'announcements',
       'about',
       'store_stats',
       'testimonials',
-      // Hours immediately before contact, because they answer the same question.
       'opening_hours',
-      // «موقعنا» IS NOT HERE (2026-09-09). `contact_whatsapp` now renders the Google/Waze deep
-      // links itself from the same `resolveMapTarget` chain, so a standalone band would repeat the
-      // address the block above it already printed. See the test below for the case that keeps it.
       'contact_whatsapp',
     ]);
   });
@@ -421,7 +414,7 @@ describe('default sections for a site nobody has arranged yet', () => {
 
   it('normalises through the same zod schemas a stored section goes through', () => {
     const grid = buildDefaultSections(everything).find((s) => s.type === 'products_grid');
-    expect(grid?.config).toMatchObject({ limit: 12, showPrices: true });
+    expect(grid?.config).toMatchObject({ limit: 8, showPrices: true });
   });
 
   /**

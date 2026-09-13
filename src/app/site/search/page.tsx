@@ -215,6 +215,7 @@ export default async function SearchPage({ searchParams }: PageProps) {
                   template={context.template}
                   priority={index < columns}
                   cart={{ tenantId: context.tenantId, enabled: context.flags.cart }}
+                  context={context}
                 />
               ))}
             </div>

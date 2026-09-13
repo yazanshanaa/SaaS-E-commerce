@@ -681,15 +681,26 @@ export async function deleteAnnouncement(
  * DISABLED — the section exists so the admin can switch it on in one click once the merchant
  * has images, rather than rendering an empty grid on day one.
  */
+/**
+ * The stored home arrangement a NEW account is born with (2026-09-13, owner-directed: commerce
+ * first). Things to buy, then reasons to trust the shop, then its story, then how to reach it —
+ * the same order `src/templates/lib/default-sections.ts` composes when nothing is stored. Every
+ * data-driven band (rails, trust row, hours, notices, quotes) renders nothing until the shop has
+ * the content, so a day-one shop shows hero → departments → catalogue → contact and grows into
+ * the rest without anyone reordering anything.
+ */
 const DEFAULT_SECTIONS: ReadonlyArray<{ type: SectionType; enabled: boolean }> = [
   { type: 'hero', enabled: true },
-  { type: 'products_grid', enabled: true },
   { type: 'categories', enabled: true },
+  { type: 'products_grid', enabled: true },
+  { type: 'new_arrivals', enabled: true },
+  { type: 'best_sellers', enabled: true },
+  { type: 'trust_badges', enabled: true },
   { type: 'announcements', enabled: true },
   { type: 'about', enabled: true },
   { type: 'gallery', enabled: false },
   { type: 'testimonials', enabled: true },
-  { type: 'map', enabled: true },
+  { type: 'opening_hours', enabled: true },
   { type: 'contact_whatsapp', enabled: true },
 ];
 
@@ -759,6 +770,68 @@ export async function seedDefaultSections(
   await auditTenantAction(ctx, tenantId, {
     action: 'site.sections_seeded',
     entityType: 'section',
+    after: { types: DEFAULT_SECTIONS.map((section) => section.type) },
+  });
+
+  return null;
+}
+
+/**
+ * Replace the home arrangement with the current default — the owner's «استرجاع الترتيب الافتراضي».
+ *
+ * Deletes the home page's sections and seeds the list above again. Section CONFIG the merchant
+ * tuned (a grid limit, a hero title) is lost with the rows; that is the point of a reset and the
+ * button says so. Content itself (products, announcements, hours) lives in its own tables and is
+ * untouched. Audited with the before/after type lists.
+ */
+export async function resetHomeArrangement(
+  ctx: AdminContext,
+  tenantId: string,
+  pageTitle: string,
+): Promise<ActionState | null> {
+  const before = await ctx.db.section.findMany({
+    where: { tenantId, page: { slug: DEFAULT_PAGE_SLUG } },
+    select: { type: true },
+    orderBy: { sort: 'asc' },
+  });
+
+  await withTenantTxn(
+    tenantId,
+    async (tx) => {
+      const page = await tx.page.upsert({
+        where: { tenantId_slug: { tenantId, slug: DEFAULT_PAGE_SLUG } },
+        create: {
+          tenantId,
+          slug: DEFAULT_PAGE_SLUG,
+          title: pageTitle,
+          isSystem: true,
+          published: true,
+          sort: 0,
+        },
+        update: {},
+        select: { id: true },
+      });
+      await tx.section.deleteMany({ where: { tenantId, pageId: page.id } });
+      for (const [index, section] of DEFAULT_SECTIONS.entries()) {
+        await tx.section.create({
+          data: {
+            tenantId,
+            pageId: page.id,
+            type: section.type,
+            enabled: section.enabled,
+            sort: index,
+            config: parseSectionConfig(section.type, {}) as object,
+          },
+        });
+      }
+    },
+    { actor: ctx.actor },
+  );
+
+  await auditTenantAction(ctx, tenantId, {
+    action: 'site.sections_reset',
+    entityType: 'section',
+    before: { types: before.map((section) => section.type) },
     after: { types: DEFAULT_SECTIONS.map((section) => section.type) },
   });
 

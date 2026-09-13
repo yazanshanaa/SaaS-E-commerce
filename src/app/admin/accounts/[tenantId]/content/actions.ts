@@ -10,6 +10,7 @@ import {
   saveAnnouncementBar,
   saveMapLocation,
   saveSocialLinks,
+  resetHomeArrangement,
   seedDefaultSections,
   setSectionEnabled,
   setSiteAppearance,
@@ -186,6 +187,15 @@ export async function seedSectionsAction(form: FormData): Promise<void> {
   const state = await seedDefaultSections(ctx, tenantId, t('admin', 'content.defaultPageTitle'));
   revalidatePath(`/accounts/${tenantId}/content`);
   back(tenantId, state ? { error: state.messageKey } : { ok: 'admin:content.sectionsSeeded' });
+}
+
+export async function resetSectionsAction(form: FormData): Promise<void> {
+  const ctx = await requireAdminPage();
+  const tenantId = text(form, 'tenantId');
+
+  const state = await resetHomeArrangement(ctx, tenantId, t('admin', 'content.defaultPageTitle'));
+  revalidatePath(`/accounts/${tenantId}/content`);
+  back(tenantId, state ? { error: state.messageKey } : { ok: 'admin:content.sectionsReset' });
 }
 
 export async function toggleSectionAction(form: FormData): Promise<void> {

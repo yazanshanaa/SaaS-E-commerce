@@ -18,6 +18,9 @@ import '@/templates/aldar/aldar.css';
 import '@/templates/matbakh/matbakh.css';
 import '@/templates/mawid/mawid.css';
 import '@/templates/jihaz/jihaz.css';
+// The commerce chrome — LAST, so it wins on equal specificity over storefront.css and every
+// template sheet (2026-09-13). See src/templates/storefront-commerce.css.
+import '@/templates/storefront-commerce.css';
 
 /**
  * The public storefront surface root — `{slug}.{DOMAIN}` and every verified custom domain.

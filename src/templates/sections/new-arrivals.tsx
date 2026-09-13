@@ -72,6 +72,7 @@ export function NewArrivalsSection({
             product={product}
             template={template}
             cart={{ tenantId: context.tenantId, enabled: context.flags.cart }}
+                context={context}
           />
         ))}
       </div>

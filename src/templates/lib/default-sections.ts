@@ -102,41 +102,36 @@ export const DEFAULT_ARRANGEMENT_WINDOWS = {
 } as const;
 
 export function buildDefaultSections(input: DefaultSectionInput): StorefrontSection[] {
+  /*
+   * COMMERCE FIRST (2026-09-13, owner-directed).
+   *
+   * The owner's report on the live platform: "the visitor lands on what looks like a blog". The
+   * arrangement was hero → announcements → banners → categories → three product rails → then five
+   * bands of prose. What a visitor to a store expects is the reverse: things to buy, then the
+   * reasons to trust the shop, then the shop's story, then how to reach it. Every large store
+   * orders its home page this way, and a visitor's hands already know it.
+   *
+   *   1. hero          — compact (storefront-commerce.css caps it): name, one line, one button
+   *   2. banner_slider — a promotion the merchant scheduled is the most time-sensitive thing here
+   *   3. categories    — the department tiles, the fastest way into the catalogue
+   *   4. products_grid — the catalogue itself, 8 cards + «كل المنتجات»
+   *   5. new_arrivals / best_sellers — the two rails, AFTER the main grid rather than around it
+   *   6. trust_badges  — answers the objection the products just raised
+   *   7. announcements — the merchant's notices, now under the catalogue rather than above it
+   *   8. about · store_stats · testimonials — the shop's story and its proof
+   *   9. opening_hours · contact_whatsapp · map — how to reach it, last, as on every store
+   *
+   * `columns` stays UNSET on every product rail so each template's own `layout.gridColumns`
+   * survives — see `productsGridConfig.columns` in site-contract/sections.ts for the long version.
+   * NO `search_bar` section: the header carries the search box on every page.
+   */
   const planned: Array<{ type: SectionType; config: Record<string, unknown> }> = [
     { type: 'hero', config: { align: 'start' } },
   ];
 
-  if (input.hasAnnouncements) planned.push({ type: 'announcements', config: { limit: 3 } });
-  /*
-    ABOVE THE CATALOGUE, in this order, and the order is the whole point of the section.
-
-    A promotion the merchant scheduled is the most time-sensitive thing on the page, so it sits
-    directly under the announcements strip. Search follows it because a visitor who arrived knowing
-    what they want should not have to scroll a category rail to type it.
-  */
   if (input.hasBanners) planned.push({ type: 'banner_slider', config: { limit: 6 } });
-  /*
-    NO `search_bar` SECTION. The chrome already has one.
-
-    `components/site-header.tsx` renders a compact `SearchBox` in its tools column under exactly the
-    condition that would put this section on the page — so a shop with search got TWO search fields
-    on its home page, one of them a full-width band a screen down from the other. That is the same
-    duplicate-control failure `contact-whatsapp.tsx` documents for the social row, and the fix is the
-    same: the persistent control in the chrome wins, because it is on every page rather than one.
-
-    A merchant who wants the large in-page field can still add it in «أقسام الموقع» — this only stops
-    the DEFAULT arrangement from shipping the duplicate to every shop that never opened that screen.
-  */
   if (input.hasCategories) planned.push({ type: 'categories', config: { style: 'grid' } });
-  /*
-    `columns` IS DELIBERATELY UNSET on both product rails below.
-
-    `productsGridConfig.columns` in `site-contract/sections.ts` carries the long version of this:
-    the renderer reads `config.columns ?? template.layout.gridColumns`, so an absent count is how a
-    template's own grid survives. Writing `input.gridColumns` here — which is what the existing
-    `products_grid` entry does, and which is now the odd one out — would flatten نيون's two large
-    columns and ورشة's four dense ones into whichever number this file chose.
-  */
+  if (input.hasProducts) planned.push({ type: 'products_grid', config: { limit: 8 } });
   if (input.hasNewArrivals) {
     planned.push({
       type: 'new_arrivals',
@@ -145,20 +140,6 @@ export function buildDefaultSections(input: DefaultSectionInput): StorefrontSect
         limit: DEFAULT_ARRANGEMENT_WINDOWS.new_arrivals.take,
       },
     });
-  }
-  if (input.hasProducts) {
-    /*
-      `columns` IS UNSET HERE NOW, which makes this entry agree with the two rails above and below it.
-
-      The note on `new_arrivals` already stated the rule — "an absent count is how a template's own
-      grid survives" — and then this line broke it, which its own comment admitted by calling itself
-      "the odd one out". The consequence was visible rather than theoretical: the default arrangement
-      puts «وصل حديثًا», «منتجاتنا» and «الأكثر مبيعًا» in three consecutive bands, and the middle one
-      rendered at whatever count this file chose while the two around it rendered at the template's.
-      Three adjacent grids of the same cards at two different column widths is the single loudest way
-      a page can look unarranged.
-    */
-    planned.push({ type: 'products_grid', config: { limit: 12 } });
   }
   if (input.hasBestSellers) {
     planned.push({
@@ -169,44 +150,18 @@ export function buildDefaultSections(input: DefaultSectionInput): StorefrontSect
       },
     });
   }
-  /*
-    The trust row goes UNDER the catalogue, not over it.
-
-    It answers an objection ("will it arrive, can I return it"), and an objection only exists once
-    the visitor wants something. Above the products it is decoration; below them it is the last
-    thing read before a WhatsApp message gets sent.
-  */
   if (input.hasTrustBadges) planned.push({ type: 'trust_badges', config: { limit: 3 } });
+  if (input.hasAnnouncements) planned.push({ type: 'announcements', config: { limit: 3 } });
   if (input.hasAbout) planned.push({ type: 'about', config: {} });
   if (input.hasStoreStats) planned.push({ type: 'store_stats', config: { limit: 3 } });
   if (input.hasTestimonials) planned.push({ type: 'testimonials', config: { limit: 3 } });
-  /*
-    Hours immediately before contact, because they are the same question.
-
-    `showOpenNow` stays at its schema default of false: the pill is only honest if the merchant
-    keeps the table current, and a wrong «مفتوح الآن» costs more than an absent one. A merchant who
-    wants it turns it on in the dashboard, which is a decision this file must not make for them.
-  */
   if (input.hasOpeningHours) planned.push({ type: 'opening_hours', config: {} });
   if (input.hasContact) planned.push({ type: 'contact_whatsapp', config: {} });
   /*
-    «موقعنا» IS ONLY ITS OWN BAND WHEN THERE IS NO CONTACT BLOCK TO FOLD IT INTO (2026-09-09).
-
-    `contact_whatsapp` and `map` both draw `site.address` into a `.sf-facts` row from the same
-    Site columns, and the default arrangement put them next to each other — so a shop with an
-    address ended its home page on two consecutive bands whose only difference was that the second
-    also carried two buttons. `ContactWhatsappSection` now renders those two deep links itself,
-    from the same `resolveMapTarget` chain, which leaves this entry with nothing of its own to add.
-
-    A shop with a location and NO way to be contacted still gets the standalone section: that is
-    the case where the address is not printed anywhere else, and dropping it unconditionally would
-    take the shop's location off its own home page.
-
-    STORED ARRANGEMENTS ARE NOT MIGRATED, deliberately. A merchant who opened «أقسام الموقع» and
-    kept «موقعنا» chose it, and a renderer that silently deletes a section a merchant can see in
-    their own dashboard is a worse failure than one duplicated address. They can remove it there;
-    this only stops every NEW shop from shipping the duplicate.
-  */
+   * «موقعنا» is its own band only when there is no contact block to fold it into:
+   * `ContactWhatsappSection` renders the same address and the two map deep links itself.
+   * Stored arrangements are never migrated — a merchant who kept «موقعنا» chose it.
+   */
   if (input.hasLocation && !input.hasContact) planned.push({ type: 'map', config: {} });
 
   return planned.map((section, index) => ({

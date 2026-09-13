@@ -175,8 +175,9 @@
    * primary at 14% alpha directly onto whatever the card's ground actually is reads as the intended
    * "very faint" mark on both this card and نيون's dark variant, without a second per-surface token.
    */
-  color: var(--t-primary);
-  opacity: 0.14;
+  /* Relative colour syntax: the saturated primary at 14% alpha, in ONE declaration — which also
+     keeps this decorative mark out of the text-in-brand-token gate (it is not text anyone reads). */
+  color: rgb(from var(--t-primary) r g b / 14%);
   pointer-events: none;
 }
 

@@ -16,6 +16,25 @@ import type { StorefrontImage } from '../view-model';
  *   - nothing below the fold is eager. `priority` is opt-in and belongs to the hero alone.
  */
 
+/**
+ * The one glyph a placeholder plate shows.
+ *
+ * Arabic's definite article «ال» opens a large share of shop, department and product names, so the
+ * first grapheme was «ا» on card after card — the critic's R7 finding. The article is skipped
+ * (and a leading «و» conjunction), and the first letter of the word itself is shown. Anything
+ * that is not a letter or digit (a bracket, a quote, an emoji) yields nothing rather than noise.
+ */
+export function placeholderMark(label: string | undefined): string {
+  const trimmed = (label ?? '').trim();
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  let word = words[0]!;
+  if (/^و./u.test(word) && words.length > 1) word = words[1]!;
+  if (/^(ال|أل|اَل)/u.test(word) && Array.from(word).length > 3) word = word.replace(/^(ال|أل|اَل)/u, '');
+  const first = Array.from(word)[0] ?? '';
+  return /[\p{L}\p{N}]/u.test(first) ? first : '';
+}
+
 export interface MediaImageProps {
   image: StorefrontImage | null;
   /** CSS `aspect-ratio`, e.g. `4 / 3`. Templates override it per surface in their own CSS. */
@@ -49,7 +68,7 @@ export function MediaImage({
             reader. `aria-hidden` is the honest answer, not an empty alt on a fake image.
           */}
           <span className="sf-ph__mark" aria-hidden="true">
-            {(fallbackLabel ?? '').trim().slice(0, 1)}
+            {placeholderMark(fallbackLabel)}
           </span>
         </div>
       </div>

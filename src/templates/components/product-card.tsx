@@ -1,7 +1,9 @@
 import { formatAgorot } from '@/shared/i18n';
 import { st } from '../i18n';
 import type { TemplateDefinition } from '../types';
-import type { StorefrontProduct } from '../view-model';
+import type { StorefrontContext, StorefrontProduct } from '../view-model';
+import { buildOrderUrl, normaliseWhatsappNumber } from '../lib/whatsapp';
+import { WhatsappIcon } from './icons';
 import { AddToCart } from './add-to-cart';
 import { MediaImage } from './media-image';
 
@@ -33,6 +35,12 @@ export interface ProductCardProps {
   /** Phase 8. Absent or `enabled: false` renders the card exactly as it always has — byte for
    *  byte, no new markup at all. */
   cart?: { tenantId: string; enabled: boolean };
+  /**
+   * The storefront context, when the caller has it. With it, a card on a shop whose cart is OFF
+   * but whose WhatsApp line is on gets a per-product «اطلب عبر واتساب» button — the whole order
+   * flow of the أساسي plan, one tap from the grid instead of two pages away.
+   */
+  context?: StorefrontContext;
 }
 
 export function ProductCard({
@@ -41,9 +49,11 @@ export function ProductCard({
   priority = false,
   showPrice = true,
   cart,
+  context,
 }: ProductCardProps) {
   const variant = template.layout.productCard;
   const price = formatAgorot(product.priceAgorot);
+  const whatsappHref = !cart?.enabled && context ? productWhatsappHref(context, product, price) : null;
 
   return (
     <article className={`sf-card sf-card--${variant}`}>
@@ -119,9 +129,38 @@ export function ProductCard({
             }}
           />
         </div>
+      ) : whatsappHref && product.available ? (
+        <div className="sf-card__cart">
+          <a
+            className="sf-btn sf-btn--order sf-btn--full"
+            href={whatsappHref}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <WhatsappIcon className="sf-btn__icon" />
+            {st('order.whatsapp')}
+          </a>
+        </div>
       ) : null}
     </article>
   );
+}
+
+function productWhatsappHref(
+  context: StorefrontContext,
+  product: StorefrontProduct,
+  price: string,
+): string | null {
+  if (!context.flags.whatsappOrders) return null;
+  const number = normaliseWhatsappNumber(context.site.whatsapp);
+  if (!number) return null;
+  const template = st('order.message', {
+    shop: context.site.name,
+    product: product.name,
+    price,
+    url: `${context.origin}/products/${product.slug}`,
+  });
+  return buildOrderUrl({ number, template }, 1);
 }
 
 function StandardBody({

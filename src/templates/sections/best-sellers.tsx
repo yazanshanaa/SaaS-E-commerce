@@ -64,6 +64,7 @@ export function BestSellersSection({
             product={product}
             template={template}
             cart={{ tenantId: context.tenantId, enabled: context.flags.cart }}
+                context={context}
           />
         ))}
       </div>

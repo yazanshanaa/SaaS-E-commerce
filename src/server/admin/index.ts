@@ -108,6 +108,7 @@ export {
   saveBusinessDetails,
   saveMapLocation,
   saveSocialLinks,
+  resetHomeArrangement,
   seedDefaultSections,
   setSectionEnabled,
   setSiteAppearance,

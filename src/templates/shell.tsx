@@ -8,6 +8,7 @@ import { DemoWatermark } from './components/demo-watermark';
 import { ServiceWorkerRegistrar } from './components/service-worker';
 import { SiteFooter } from './components/site-footer';
 import { SiteHeader } from './components/site-header';
+import { MobileTabBar } from './components/mobile-tabbar';
 import { WhatsappFab } from './components/whatsapp-fab';
 import { st } from './i18n';
 import type { AnalyticsDecision } from './lib/analytics';
@@ -89,6 +90,8 @@ export interface StorefrontShellProps {
    * merchant would recognise in their report.
    */
   beacon?: { enabled: boolean; path: string; productSlug?: string | null };
+  /** Active department on `/products?category=`, for the header's department bar. */
+  currentCategory?: string | null;
 }
 
 export function StorefrontShell({
@@ -97,6 +100,7 @@ export function StorefrontShell({
   analytics,
   consentAnswered,
   current,
+  currentCategory,
   beacon,
 }: StorefrontShellProps) {
   const { template, colors, isDemo } = context;
@@ -277,13 +281,15 @@ export function StorefrontShell({
         />
       ) : null}
 
-      <SiteHeader context={context} current={current} />
+      <SiteHeader context={context} current={current} currentCategory={currentCategory} />
 
       <main id="main" className="sf-main">
         {children}
       </main>
 
       <SiteFooter context={context} showPush={showPush} />
+
+      <MobileTabBar context={context} current={current} />
 
       {/*
         ONE fixed stack at the bottom of the viewport, not four overlapping fixed elements.

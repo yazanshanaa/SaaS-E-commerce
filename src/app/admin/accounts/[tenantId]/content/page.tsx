@@ -21,6 +21,7 @@ import {
   saveAppearanceAction,
   saveMapLocationAction,
   saveSocialLinksAction,
+  resetSectionsAction,
   seedSectionsAction,
   toggleSectionAction,
 } from './actions';
@@ -543,6 +544,18 @@ export default async function AccountContentPage({
             })}
           </div>
         )}
+      
+        {content.sections.length > 0 ? (
+          <form action={resetSectionsAction} style={{ marginBlockStart: 'var(--sb-space-4)' }}>
+            <input type="hidden" name="tenantId" value={tenantId} />
+            <button type="submit" className="sba-btn">
+              {t('admin', 'content.resetSections')}
+            </button>
+            <p className="sba-hint" style={{ marginBlockStart: 'var(--sb-space-2)' }}>
+              {t('admin', 'content.resetSectionsHint')}
+            </p>
+          </form>
+        ) : null}
       </Panel>
     </>
   );

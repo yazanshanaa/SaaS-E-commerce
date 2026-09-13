@@ -1,0 +1,616 @@
+/*
+ * The commerce chrome (2026-09-13, owner-directed).
+ *
+ * Loaded AFTER storefront.css and after every template sheet, so these rules win on equal
+ * specificity. It restates the parts of a storefront a visitor's hands already know from every
+ * large store — sticky header with search and cart, a scrollable department bar, a compact hero,
+ * a product card that leads with price and a buy button, and a bottom tab bar on the phone.
+ *
+ * Every colour, face, radius and spacing value still comes from the template's tokens, so the nine
+ * templates keep their identity; what they no longer get to decide is WHERE the cart is.
+ *
+ * Contrast: every text/background pair here is one of the pairs `deriveColorTokens` already
+ * guards (text on bg, on-primary on primary, text-muted on bg). No new pair is introduced.
+ */
+
+/* ----------------------------------------------------------------- header -- */
+
+.sf-root[data-template] .sf-header[data-commerce] {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 40;
+  background: var(--t-bg);
+  border-block-end: var(--t-rule-hair);
+  box-shadow: 0 1px 0 var(--t-border);
+}
+
+/* One grid, one posture: brand · search · actions. `data-header` postures no longer rearrange it. */
+.sf-root[data-template] .sf-header[data-commerce] .sf-header__inner,
+.sf-root[data-template] .sf-header[data-commerce] .sf-header__inner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'brand search actions';
+  align-items: center;
+  gap: var(--t-space-lg);
+  padding-block: var(--t-space-sm);
+  min-block-size: 64px;
+}
+
+.sf-root[data-template] .sf-header[data-commerce] .sf-brand {
+  grid-area: brand;
+  justify-self: start;
+}
+
+.sf-root[data-template] .sf-header[data-commerce] .sf-brand__logo {
+  block-size: 40px;
+}
+
+.sf-root[data-template] .sf-header[data-commerce] .sf-brand__tag {
+  max-inline-size: 26ch;
+}
+
+.sf-root[data-template] .sf-header__search {
+  grid-area: search;
+  min-inline-size: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.sf-root[data-template] .sf-header__search .sf-search {
+  inline-size: 100%;
+  max-inline-size: 38rem;
+}
+
+.sf-root[data-template] .sf-header__search .sf-search--compact .sf-search__input {
+  inline-size: 100%;
+  min-block-size: 42px;
+  border-radius: var(--t-radius-pill);
+  padding-inline: var(--t-space-lg);
+  background: var(--t-surface);
+}
+
+.sf-root[data-template] .sf-header__search .sf-search--compact .sf-search__submit {
+  border-radius: var(--t-radius-pill);
+  min-block-size: 42px;
+}
+
+.sf-root[data-template] .sf-header__actions {
+  grid-area: actions;
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-xs);
+  justify-self: end;
+}
+
+/* An icon button with an optional label: 44px tall, the label hides on narrow screens. */
+.sf-root[data-template] .sf-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--t-space-xs);
+  min-block-size: 44px;
+  min-inline-size: 44px;
+  padding-inline: var(--t-space-sm);
+  border-radius: var(--t-radius-md);
+  color: var(--t-text);
+  text-decoration: none;
+  font-size: var(--t-text-sm);
+  font-weight: var(--t-weight-display);
+  border: 2px solid transparent;
+}
+
+.sf-root[data-template] .sf-iconbtn:hover {
+  background: var(--t-surface);
+}
+
+.sf-root[data-template] .sf-iconbtn__icon {
+  position: relative;
+  display: inline-flex;
+  inline-size: 24px;
+  block-size: 24px;
+}
+
+.sf-root[data-template] .sf-iconbtn__icon svg {
+  inline-size: 24px;
+  block-size: 24px;
+}
+
+.sf-root[data-template] .sf-iconbtn--cart {
+  background: var(--t-primary);
+  color: var(--t-on-primary);
+  border-color: var(--t-primary);
+  padding-inline: var(--t-space-md);
+}
+
+.sf-root[data-template] .sf-iconbtn--cart:hover {
+  background: var(--t-primary);
+  filter: brightness(1.06);
+}
+
+.sf-root[data-template] .sf-iconbtn--wa {
+  color: var(--t-text);
+  border-color: var(--t-border);
+}
+
+/* The header has a home in the brand already; the icon is for the phone row. */
+.sf-root[data-template] .sf-iconbtn--home {
+  display: none;
+}
+
+/* The count bubble — shared by the header button and the tab bar. */
+.sf-root[data-template] .sf-count {
+  position: absolute;
+  inset-block-start: -8px;
+  inset-inline-end: -10px;
+  min-inline-size: 18px;
+  block-size: 18px;
+  padding-inline: 5px;
+  border-radius: var(--t-radius-pill);
+  background: var(--t-secondary);
+  color: var(--t-on-secondary);
+  font-size: 11px;
+  line-height: 18px;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--t-bg);
+}
+
+.sf-root[data-template] .sf-iconbtn--cart .sf-count {
+  box-shadow: 0 0 0 2px var(--t-primary);
+}
+
+/* ---------------------------------------------------------- department bar -- */
+
+.sf-root[data-template] .sf-header[data-commerce] .sf-header__cats {
+  border-block-start: var(--t-rule-hair);
+  background: var(--t-surface);
+  padding-block: 0;
+}
+
+.sf-root[data-template] .sf-catbar {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+}
+
+.sf-root[data-template] .sf-catbar::-webkit-scrollbar {
+  display: none;
+}
+
+.sf-root[data-template] .sf-catbar li {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+.sf-root[data-template] .sf-catbar a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 44px;
+  padding-inline: var(--t-space-md);
+  text-decoration: none;
+  color: var(--t-text);
+  font-size: var(--t-text-sm);
+  font-weight: var(--t-weight-display);
+  white-space: nowrap;
+  border-block-end: 3px solid transparent;
+}
+
+.sf-root[data-template] .sf-catbar a:hover {
+  color: var(--t-link);
+}
+
+.sf-root[data-template] .sf-catbar a[aria-current='page'] {
+  color: var(--t-link);
+  border-block-end-color: var(--t-primary);
+}
+
+.sf-root[data-template] .sf-catbar__end {
+  margin-inline-start: auto;
+}
+
+.sf-root[data-template] .sf-catbar__end a {
+  color: var(--t-text-muted);
+}
+
+/* ------------------------------------------------------------------- hero -- */
+
+/*
+ * A compact banner, not a poster. `--t-hero-min` used to pin the first screen to the shop's name;
+ * the catalogue now starts one scroll below the fold on a phone and above it on a desktop.
+ */
+.sf-root[data-template] .sf-hero,
+.sf-root[data-template] .sf-hero--split,
+.sf-root[data-template] .sf-hero--stage,
+.sf-root[data-template] .sf-hero--ledger {
+  min-block-size: 0;
+  padding-block: var(--t-space-xl);
+}
+
+.sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__inner,
+.sf-root[data-template] .sf-hero--split[data-figure='type'] .sf-hero__inner,
+.sf-root[data-template] .sf-hero--stage[data-figure='type'] .sf-hero__inner {
+  padding: var(--t-space-xl);
+  border-radius: var(--t-radius-lg);
+  background: var(--t-ground-tint);
+  border: var(--t-rule-hair);
+}
+
+.sf-root[data-template] .sf-hero--split[data-figure='type'] .sf-hero__title,
+.sf-root[data-template] .sf-hero--stage[data-figure='type'] .sf-hero__title,
+.sf-root[data-template] .sf-hero--ledger .sf-hero__title,
+.sf-root[data-template] .sf-hero__title {
+  font-size: clamp(1.6rem, 1.1rem + 2.2vw, 2.6rem);
+  line-height: 1.2;
+}
+
+.sf-root[data-template] .sf-hero__text {
+  font-size: var(--t-text-base);
+  margin-block-start: var(--t-space-sm);
+  max-inline-size: 60ch;
+}
+
+.sf-root[data-template] .sf-hero__actions {
+  margin-block-start: var(--t-space-lg);
+}
+
+/* The bled-off initial watermark — gone. A letter the size of the screen is what made it a poster. */
+.sf-root[data-template] .sf-hero[data-figure='type']::after,
+.sf-root[data-template] .sf-hero--stage[data-figure='type'] .sf-hero__inner::before {
+  content: none;
+}
+
+.sf-root[data-template] .sf-hero__proof {
+  margin-block-start: var(--t-space-md);
+}
+
+/* --------------------------------------------------------------- category -- */
+
+/* Department tiles are a compact row, not a second grid of posters. */
+.sf-root[data-template] .sf-cats {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9.5rem), 1fr));
+  gap: var(--t-space-sm);
+  grid-auto-rows: auto;
+}
+
+@media (min-width: 52rem) {
+  .sf-root[data-template] .sf-cats:has(> li:nth-child(5)) > li:first-child {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
+.sf-root[data-template] .sf-cat .sf-media {
+  --sf-ratio: 4 / 3;
+  aspect-ratio: 4 / 3;
+  flex: 0 0 auto;
+}
+
+.sf-root[data-template] .sf-cat .sf-ph__mark {
+  font-size: clamp(1.4rem, 2.5vw, 2.2rem);
+}
+
+.sf-root[data-template] .sf-cat__label {
+  padding: var(--t-space-sm) var(--t-space-md);
+  font-size: var(--t-text-sm);
+  font-weight: var(--t-weight-display);
+}
+
+/* ------------------------------------------------------------------- card -- */
+
+.sf-root[data-template] .sf-card__media .sf-media {
+  --sf-ratio: 1 / 1;
+  aspect-ratio: 1 / 1;
+}
+
+.sf-root[data-template] .sf-card__media .sf-ph__mark {
+  font-size: clamp(1.6rem, 3vw, 2.6rem);
+  opacity: 0.85;
+}
+
+.sf-root[data-template] .sf-card__name {
+  font-size: var(--t-text-base);
+  -webkit-line-clamp: 2;
+  min-block-size: calc(2 * 1.35em);
+}
+
+.sf-root[data-template] .sf-card__desc {
+  -webkit-line-clamp: 1;
+}
+
+.sf-root[data-template] .sf-card__foot .sf-price {
+  font-size: var(--t-text-xl);
+  color: var(--t-link);
+}
+
+.sf-root[data-template] .sf-card__cart {
+  padding: 0 var(--t-space-md) var(--t-space-md);
+}
+
+.sf-root[data-template] .sf-btn--full {
+  inline-size: 100%;
+}
+
+.sf-root[data-template] .sf-btn--order {
+  background: var(--t-whatsapp);
+  color: var(--t-whatsapp-ink);
+  border-color: var(--t-whatsapp);
+}
+
+/* ------------------------------------------------------- the block heads -- */
+
+.sf-root[data-template] .sf-block__head .sf-block__title {
+  font-size: clamp(1.25rem, 1rem + 1vw, 1.75rem);
+}
+
+/* --------------------------------------------------------------- tab bar -- */
+
+.sf-root[data-template] .sf-tabbar {
+  display: none;
+}
+
+@media (max-width: 45rem) {
+  .sf-root[data-template] .sf-header[data-commerce] .sf-header__inner,
+  .sf-root[data-template] .sf-header[data-commerce] .sf-header__inner {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'brand  actions'
+      'search search';
+    gap: var(--t-space-sm) var(--t-space-md);
+    padding-block: var(--t-space-sm);
+    min-block-size: 0;
+  }
+
+  .sf-root[data-template] .sf-header[data-commerce] .sf-brand__logo {
+    block-size: 34px;
+  }
+
+  .sf-root[data-template] .sf-header[data-commerce] .sf-brand__name {
+    font-size: var(--t-text-base);
+  }
+
+  .sf-root[data-template] .sf-header[data-commerce] .sf-brand__tag {
+    display: none;
+  }
+
+  .sf-root[data-template] .sf-header__search:empty {
+    display: none;
+  }
+
+  .sf-root[data-template] .sf-iconbtn__label {
+    display: none;
+  }
+
+  .sf-root[data-template] .sf-iconbtn--cart {
+    padding-inline: var(--t-space-sm);
+  }
+
+  /* On the phone the header carries the cart only; WhatsApp sits in the tab bar under the thumb. */
+  .sf-root[data-template] .sf-iconbtn--wa {
+    display: none;
+  }
+
+  .sf-root[data-template] .sf-tabbar {
+    position: fixed;
+    inset-inline: 0;
+    inset-block-end: 0;
+    z-index: 45;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    background: var(--t-bg);
+    border-block-start: var(--t-rule-hair);
+    box-shadow: 0 -1px 0 var(--t-border);
+    padding-block-end: env(safe-area-inset-bottom, 0);
+  }
+
+  .sf-root[data-template] .sf-tabbar__item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-block-size: 56px;
+    text-decoration: none;
+    color: var(--t-text-muted);
+    font-size: 11px;
+    font-weight: var(--t-weight-display);
+  }
+
+  .sf-root[data-template] .sf-tabbar__item[aria-current='page'] {
+    color: var(--t-link);
+  }
+
+  .sf-root[data-template] .sf-tabbar__icon {
+    position: relative;
+    display: inline-flex;
+    inline-size: 24px;
+    block-size: 24px;
+  }
+
+  .sf-root[data-template] .sf-tabbar__icon svg {
+    inline-size: 24px;
+    block-size: 24px;
+  }
+
+  .sf-root[data-template] .sf-tabbar__item--wa {
+    color: var(--t-whatsapp);
+  }
+
+  /* Room for the bar, and the floating buttons leave: the bar carries both destinations. */
+  .sf-root[data-template] {
+    padding-block-end: calc(56px + env(safe-area-inset-bottom, 0));
+  }
+
+  .sf-root[data-template] .sf-dock {
+    inset-block-end: calc(56px + env(safe-area-inset-bottom, 0));
+  }
+
+  .sf-root[data-template] .sf-dock__fabs {
+    display: none;
+  }
+
+  /* Cards on a phone: two across, a smaller face, and the buy button still 44px. */
+  .sf-root[data-template] .sf-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--t-space-sm);
+  }
+
+  .sf-root[data-template] .sf-card__body {
+    padding: var(--t-space-sm);
+  }
+
+  .sf-root[data-template] .sf-card__cart {
+    padding: 0 var(--t-space-sm) var(--t-space-sm);
+  }
+
+  .sf-root[data-template] .sf-card__foot .sf-price {
+    font-size: var(--t-text-lg);
+  }
+
+  .sf-root[data-template] .sf-card__desc {
+    display: none;
+  }
+
+  .sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__inner,
+  .sf-root[data-template] .sf-hero--split[data-figure='type'] .sf-hero__inner,
+  .sf-root[data-template] .sf-hero--stage[data-figure='type'] .sf-hero__inner {
+    padding: var(--t-space-lg);
+  }
+
+  .sf-root[data-template] .sf-cats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .sf-root[data-template] .sf-cat .sf-media {
+    --sf-ratio: 1 / 1;
+    aspect-ratio: 1 / 1;
+  }
+
+  .sf-root[data-template] .sf-cat__label {
+    padding: var(--t-space-xs) var(--t-space-sm);
+    font-size: var(--t-text-xs);
+    justify-content: center;
+  }
+
+  .sf-root[data-template] .sf-cat__count {
+    display: none;
+  }
+}
+
+/* The dock's cart FAB is redundant everywhere now: the header carries the cart. */
+.sf-root[data-template] .sf-dock__fabs .sf-cart-fab {
+  display: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sf-root[data-template] .sf-iconbtn,
+  .sf-root[data-template] .sf-catbar a,
+  .sf-root[data-template] .sf-tabbar__item {
+    transition:
+      color 150ms ease-out,
+      background-color 150ms ease-out,
+      border-color 150ms ease-out;
+  }
+}
+
+/* ------------------------------------------------------- band rhythm -- */
+
+/*
+ * Tighter bands. `--t-block` was sized for a magazine page with one band per screen; a store
+ * page shows two or three bands per screen, so every band's own padding comes down and the
+ * band-to-band step stays visible through the ground change alone.
+ */
+.sf-root[data-template] .sf-band > .sf-block,
+.sf-root[data-template] .sf-band[data-density='airy'] > .sf-block {
+  padding-block: clamp(1.5rem, 1rem + 2vw, 3rem);
+}
+
+.sf-root[data-template] .sf-band[data-density='tight'] > .sf-block {
+  padding-block: clamp(1rem, 0.75rem + 1.5vw, 2rem);
+}
+
+/* The hero band is one card: copy inline-start, actions inline-end, one row on a desktop. */
+.sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'title actions'
+    'text  actions'
+    'proof proof';
+  align-items: center;
+  column-gap: var(--t-space-xl);
+}
+
+.sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__title {
+  grid-area: title;
+}
+
+.sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__text {
+  grid-area: text;
+  margin-block-start: var(--t-space-xs);
+}
+
+.sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__actions {
+  grid-area: actions;
+  margin-block-start: 0;
+  flex-wrap: nowrap;
+}
+
+.sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__proof {
+  grid-area: proof;
+}
+
+.sf-root[data-template] .sf-hero--ledger .sf-hero__inner {
+  display: block;
+}
+
+.sf-root[data-template] .sf-hero--ledger .sf-hero__facts {
+  margin-block-start: var(--t-space-md);
+}
+
+@media (max-width: 45rem) {
+  .sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__copy {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'title'
+      'text'
+      'actions'
+      'proof';
+  }
+
+  .sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__actions {
+    margin-block-start: var(--t-space-md);
+    flex-wrap: wrap;
+  }
+}
+
+/* ---------------------------------------------------------- grid density -- */
+
+/*
+ * A store grid, not a gallery. Above the phone breakpoint the card count per row follows the
+ * width — a 1366px screen shows five or six cards, not three posters — and the template's own
+ * `--sf-cols` becomes a floor for the card size rather than a fixed count.
+ */
+@media (min-width: 45rem) {
+  .sf-root[data-template] .sf-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 13.5rem), 1fr));
+    gap: var(--t-space-md);
+  }
+
+  .sf-root[data-template] .sf-grid:has(> :only-child),
+  .sf-root[data-template] .sf-grid:has(> :nth-child(2):last-child),
+  .sf-root[data-template] .sf-grid:has(> :nth-child(3):last-child) {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 13.5rem), 1fr));
+  }
+
+  .sf-root[data-template] .sf-grid > .sf-card {
+    max-inline-size: 22rem;
+  }
+}
