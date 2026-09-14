@@ -1184,3 +1184,66 @@ dialog.sf-drawer .sf-stepper__value {
   border-color: var(--t-primary);
   font-weight: var(--t-weight-display);
 }
+
+/* ----------------------------------------------------- footer: always columns -- */
+
+/*
+ * The `minimal` posture stacked the whole footer into one centred column — brand, links, contact,
+ * eight social circles one under the other — a ladder half a screen tall (owner: «ما هذا المنظر
+ * البشع»). Every store footer is columns; the posture keeps its quieter type but not its stack.
+ */
+.sf-root[data-template][data-footer='minimal'] .sf-footer__inner {
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  justify-items: stretch;
+  text-align: start;
+  max-inline-size: none;
+  gap: var(--t-space-xl);
+}
+
+.sf-root[data-template] .sf-footer__social {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--t-space-lg);
+  text-align: start;
+}
+
+.sf-root[data-template] .sf-footer__social h2 {
+  margin: 0;
+}
+
+.sf-root[data-template] .sf-footer__social .sf-social,
+.sf-root[data-template] .sf-footer .sf-social {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: var(--t-space-sm);
+}
+
+.sf-root[data-template] .sf-social li {
+  display: block;
+  inline-size: auto;
+}
+
+.sf-root[data-template] .sf-footer ul:not(.sf-social) {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--t-space-xs);
+}
+
+@media (max-width: 45rem) {
+  .sf-root[data-template] .sf-footer__inner {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--t-space-lg);
+  }
+
+  .sf-root[data-template] .sf-footer__social {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
