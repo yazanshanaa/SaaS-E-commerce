@@ -65,7 +65,7 @@ jobs:
     environment:
       name: staging
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The commit CI actually passed. On a dispatch there is no workflow_run, so this is
           # empty and the default checkout applies.
@@ -150,7 +150,7 @@ jobs:
     environment:
       name: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
