@@ -776,6 +776,7 @@ export async function seedDefaultSections(
     after: { types: DEFAULT_SECTIONS.map((section) => section.type) },
   });
 
+  await requestStorefrontRevalidation(tenantId);
   return null;
 }
 
@@ -841,6 +842,7 @@ export async function resetHomeArrangement(
     after: { types: DEFAULT_SECTIONS.map((section) => section.type) },
   });
 
+  await requestStorefrontRevalidation(tenantId);
   return null;
 }
 
@@ -865,6 +867,7 @@ export async function setSectionEnabled(
     after: { type: before.type, enabled },
   });
 
+  await requestStorefrontRevalidation(tenantId);
   return null;
 }
 
@@ -915,6 +918,7 @@ export async function moveSection(
     after: { type: section.type, sort: neighbour.sort },
   });
 
+  await requestStorefrontRevalidation(tenantId);
   return null;
 }
 
