@@ -33,10 +33,17 @@ import type { TemplateKey } from '@/shared/site-contract';
  *      price is on the image or under it, what shape the images are cut to — is what a merchant
  *      is choosing between, and it reads at this size.
  *
- * WHAT IS ACTUALLY DRAWN. Every value below comes from the template's own definition: the five
- * ground colours, the radii, `layout.hero`, `layout.productCard`, `layout.gridColumns` and
- * `layout.imageMask`. Nothing is hand-tuned per template, so all nine are directly comparable —
- * which is the only way a picker helps anyone decide.
+ * WHAT IS DRAWN (2026-09-14, the commerce anatomy). The redesign gave every template the same
+ * storefront skeleton — sticky header with brand · search · cart/WhatsApp buttons, a department
+ * bar, a compact hero, a row of category circles, then a product grid whose cards carry a square
+ * picture, a price bubble and a full-width "add to cart" button. The previews had kept drawing
+ * the pre-redesign blog-like page (tall hero, three loose cards), which is exactly the look the
+ * owner asked to be rid of; the picker was advertising a layout no storefront renders any more.
+ *
+ * Everything below still comes from the template's own definition: the ground colours, the
+ * radii, `layout.hero`, `layout.productCard` and `layout.imageMask`. What differs between the
+ * nine is palette, corner radius, image mask, hero posture and the card body — which is what a
+ * merchant is actually choosing between now that the skeleton is shared.
  *
  * RTL. The storefronts are `dir="rtl"`, so copy sits at the INLINE START (the right) and the
  * picture at the end (the left). Coordinates are written that way rather than mirrored with a
@@ -48,7 +55,7 @@ import type { TemplateKey } from '@/shared/site-contract';
  */
 
 const W = 320;
-const H = 208;
+const H = 216;
 
 /** The preview is ~0.29× a real 1120px page, so template radii are scaled to match. */
 const RADIUS_SCALE = 0.42;
@@ -107,33 +114,52 @@ function Bar({
   return <rect x={x} y={y} width={w} height={h} rx={h / 2} fill={fill} opacity={opacity} />;
 }
 
+/** The commerce grid is four-up on desktop for every template (storefront-commerce.css). */
+const GRID_COLUMNS = 4;
+const CIRCLES = 5;
+
 export function TemplatePreview({ templateKey }: { templateKey: TemplateKey }) {
   const template = TEMPLATE_IMPLEMENTATIONS[templateKey];
   const { color } = template.tokens;
-  const { hero, productCard, gridColumns, imageMask } = template.layout;
+  const { hero, productCard, imageMask } = template.layout;
 
   const rMd = radius(template.tokens.radius.md);
   const rSm = radius(template.tokens.radius.sm);
+  const rPill = radius(template.tokens.radius.pill);
 
-  const pad = 14;
+  const pad = 12;
   const inner = W - pad * 2;
 
-  // ---------------------------------------------------------------- header --
-  const headerY = pad;
-  const headerH = 18;
+  // ------------------------------------------------ header: brand · search · actions --
+  const headerY = 0;
+  const headerH = 26;
+  const searchW = 108;
+  const searchH = 12;
+  const searchX = W - pad - 60 - 6 - searchW;
+  const btnW = 22;
+  const btnH = 12;
+
+  // ------------------------------------------------------------- department bar --
+  const catbarY = headerH;
+  const catbarH = 12;
 
   // ------------------------------------------------------------------ hero --
-  const heroY = headerY + headerH + 8;
-  const heroH = 74;
+  const heroY = catbarY + catbarH + 7;
+  const heroH = 44;
+
+  // ------------------------------------------------------- category circles --
+  const circlesY = heroY + heroH + 8;
+  const circleD = 16;
+  const circlesH = circleD + 6;
 
   // ----------------------------------------------------------------- cards --
-  const cardsY = heroY + heroH + 10;
+  const cardsY = circlesY + circlesH + 7;
   const cardsH = H - cardsY - pad;
-  const gap = 7;
-  const cardW = (inner - gap * (gridColumns - 1)) / gridColumns;
-
-  // `spec` is a definition list, so its image is a strip; `overlay` fills the card with it.
-  const artH = productCard === 'spec' ? cardsH * 0.34 : productCard === 'overlay' ? cardsH : 40;
+  const gap = 6;
+  const cardW = (inner - gap * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
+  // Square media on every commerce card; `overlay` keeps its name-on-picture body.
+  const artH = productCard === 'overlay' ? cardsH : Math.min(cardW, cardsH - 36);
+  const btnY = cardsY + cardsH - 11;
 
   return (
     <svg
@@ -147,38 +173,77 @@ export function TemplatePreview({ templateKey }: { templateKey: TemplateKey }) {
     >
       <rect width={W} height={H} fill={color.background} />
 
-      {/* ---- header: mark + nav ticks, separated by the template's own rule ---- */}
-      <rect x={pad} y={headerY} width={22} height={14} rx={rSm} fill={color.primary} />
-      <Bar x={pad + 28} y={headerY + 5} w={40} h={5} fill={color.text} opacity={0.85} />
-      <Bar x={W - pad - 24} y={headerY + 5} w={24} h={4} fill={color.textMuted} />
-      <Bar x={W - pad - 56} y={headerY + 5} w={26} h={4} fill={color.textMuted} />
-      <Bar x={W - pad - 90} y={headerY + 5} w={28} h={4} fill={color.textMuted} />
+      {/* ---- sticky header on the surface colour: brand (right) · search · cart/WhatsApp (left) ---- */}
+      <rect x={0} y={headerY} width={W} height={headerH} fill={color.surface} />
+      <rect x={0} y={headerY + headerH - 1} width={W} height={1} fill={color.border} opacity={0.8} />
+      <rect x={W - pad - 16} y={headerY + 6} width={16} height={14} rx={rSm} fill={color.primary} />
+      <Bar x={W - pad - 16 - 4 - 38} y={headerY + 8} w={38} h={5} fill={color.text} opacity={0.9} />
+      <Bar x={W - pad - 16 - 4 - 28} y={headerY + 16} w={28} h={3} fill={color.textMuted} />
+      <rect
+        x={searchX}
+        y={headerY + (headerH - searchH) / 2}
+        width={searchW}
+        height={searchH}
+        rx={Math.max(rPill, 3)}
+        fill={color.background}
+        stroke={color.border}
+        strokeWidth={1}
+      />
+      <Bar x={searchX + 8} y={headerY + headerH / 2 - 1.5} w={40} h={3} fill={color.textMuted} opacity={0.7} />
       <rect
         x={pad}
-        y={headerY + headerH}
-        width={inner}
-        height={1}
-        fill={color.border}
-        opacity={0.7}
+        y={headerY + (headerH - btnH) / 2}
+        width={btnW}
+        height={btnH}
+        rx={Math.max(rPill, 3)}
+        fill={color.primary}
+      />
+      <circle cx={pad + 3} cy={headerY + (headerH - btnH) / 2 + 1} r={3.2} fill={color.secondary} />
+      <rect
+        x={pad + btnW + 5}
+        y={headerY + (headerH - btnH) / 2}
+        width={btnW}
+        height={btnH}
+        rx={Math.max(rPill, 3)}
+        fill="none"
+        stroke={color.border}
+        strokeWidth={1}
       />
 
-      {/* ------------------------------- hero, one of three ------------------------------- */}
+      {/* ---- department bar: «كل المنتجات» + categories, one underlined ---- */}
+      <rect x={0} y={catbarY} width={W} height={catbarH} fill={color.surface} opacity={0.6} />
+      {[0, 1, 2, 3].map((i) => (
+        <Bar
+          key={i}
+          x={W - pad - 26 - i * 34}
+          y={catbarY + 4}
+          w={26}
+          h={3}
+          fill={i === 0 ? color.primary : color.textMuted}
+          opacity={i === 0 ? 1 : 0.8}
+        />
+      ))}
+      <rect x={W - pad - 26} y={catbarY + catbarH - 1.5} width={26} height={1.5} fill={color.primary} />
+
+      {/* ------------------------------- compact hero, one of three ------------------------------- */}
       {hero === 'split' && (
         <>
-          {/* Copy at the inline start (right); portrait at the end (left). */}
-          <Bar x={W - pad - 118} y={heroY + 14} w={118} h={9} fill={color.text} opacity={0.9} />
-          <Bar x={W - pad - 92} y={heroY + 29} w={92} h={5} fill={color.textMuted} />
+          <Bar x={W - pad - 110} y={heroY + 8} w={110} h={8} fill={color.text} opacity={0.9} />
+          <Bar x={W - pad - 80} y={heroY + 20} w={80} h={4} fill={color.textMuted} />
+          <rect x={W - pad - 46} y={heroY + 29} width={46} height={11} rx={rPill} fill={color.primary} />
           <rect
-            x={W - pad - 62}
-            y={heroY + 44}
-            width={62}
-            height={16}
-            rx={radius(template.tokens.radius.pill)}
-            fill={color.primary}
+            x={W - pad - 46 - 5 - 40}
+            y={heroY + 29}
+            width={40}
+            height={11}
+            rx={rPill}
+            fill="none"
+            stroke={color.border}
+            strokeWidth={1}
           />
           {(() => {
             const x = pad;
-            const w = 96;
+            const w = 86;
             const path = maskPath(imageMask, x, heroY, w, heroH);
             return path ? (
               <path d={path} fill={color.primary} opacity={0.45} />
@@ -191,23 +256,15 @@ export function TemplatePreview({ templateKey }: { templateKey: TemplateKey }) {
 
       {hero === 'stage' && (
         <>
+          <rect x={pad} y={heroY} width={inner} height={heroH} rx={rMd} fill={color.primary} opacity={0.9} />
+          <Bar x={W - pad - 118} y={heroY + 10} w={104} h={8} fill={color.onPrimary} opacity={0.95} />
+          <Bar x={W - pad - 118} y={heroY + 22} w={64} h={4} fill={color.onPrimary} opacity={0.7} />
           <rect
-            x={pad}
-            y={heroY}
-            width={inner}
-            height={heroH}
-            rx={rMd}
-            fill={color.primary}
-            opacity={0.9}
-          />
-          <Bar x={W - pad - 122} y={heroY + 22} w={110} h={9} fill={color.onPrimary} opacity={0.95} />
-          <Bar x={W - pad - 122} y={heroY + 38} w={74} h={5} fill={color.onPrimary} opacity={0.7} />
-          <rect
-            x={W - pad - 122}
-            y={heroY + 50}
-            width={54}
-            height={14}
-            rx={radius(template.tokens.radius.pill)}
+            x={W - pad - 118}
+            y={heroY + 30}
+            width={44}
+            height={10}
+            rx={rPill}
             fill={color.onPrimary}
             opacity={0.95}
           />
@@ -216,42 +273,59 @@ export function TemplatePreview({ templateKey }: { templateKey: TemplateKey }) {
 
       {hero === 'ledger' && (
         <>
-          {/* No decorative image: a banner strip over a facts list of hours, phone, address. */}
-          <rect x={pad} y={heroY} width={inner} height={3} fill={color.primary} />
-          <Bar x={W - pad - 130} y={heroY + 14} w={130} h={9} fill={color.text} opacity={0.9} />
-          {[0, 1, 2].map((row) => (
+          <rect x={pad} y={heroY} width={inner} height={2.5} fill={color.primary} />
+          <Bar x={W - pad - 120} y={heroY + 9} w={120} h={8} fill={color.text} opacity={0.9} />
+          {[0, 1].map((row) => (
             <g key={row}>
+              <Bar x={W - pad - 40} y={heroY + 24 + row * 9} w={40} h={3.5} fill={color.textMuted} />
               <Bar
-                x={W - pad - 46}
-                y={heroY + 34 + row * 13}
-                w={46}
-                h={4}
-                fill={color.textMuted}
-              />
-              <Bar
-                x={W - pad - 118}
-                y={heroY + 34 + row * 13}
-                w={62}
-                h={4}
+                x={W - pad - 104}
+                y={heroY + 24 + row * 9}
+                w={56}
+                h={3.5}
                 fill={color.text}
                 opacity={0.55}
               />
             </g>
           ))}
-          <rect
-            x={pad}
-            y={heroY + 30}
-            width={58}
-            height={30}
-            rx={rSm}
-            fill={color.secondary}
-            opacity={0.35}
-          />
+          <rect x={pad} y={heroY + 10} width={64} height={30} rx={rSm} fill={color.secondary} opacity={0.35} />
         </>
       )}
 
-      {/* --------------------- the products grid, one of three bodies --------------------- */}
-      {Array.from({ length: gridColumns }, (_, i) => {
+      {/* ---- category circles: the department row every commerce home opens with ---- */}
+      {Array.from({ length: CIRCLES }, (_, i) => {
+        const cx = W - pad - circleD / 2 - i * (circleD + 14);
+        return (
+          <g key={i}>
+            <circle
+              cx={cx}
+              cy={circlesY + circleD / 2}
+              r={circleD / 2}
+              fill={color.primary}
+              opacity={i === 0 ? 0.9 : 0.35}
+              stroke={color.border}
+              strokeWidth={1}
+            />
+            <Bar
+              x={cx - 8}
+              y={circlesY + circleD + 3}
+              w={16}
+              h={2.5}
+              fill={color.textMuted}
+            />
+          </g>
+        );
+      })}
+      {/* trust strip at the far end of the row — three small ticks */}
+      {[0, 1, 2].map((i) => (
+        <g key={i}>
+          <circle cx={pad + 4 + i * 30} cy={circlesY + 6} r={3} fill={color.secondary} opacity={0.8} />
+          <Bar x={pad + 10 + i * 30} y={circlesY + 4.5} w={16} h={3} fill={color.textMuted} />
+        </g>
+      ))}
+
+      {/* --------------------- the product grid: four commerce cards --------------------- */}
+      {Array.from({ length: GRID_COLUMNS }, (_, i) => {
         // RTL: the first card sits at the inline start, i.e. the right edge.
         const x = W - pad - cardW - i * (cardW + gap);
         const artPath = maskPath(imageMask, x, cardsY, cardW, artH);
@@ -286,90 +360,104 @@ export function TemplatePreview({ templateKey }: { templateKey: TemplateKey }) {
               />
             )}
 
-            {/* `overlay`: name and price sit ON the picture, over a scrim. No description. */}
+            {/* `overlay`: name and price sit ON the picture, over a scrim; the button floats too. */}
             {productCard === 'overlay' && (
               <>
                 <rect
                   x={x}
-                  y={cardsY + cardsH - 24}
+                  y={cardsY + cardsH - 30}
                   width={cardW}
-                  height={24}
+                  height={30}
+                  rx={rMd}
                   fill={color.background}
-                  opacity={0.72}
+                  opacity={0.78}
                 />
                 <Bar
-                  x={x + cardW - 6 - cardW * 0.55}
-                  y={cardsY + cardsH - 18}
-                  w={cardW * 0.55}
+                  x={x + cardW - 5 - cardW * 0.6}
+                  y={cardsY + cardsH - 26}
+                  w={cardW * 0.6}
+                  h={3.5}
                   fill={color.text}
                   opacity={0.9}
                 />
                 <Bar
-                  x={x + cardW - 6 - cardW * 0.3}
-                  y={cardsY + cardsH - 10}
+                  x={x + cardW - 5 - cardW * 0.3}
+                  y={cardsY + cardsH - 19}
                   w={cardW * 0.3}
+                  h={3.5}
                   fill={color.primary}
                 />
               </>
             )}
 
-            {/* `framed`: the only body carrying a description sentence. */}
-            {productCard === 'framed' && (
+            {/* `framed` / `spec`: name, price bubble, then the full-width add-to-cart button. */}
+            {productCard !== 'overlay' && (
               <>
                 <Bar
-                  x={x + cardW - 8 - cardW * 0.6}
-                  y={cardsY + artH + 7}
-                  w={cardW * 0.6}
-                  fill={color.text}
-                  opacity={0.85}
-                />
-                <Bar
-                  x={x + cardW - 8 - cardW * 0.75}
-                  y={cardsY + artH + 16}
-                  w={cardW * 0.75}
-                  h={3}
-                  fill={color.textMuted}
-                />
-                <Bar
-                  x={x + cardW - 8 - cardW * 0.35}
-                  y={cardsY + artH + 24}
-                  w={cardW * 0.35}
-                  fill={color.primary}
-                />
-              </>
-            )}
-
-            {/* `spec`: a definition list — price, availability, SKU. */}
-            {productCard === 'spec' && (
-              <>
-                <Bar
-                  x={x + cardW - 6 - cardW * 0.62}
-                  y={cardsY + artH + 6}
+                  x={x + cardW - 5 - cardW * 0.62}
+                  y={cardsY + artH + 5}
                   w={cardW * 0.62}
+                  h={3.5}
                   fill={color.text}
                   opacity={0.85}
                 />
-                {[0, 1, 2].map((row) => (
-                  <g key={row}>
+                {productCard === 'spec' ? (
+                  <>
                     <Bar
-                      x={x + cardW - 6 - cardW * 0.34}
-                      y={cardsY + artH + 16 + row * 8}
-                      w={cardW * 0.34}
-                      h={3}
+                      x={x + cardW - 5 - cardW * 0.4}
+                      y={cardsY + artH + 12}
+                      w={cardW * 0.4}
+                      h={2.5}
                       fill={color.textMuted}
                     />
                     <Bar
-                      x={x + 6}
-                      y={cardsY + artH + 16 + row * 8}
-                      w={cardW * 0.26}
-                      h={3}
-                      fill={row === 0 ? color.primary : color.text}
-                      opacity={row === 0 ? 1 : 0.5}
+                      x={x + 5}
+                      y={cardsY + artH + 12}
+                      w={cardW * 0.28}
+                      h={2.5}
+                      fill={color.text}
+                      opacity={0.5}
                     />
-                  </g>
-                ))}
+                  </>
+                ) : (
+                  <Bar
+                    x={x + cardW - 5 - cardW * 0.8}
+                    y={cardsY + artH + 12}
+                    w={cardW * 0.8}
+                    h={2.5}
+                    fill={color.textMuted}
+                  />
+                )}
+                <rect
+                  x={x + cardW - 5 - 22}
+                  y={cardsY + artH + 17}
+                  width={22}
+                  height={7}
+                  rx={Math.max(rPill, 2)}
+                  fill={color.primary}
+                  opacity={0.18}
+                />
+                <Bar x={x + cardW - 5 - 18} y={cardsY + artH + 19} w={14} h={3} fill={color.primary} />
               </>
             )}
+
+            <rect
+              x={x + 4}
+              y={btnY}
+              width={cardW - 8}
+              height={8}
+              rx={Math.max(rPill, 2)}
+              fill={color.primary}
+              opacity={productCard === 'overlay' ? 0.95 : 1}
+            />
+            <Bar
+              x={x + cardW / 2 - 8}
+              y={btnY + 2.75}
+              w={16}
+              h={2.5}
+              fill={color.onPrimary}
+              opacity={0.95}
+            />
           </g>
         );
       })}
