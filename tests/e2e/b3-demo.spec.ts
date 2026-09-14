@@ -96,7 +96,9 @@ test('the form refuses bad input in Arabic, without losing what was typed', asyn
   await page.locator('#requestedPrefix').fill(PREFIX);
   await page.getByRole('button', { name: 'أرسل الطلب' }).click();
 
-  const alert = page.getByRole('alert');
+  // Scoped to the form's own notice: Next's route announcer is also role="alert" since 16.3.x,
+  // and a bare getByRole('alert') is a strict-mode violation against two elements.
+  const alert = page.locator('.sbp-notice[role="alert"]');
   await expect(alert).toBeVisible();
   await expect(alert.locator('[data-field="whatsapp"]')).toContainText('صيغة دولية');
 
