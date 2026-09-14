@@ -1,5 +1,9 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  ABSOLUTE_MAX_UPLOAD_BYTES,
   BYTES_PER_MEGABYTE,
   MAX_ALT_LENGTH,
   MEDIA_ERROR_CODES,
@@ -321,5 +325,34 @@ describe('alt text', () => {
     const bad = productImageAltSchema.safeParse('photo');
     expect(bad.success).toBe(false);
     if (!bad.success) expect(bad.error.issues[0]?.message).toMatch(ARABIC);
+  });
+});
+
+/**
+ * THE FRAMEWORK'S BODY BUFFER VS THIS PLATFORM'S UPLOAD CEILING (2026-09-07 audit).
+ *
+ * Next 16 clones and buffers the request body when a proxy runs, capped by
+ * `experimental.proxyClientMaxBodySize` — DEFAULT 10MB, and over the cap the body is silently
+ * TRUNCATED rather than refused. `ABSOLUTE_MAX_UPLOAD_BYTES` is 25MB, so every upload in between
+ * arrived at the route as a short file and failed as if the merchant's photo were corrupt.
+ *
+ * `next.config.ts` cannot import from `src/` (it sits outside the guardrail scan roots), so the two
+ * numbers cannot share a constant. This is what keeps them in step: raise the upload ceiling and
+ * this test fails until the buffer is raised with it.
+ */
+describe('the proxy body buffer', () => {
+  it('is larger than the largest upload the platform will accept', () => {
+    const config = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), '../../next.config.ts'),
+      'utf8',
+    );
+
+    const declared = /proxyClientMaxBodySize:\s*'(\d+)mb'/.exec(config);
+    expect(declared, 'next.config.ts must set experimental.proxyClientMaxBodySize').not.toBeNull();
+
+    const bufferBytes = Number(declared![1]) * 1024 * 1024;
+    // Strictly greater: the cap covers the whole multipart envelope (boundaries, the `alt` field,
+    // headers), so a file at exactly the ceiling still needs room to arrive whole.
+    expect(bufferBytes).toBeGreaterThan(ABSOLUTE_MAX_UPLOAD_BYTES);
   });
 });

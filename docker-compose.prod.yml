@@ -378,10 +378,31 @@ services:
     restart: unless-stopped
     volumes:
       - uptime_kuma_data:/app/data
-      # Read-only access to the host's Docker socket is what lets Kuma monitor CONTAINERS rather
-      # than only URLs — a worker that has crash-looped for an hour serves no HTTP and would
-      # otherwise be invisible to a purely external monitor.
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      #
+      # THE HOST DOCKER SOCKET IS NOT MOUNTED HERE, AND MUST NOT BE (2026-09-07 audit).
+      #
+      # It used to be, as `/var/run/docker.sock:/var/run/docker.sock:ro`, so that Kuma could watch
+      # CONTAINERS rather than only URLs. The `:ro` in that line does not do what it looks like:
+      # it makes the socket FILE read-only, and the Docker API is not a file. A process that can
+      # open the socket can still POST to it — and `POST /containers/create` with
+      # `Privileged: true` and the host root filesystem bind-mounted is root on the VPS, from
+      # inside the container. Mounting this socket grants full host takeover, read-only flag or not.
+      #
+      # That matters here more than it would elsewhere, because this container is REACHABLE: Caddy
+      # publishes it on status.{$DOMAIN} behind basic auth, and Kuma has its own login besides. Two
+      # passwords are a fine bar for "see the uptime graphs" and much too thin a bar for "become
+      # root on the machine that holds every merchant's database".
+      #
+      # WHAT IS LOST, AND HOW IT IS COVERED. Container-level monitoring — a worker that crash-loops
+      # serves no HTTP and is invisible to an external probe. Two things already cover it without
+      # this mount: `/internal/health` is probed through Caddy, and the backup round pushes to
+      # Kuma's `/api/push/{token}` on success, so a silent night is itself the alert (see the
+      # Caddyfile note on @status_push). Compose's own `restart: unless-stopped` plus the
+      # healthchecks on postgres and redis handle recovery.
+      #
+      # If container monitoring is genuinely wanted later, the way to have it is a read-only socket
+      # PROXY (e.g. tecnativa/docker-socket-proxy with CONTAINERS=1 and every write verb off) on
+      # the internal network — never the raw socket.
     mem_limit: 384m
     networks: [internal]
 
@@ -427,7 +448,15 @@ services:
       # request rather than render "unavailable". The cost of living in a flushable database is
       # bounded and self-healing: a flush loses at most one pending run-request (the button simply
       # re-enables) and one status card (the next round rewrites it).
-      REDIS_URL: redis://redis:6379/${REDIS_CACHE_DB:-0}
+      #
+      # CARRIES THE PASSWORD. It did not, and Redis runs with `--requirepass` (see the redis
+      # service above) — so this connection was rejected with NOAUTH on every attempt, and the
+      # whole Q23 control channel it exists for was dead: the owner's «شغّل الآن» button wrote a
+      # key nobody could read, and the backups screen's status card had nothing to render. Silently,
+      # because a backup that runs on its cron and cannot report is indistinguishable from one that
+      # reports "idle". Every other service in this file interpolates REDIS_PASSWORD; this line was
+      # the one that did not. 2026-09-07 audit.
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/${REDIS_CACHE_DB:-0}
       BACKUP_CONTROL_PREFIX: ${BACKUP_CONTROL_PREFIX:-backup:}
     volumes:
       - backup_workdir:/var/tmp/backup

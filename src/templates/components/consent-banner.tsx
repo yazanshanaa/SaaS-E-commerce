@@ -69,15 +69,20 @@ export function ConsentBanner({ labels, privacyHref }: ConsentBannerProps) {
             </a>
           </p>
         </div>
+        {/*
+          THE PRIMARY COMES FIRST, IN THE DOM. Every other action pair on a storefront leads with the
+          filled button — the hero, the contact block, the map — and this bar led with the ghost one,
+          so «موافق» landed second in reading order while «اطلب عبر واتساب» lands first everywhere
+          else. A visitor should not have to re-read which button is which because one component
+          disagrees with the page.
+
+          Fixed in the MARKUP rather than with `flex-direction: row-reverse`, which was tried and is
+          the wrong tool twice over: it would have left the tab order reversed against the visual
+          order — a keyboard user tabbing to the first button would reach «رفض» — and the container
+          is `.sf-actions`, shared with every other action row on the storefront, so a rule here
+          could not have been scoped to the consent bar without a class that does not exist.
+        */}
         <div className="sf-actions">
-          <button
-            type="button"
-            className="sf-btn sf-btn--ghost"
-            onClick={() => void answer(false)}
-            disabled={busy}
-          >
-            {labels.decline}
-          </button>
           <button
             type="button"
             className="sf-btn"
@@ -85,6 +90,14 @@ export function ConsentBanner({ labels, privacyHref }: ConsentBannerProps) {
             disabled={busy}
           >
             {labels.accept}
+          </button>
+          <button
+            type="button"
+            className="sf-btn sf-btn--ghost"
+            onClick={() => void answer(false)}
+            disabled={busy}
+          >
+            {labels.decline}
           </button>
         </div>
       </div>

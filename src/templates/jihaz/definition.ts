@@ -25,11 +25,31 @@ import type { TemplateDefinition } from '../types';
  */
 export const jihaz: TemplateDefinition = {
   key: 'jihaz',
+  /*
+   * THE IDENTITY FACE — headings, and what `site-contract/templates.ts` records as this template's
+   * `fontKey`. It stays exactly what it always was; 12.E did not move it.
+   */
   font: {
     family: 'Rubik',
     dir: 'rubik',
     regular: 'rubik-v31-arabic-regular.woff2',
     bold: 'rubik-v31-arabic-700.woff2',
+  },
+  /*
+   * THE BODY FACE (Phase 12.E), new. Every template used to set ONE family for headings and copy
+   * alike, which a critic pass measured as 146 elements in one face against 1 in another and named
+   * as a large part of why the pages read flat. Arabic has no uppercase and no small-caps, so face
+   * is one of only three hierarchy levers it has.
+   *
+   * The (identity, body) tuple is unique across the nine, so the pairing SHARPENS the anti-reskin
+   * distance instead of collapsing it — giving all nine the same body face would have fixed the
+   * contrast and flattened the set.
+   */
+  textFont: {
+    family: 'IBM Plex Sans Arabic',
+    dir: 'ibm-plex-sans-arabic',
+    regular: 'ibm-plex-sans-arabic-v15-arabic-regular.woff2',
+    bold: 'ibm-plex-sans-arabic-v15-arabic-700.woff2',
   },
   /**
    * `stage` · `spec` · `index` · `notch` — distance 2 from سوق نيون (card, categories), 2 from
@@ -83,9 +103,9 @@ export const jihaz: TemplateDefinition = {
       onPrimary: '#000000',
       onSecondary: '#000000',
       surfaceAlt: '#29303E',
-      textMuted: '#9197A1',
+      textMuted: '#ACB1B8',
       border: '#5C6675',
-      link: '#58B7E6',
+      link: '#61BBE7',
       accent: '#8FD0A9',
       /** Midnight by design — already the dark answer, like سوق نيون / ورشة / بيت. */
       scheme: 'dark',
@@ -111,6 +131,7 @@ export const jihaz: TemplateDefinition = {
     },
     type: {
       family: "'Rubik', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif",
+      textFamily: "'IBM Plex Sans Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif",
       displayWeight: '700',
       bodyWeight: '400',
       xs: '0.75rem',

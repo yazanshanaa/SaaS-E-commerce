@@ -89,8 +89,23 @@
  * balanced and costs nothing on a phone, where the grid is one column and the cap never binds.
  */
 [data-template='diwan'] .sf-hero__media {
+  /*
+   * `inline-size: 100%` is what stops the cap becoming a collapse (2026-09-07 critic pass).
+   *
+   * With `max-inline-size` alone, a media box holding no `<img>` — only the typographic
+   * placeholder, which is the state of most shops until a merchant uploads photography — has no
+   * intrinsic width to cap. It shrank to the width of the fallback glyph, and
+   * `margin-inline-start: auto` then stranded that at the far edge: measured 57×68px marooned in
+   * roughly 700px of empty column, on the FIRST SCREEN of the storefront.
+   *
+   * So the box now always fills its column and the cap does what the note below describes.
+   * `justify-self: end` keeps the same alignment the auto margin was expressing, without the
+   * side effect of consuming the free space when there is nothing to push.
+   */
+  inline-size: 100%;
   max-inline-size: 26rem;
-  margin-inline-start: auto;
+  justify-self: end;
+  margin-inline-start: 0;
 }
 
 /* ------------------------------------------------------------------ card -- */

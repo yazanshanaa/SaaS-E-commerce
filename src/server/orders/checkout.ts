@@ -172,7 +172,17 @@ export async function checkoutCart(input: CheckoutCartInput): Promise<CheckoutCa
       }
 
       const products = await tx.product.findMany({
-        where: { tenantId: input.tenantId, slug: { in: [...quantityBySlug.keys()] }, published: true },
+        // `archivedAt: null` alongside `published`, the same pair every storefront query uses
+        // (`VISIBLE` in src/app/site/_data/products.ts). Without it an ARCHIVED product was still
+        // buyable: archiving removes it from every page, so the merchant believes it is off sale,
+        // but a cart persisted in localStorage still quoted and checked out — at whatever price the
+        // row was last saved with, which is often exactly why it was archived. 2026-09-07 audit.
+        where: {
+          tenantId: input.tenantId,
+          slug: { in: [...quantityBySlug.keys()] },
+          published: true,
+          archivedAt: null,
+        },
         select: {
           id: true,
           slug: true,

@@ -51,7 +51,13 @@
 }
 
 [data-template='bayt'] .sf-brand__tag {
-  letter-spacing: 0.06em;
+  /*
+   * ZERO. Arabic letters JOIN, and positive tracking pulls a joined word apart into loose glyphs —
+   * the same defect as the negative display tracking removed from this template's definition, in the
+   * other direction. Tracking a label is a Latin small-caps reflex; in Arabic the emphasis has to
+   * come from weight, size or colour. The QA gate counts every element that carries it.
+   */
+  letter-spacing: 0;
 }
 
 /*
@@ -205,7 +211,7 @@
   border: 1px solid var(--t-secondary);
   color: var(--t-accent);
   border-radius: var(--t-radius-sm);
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
 }
 
 /* The «خلص» modifier, restated at a specificity that survives the rule above — see the same note in
@@ -217,7 +223,7 @@
 
 [data-template='bayt'] .sf-btn {
   border-radius: var(--t-radius-pill);
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   padding-inline: var(--t-space-xl);
 }
 
@@ -324,7 +330,7 @@
 [data-template='bayt'] .sf-trust__title {
   font-size: var(--t-text-lg);
   font-weight: var(--t-weight-body);
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
 
 /*
@@ -379,7 +385,7 @@
 }
 
 [data-template='bayt'] .sf-stat__label {
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
 }
 
 /* --------------------------------------------- Phase 9: the search field -- */
@@ -403,7 +409,7 @@
 }
 
 [data-template='bayt'] .sf-search__label {
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
   font-size: var(--t-text-sm);
   color: var(--t-text-muted);
 }

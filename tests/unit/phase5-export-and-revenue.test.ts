@@ -59,7 +59,7 @@ describe('the README and the orders section', () => {
   it('names the customer file, and warns about it, when it IS included', () => {
     const readme = buildReadme({ ...base, orders: 3, customerIdentifiers: true });
     expect(readme).toContain('orders-customers.csv');
-    expect(readme).toContain('احتفظ فيه بمكان آمن');
+    expect(readme).toContain('احتفظ به في مكان آمن');
     // The apostrophe a phone number picks up from the formula guard, explained rather than
     // discovered.
     expect(readme).toContain('علامة اقتباس');

@@ -253,7 +253,7 @@ export function deriveColorTokens(
    * palette, e.g. surfaces at both extremes — it falls back to whichever of black or white clears
    * the most ground rather than returning something that passes nowhere.
    */
-  const guard = (color: string, against: string[], threshold: number): string => {
+  const guard = (color: string, against: readonly string[], threshold: number): string => {
     const worstRatio = (candidate: string): number =>
       Math.min(...against.map((target) => contrastRatio(candidate, target)));
 
@@ -302,7 +302,57 @@ export function deriveColorTokens(
     );
   };
 
-  const surfaces = [base.background, surface, surfaceAlt];
+  /*
+    THE BAND GROUNDS AT FULL STRENGTH, and the guard sees them.
+
+    The weights are bigger than the first attempt's 0.04 / 0.08 for a measured reason: at 4% a deep
+    band on this platform's own QA tenant rendered #f9f2f4 against a #FAF3F5 page — ONE part in 255.
+    The bands painted, the alternation was assigned correctly, and no visitor could see any of it.
+    A band that cannot be distinguished from the page is not a band.
+  */
+  /*
+    THE DEEP BAND. Weight computed by sweeping every template's own palette for the smallest step that
+    clears 1.26:1 against its page (0.130 light / 0.105 dark), set with headroom. At the previous 0.07
+    the ladder measured 1.13:1 and 71% of a page rendered as one flat colour with the alternation
+    working perfectly and invisibly.
+  */
+  const deepGround = mix(base.background, base.text, dark ? 0.15 : 0.14);
+
+  /*
+    THE TINTED BAND IS DERIVED AGAINST THE DEEP ONE, not just against the page — and that is the fix
+    for a gap the first version of this code shipped.
+
+    Contrast is a LUMINANCE relationship, and a hue change contributes nothing to it. Mixing the page
+    toward the brand colour by a fixed weight happened to land, on five of the nine palettes, at
+    almost exactly the deep band's luminance: ديوان measured deep~tint at 1.016, رفّ at 1.002. Both
+    bands cleared the page comfortably and were indistinguishable FROM EACH OTHER, so a page with
+    three grounds squinted to two and the alternation read as one repeated stripe.
+
+    So the weight is walked until the tinted band is a real step away from the deep one as well. It
+    searches upward first (a stronger tint, further from the page) and then downward (a wash sitting
+    between the page and the deep band) — either side satisfies the eye, and trying both is what
+    keeps a palette whose primary happens to sit near its own text colour from having no answer.
+  */
+  const tintFor = (): string => {
+    const base0 = dark ? 0.28 : 0.18;
+    const ok = (candidate: string): boolean =>
+      contrastRatio(base.background, candidate) >= 1.26 &&
+      contrastRatio(deepGround, candidate) >= 1.18;
+
+    for (let step = 0; step <= 14; step += 1) {
+      const up = mix(base.background, base.primary, Math.min(0.6, base0 + step * 0.025));
+      if (ok(up)) return up;
+      const down = mix(base.background, base.primary, Math.max(0.04, base0 - step * 0.02));
+      if (ok(down)) return down;
+    }
+    // Nothing satisfied both; the page relationship is the one that must hold.
+    return mix(base.background, base.primary, base0);
+  };
+
+  const fullGrounds = { deep: deepGround, tint: tintFor() };
+
+  const surfaces3 = [base.background, surface, surfaceAlt];
+  const surfaces5 = [...surfaces3, fullGrounds.deep, fullGrounds.tint];
 
   /**
    * The PRIMARY text colour is guarded too, against the same three surfaces.
@@ -316,14 +366,18 @@ export function deriveColorTokens(
    * same colour, guarded on line below, came out fine. The most important text on the page was
    * the only text not covered.
    */
-  const text = guard(base.text, surfaces, AA_NORMAL);
-  const muted = guard(rawMuted, surfaces, AA_NORMAL);
+  const deriveText = (against: readonly string[]) => ({
+    text: guard(base.text, against, AA_NORMAL),
+    muted: guard(rawMuted, against, AA_NORMAL),
+    link: guard(base.primary, against, AA_NORMAL),
+    accent: guard(base.secondary, against, AA_NORMAL),
+  });
   /**
    * The inline link colour, derived from the brand accent at the BODY-TEXT threshold. A brand
    * colour that clears 3:1 as a button fill is routinely under 4.5:1 as a sentence set in it —
    * which is the single most common contrast failure in a themed storefront.
    */
-  const link = guard(base.primary, surfaces, AA_NORMAL);
+
   /**
    * The same treatment for the SECONDARY accent, because templates set text in it too.
    *
@@ -334,10 +388,79 @@ export function deriveColorTokens(
    * that legitimately passes the write-time check then gets the most important number on the card
    * — the price — at around 1.9:1.
    */
-  const accent = guard(base.secondary, surfaces, AA_NORMAL);
+
   // A border is non-text UI: 3:1 is the AA bar, and holding a hairline to 4.5:1 would draw a
   // box round every card loud enough to fight the content.
   const border = ensureContrast(rawBorder, base.background, AA_LARGE);
+
+  /**
+   * FULL-STRENGTH BANDS FIRST; SHRINK THE BAND ONLY WHEN THE PALETTE MAKES THAT IMPOSSIBLE.
+   *
+   * This got the priority backwards once and the result shipped as far as a critic pass, so the
+   * reasoning is worth keeping in full.
+   *
+   * ATTEMPT ONE put the grounds in `surfaces` unconditionally. Correct instinct — text that sits on
+   * a band must be guarded against that band — but it can make the problem unsolvable. On the
+   * white-page-with-black-cards palette `a2-templates.test.ts` keeps deliberately, the feasible
+   * luminance band for body text is about `[0.177, 0.183]`; a tinted ground over white sits near
+   * L 0.87, whose dark ceiling is 0.154, below the whole band. No text colour exists.
+   *
+   * ATTEMPT TWO inverted it: keep three surfaces and walk the ground's strength down until the
+   * existing tokens clear it. That never fails — and it is why the bands became invisible. `guard()`
+   * converges each token to just ABOVE 4.5:1 on its worst surface, so `textMuted` came out at 4.62
+   * and `accent` at 4.61 against surface-alt. Any darkening of any ground pushes those under, so the
+   * walk ran almost to zero every time: the QA tenant shipped `--t-ground-deep` ONE part in 255 from
+   * `--t-bg`. The rhythm was assigned, the density varied, and the page was one flat colour.
+   *
+   * THE ORDER THAT IS ACTUALLY RIGHT: ask for the full band, guard the text against it, and check
+   * whether that worked. On a normal palette it does — `textMuted` simply lands a little darker,
+   * which costs nothing and is what "guarded against every surface it can land on" always meant. On
+   * a hostile palette it cannot, and only then does the band yield, because a weak band is a much
+   * smaller loss than unreadable copy.
+   */
+  const clearsAll = (tokens: ReturnType<typeof deriveText>, against: readonly string[]): boolean =>
+    [tokens.text, tokens.muted, tokens.link, tokens.accent].every((colour) =>
+      against.every((target) => contrastRatio(colour, target) >= AA_NORMAL),
+    );
+
+  /*
+    TRY THE FULL BAND FIRST, AND IF IT DOES NOT FIT, RE-DERIVE — do not keep half of the answer.
+
+    The first version of this fallback shrank the grounds but left the TEXT as the five-surface
+    guard had returned it. On the white-page-with-black-cards palette that guard cannot converge, so
+    it returns its best-effort grey — `#6f6f6f`, which is 4.18:1 on the black cards. Shrinking the
+    band then fixed the band and shipped the failing text, which is the one thing this whole module
+    exists to prevent. `a2-templates.test.ts` caught it, correctly.
+  */
+  const ambitious = deriveText(surfaces5);
+  const bandsFit = clearsAll(ambitious, surfaces5);
+  const { text, muted, link, accent } = bandsFit ? ambitious : deriveText(surfaces3);
+
+  /**
+   * The fallback, reached only when the five-surface guard could not converge. Walks the band's
+   * strength down until the tokens — which were computed against those five surfaces and are
+   * therefore the best available — clear it. Terminates at weight zero, where the ground IS
+   * `--t-bg` and every token was guarded against it by construction.
+   */
+  const fitGround = (toward: string, maxWeight: number): string => {
+    const STEPS = 8;
+    for (let step = 0; step <= STEPS; step += 1) {
+      const ground = mix(base.background, toward, (maxWeight * (STEPS - step)) / STEPS);
+      if (
+        [text, muted, link, accent].every((colour) => contrastRatio(colour, ground) >= AA_NORMAL)
+      ) {
+        return ground;
+      }
+    }
+    return base.background;
+  };
+
+  const grounds = bandsFit
+    ? fullGrounds
+    : {
+        deep: fitGround(base.text, dark ? 0.085 : 0.07),
+        tint: fitGround(base.primary, dark ? 0.18 : 0.12),
+      };
 
   return {
     primary: base.primary,
@@ -354,6 +477,8 @@ export function deriveColorTokens(
     // The guard walks lightness toward the far end; against a very light background it can
     // reach near-black, which reads as a heavy frame. Cap it back toward the text colour.
     border: border.passes ? border.color : mix(base.text, base.background, 0.7),
+    groundDeep: grounds.deep,
+    groundTint: grounds.tint,
     /**
      * The scheme of the ground this set was actually derived AGAINST — measured, not copied.
      *
@@ -416,6 +541,90 @@ export function templateCssVars(
     '--t-link': color.link,
     '--t-accent': color.accent,
 
+    /*
+      THE TWO EXTRA GROUNDS (Phase 12.E) — what a band alternates ONTO.
+
+      There were three surfaces before this and none of them could be a band. `--t-bg` is the page,
+      `--t-surface` is a card, and `--t-surface-alt` is derived from the SURFACE — it is the tone a
+      card's own inner plate takes, so a section painted in it reads as a very large card sitting on
+      the page rather than as a change of ground. That is why every attempt to break the monotony by
+      reaching for `--t-surface-alt` produced a page of floating boxes instead of a page of bands.
+
+      `--t-ground-deep` is derived from the BACKGROUND instead, which is the difference that matters:
+      it is the same page, one step further from the reader. Cards keep their contrast against it
+      (they are lifted from `--t-surface`, which has not moved), so a grid band and a text band can
+      sit on different grounds without either losing its card ladder.
+
+      DARK GROUNDS NEED A BIGGER STEP THAN LIGHT ONES. 0.055 vs 0.04 is not a fudge: perceived
+      lightness difference compresses at the dark end, so an equal mix weight that is clearly visible
+      on cream is invisible on charcoal. These two weights land both schemes at roughly the same
+      perceptual distance, which is what keeps the alternation legible on all nine templates.
+
+      NEITHER IS EVER A TEXT GROUND THE GUARD HAS NOT SEEN. Both are within a few percent of
+      `--t-bg`, and `textMuted` above is already guarded against the background, the surface AND
+      surface-alt — the three it can land on. A band changes what is BEHIND the type by a step far
+      smaller than the guard's own margin, so no copy moves out of compliance by being banded.
+    */
+    /*
+      WHATSAPP'S BRAND GREEN, as a named constant rather than a literal in a rule.
+
+      It is the one colour on a storefront that is deliberately NOT the tenant's: a shopper scanning
+      a page finds this green faster than they read any label, and `design/taste.md` records WhatsApp
+      as the conversion on this platform. Emitting it keeps `storefront.css` honest about its own
+      rule that every colour comes from a token, and puts the value in the one file where a change
+      would be reviewed.
+
+      The ink is measured, not assumed — `readableOn` returns whichever of black or white clears the
+      most contrast, which on #25D366 is black at 4.6:1 rather than the white the sheet used to
+      hardcode (2.9:1, an AA failure on the one button this platform most wants pressed).
+    */
+    /*
+      THE PLACEHOLDER MARK, GUARDED AT 3:1 — a token, not a `color-mix()` in the stylesheet.
+      
+      It has been reported twice and got marginally WORSE the second time: `color-mix(in oklab,
+      var(--t-primary) 55%, var(--t-text-muted))` resolved to #A79FA1 at 2.34:1, because
+      `--t-text-muted` is already near-neutral and dominated the mix. `taste.md` hard-bans «صور
+      رمادية فاضية» and that is what twelve of these are.
+      
+      Walking the tenant's PRIMARY until it clears 3:1 against the plate keeps the shop's hue and
+      makes the strength a number a test can assert. 3:1 is the non-text UI bar, which is what a mark
+      on an empty slot is — it must read as placed, not as body copy.
+      
+      NO `opacity` ACCOMPANIES IT (see `.sf-ph__mark`): a ratio computed here and then multiplied by
+      0.55 in the sheet is not a guarantee, it is a number that was true before it was rendered.
+    */
+    '--t-ph-mark': ensureContrast(color.primary, color.surfaceAlt, AA_LARGE).color,
+
+    /*
+      The hero watermark. Same lesson as the mark: it was `--t-text` at 4.5% opacity (1.10:1), then
+      `--t-ground-deep` at full opacity (1.13:1) — two reported fixes that moved it by 0.03. A shape
+      the eye can find needs its own step, so this is the primary at a fifth over the page ground
+      rather than a reuse of a band colour that is tuned for something else.
+    */
+    '--t-watermark': mix(color.background, color.primary, color.scheme === 'dark' ? 0.26 : 0.2),
+
+    '--t-whatsapp': '#25D366',
+    '--t-whatsapp-ink': readableOn('#25D366'),
+
+    '--t-ground-deep': color.groundDeep ?? color.surfaceAlt,
+
+    /*
+      The ONE tinted band: the tenant's own primary, at the weight where it reads as a coloured
+      ground rather than as a filled button the size of a section.
+
+      This is the storefront's answer to "the accent is for data and state only" — a rule the
+      PLATFORM chrome keeps absolutely (design/design.json) and a shop deliberately does not: a
+      merchant's brand colour appearing nowhere but on buttons is why the nine templates read as
+      nine palettes of the same beige page. It is spent ONCE per page, on the band the arrangement
+      marks as the page's turn, and never on two adjacent bands (`storefront.css` enforces that).
+
+      0.14 dark / 0.08 light, for the same compression reason as `--t-ground-deep`, and both far
+      enough from the primary that `--t-text` — guarded against `--t-bg`, which this is a small step
+      from — stays readable on it. A band that needed `--t-on-primary` would be a filled block, not
+      a tint, and would drag every card on it into a second palette.
+    */
+    '--t-ground-tint': color.groundTint ?? color.surfaceAlt,
+
     '--t-radius-sm': tokens.radius.sm,
     '--t-radius-md': tokens.radius.md,
     '--t-radius-lg': tokens.radius.lg,
@@ -429,7 +638,13 @@ export function templateCssVars(
     '--t-space-2xl': tokens.space.xxl,
     '--t-space-3xl': tokens.space.xxxl,
 
-    '--t-font': tokens.type.family,
+    /*
+      `--t-font` IS THE BODY FACE and `--t-font-display` the identity one. A template that pairs
+      nothing resolves both to `family`, so it behaves exactly as it did and `storefront.css` reads
+      one property unconditionally instead of branching.
+    */
+    '--t-font': tokens.type.textFamily ?? tokens.type.family,
+    '--t-font-display': tokens.type.family,
     '--t-weight-display': tokens.type.displayWeight,
     '--t-weight-body': tokens.type.bodyWeight,
     '--t-text-xs': tokens.type.xs,
@@ -452,6 +667,59 @@ export function templateCssVars(
     '--t-measure': tokens.layoutMaxWidth,
 
     /*
+      THE BAND SYSTEM (Phase 12.E). Three tokens that turn a stack of identical stripes into a page.
+
+      Before these, `storefront.css` had exactly ONE rhythm value (`--t-block`) and ONE width
+      (`--t-measure`), so every section on every storefront had the same height of air above it and
+      the same column beneath it. That is the whole of the "it looks unarranged" complaint: a
+      homepage of eight blocks rendered as eight identical stripes, and no amount of per-template
+      colour could rescue a page with no vertical hierarchy in it.
+
+      DERIVED FROM `--t-block` RATHER THAN ADDED TO `TemplateTokens`, deliberately. A template's
+      rhythm is already one decision it makes (رفّ is dense at 3rem, ديوان airy at 5.5rem); three
+      independent numbers per template would be three chances for a sheet to drift out of its own
+      proportion. A ratio keeps the density CONTRAST identical everywhere while the base stays the
+      template's own — which is what makes the alternation read as intentional on all nine.
+
+      0.58 and 1.5 rather than 0.5 and 2: at half, a tight band's padding collapses below its own
+      internal gap and the band stops reading as a band; at double, ديوان's 5.5rem becomes 11rem of
+      air, which on a 390px phone is a full screen of nothing between two sections.
+    */
+    '--t-block-tight': 'calc(var(--t-block) * 0.58)',
+    '--t-block-airy': 'calc(var(--t-block) * 1.5)',
+
+    /*
+      The WIDE container, for bands whose content is a grid rather than a sentence.
+
+      `--t-measure` is a READING width — رفّ sets 64rem, ديوان 70rem — and a four-up product grid
+      inside a reading width is four narrow cards with a wide empty gutter beside them, which is
+      exactly what the category tiles were doing. Grids get their own container so a text band and a
+      grid band can differ in width without either being wrong for its content.
+
+      An additive 9rem rather than a multiplier: a percentage would widen the already-wide templates
+      most and the narrow ones least, when the need is the opposite — the narrower the reading
+      measure, the more a grid wants back.
+    */
+    '--t-shell-wide': 'calc(var(--t-measure) + 9rem)',
+
+    /*
+      THE HERO'S FLOOR, keyed to the hero the template actually renders.
+
+      A `ledger` hero is a facts list and must NOT be tall — stretching a phone number to 70vh is
+      the opposite of what a builders' merchant's customer wants. A `stage` hero is the full-bleed
+      one and carries the page's whole first impression. `split` sits between them.
+
+      `min(_, Nrem)` so a tall desktop does not turn the hero into a scroll-jacking cover: vh alone
+      gives a 1080px screen a 750px hero and a 4K screen a 1600px one, and the second is a mistake.
+    */
+    '--t-hero-min':
+      layout.hero === 'stage'
+        ? 'min(76vh, 39rem)'
+        : layout.hero === 'split'
+          ? 'min(66vh, 34rem)'
+          : 'auto',
+
+    /*
       THE SIGNATURE LAYER (Phase 11). Values, not decisions: the CSS in `storefront.css` selects a
       treatment from the `data-*` attributes the shell stamps, and reads its magnitudes from here.
       Emitting them for every template — including the ones whose value is zero — is what keeps
@@ -461,11 +729,16 @@ export function templateCssVars(
     ...maskVars(layout.imageMask),
     // The press depth of a `printed` or `stamp` button: a SOLID offset, never a blur. Zero elsewhere,
     // so the same rule can be written once and simply do nothing on a `flat` template.
-    '--t-press-depth': signature.button === 'printed' ? '6px' : signature.button === 'stamp' ? '4px' : '0px',
+    '--t-press-depth':
+      signature.button === 'printed' ? '6px' : signature.button === 'stamp' ? '4px' : '0px',
     // Stroke width of the heading mark. `round` linecaps at 3.4px is what makes a squiggle read as
     // drawn by a hand rather than plotted by a machine.
     '--t-mark-stroke':
-      signature.headingMark === 'squiggle' ? '3.4px' : signature.headingMark === 'none' ? '0' : '2px',
+      signature.headingMark === 'squiggle'
+        ? '3.4px'
+        : signature.headingMark === 'none'
+          ? '0'
+          : '2px',
   };
 
   return vars as CSSProperties;
@@ -512,7 +785,9 @@ export function templateThemeCss(template: TemplateDefinition, colors: ResolvedC
   const flipped = templateCssVars(template, colors, counterpart) as Record<string, string>;
   // Only what actually MOVED. A media block that restates forty unchanged tokens is forty more
   // chances for the two lists to drift apart, and it is the diff that documents what the mode is.
-  const changed = Object.entries(flipped).filter(([property, value]) => designed[property] !== value);
+  const changed = Object.entries(flipped).filter(
+    ([property, value]) => designed[property] !== value,
+  );
   if (changed.length === 0) return base;
 
   return `${base}@media (prefers-color-scheme:${target}){.sf-root{${declarations(
@@ -520,8 +795,19 @@ export function templateThemeCss(template: TemplateDefinition, colors: ResolvedC
   )}}}`;
 }
 
-/** `/fonts/zain/zain-v4-arabic-regular.woff2` — the path the shell preloads. */
-export function fontUrl(template: TemplateDefinition, weight: 'regular' | 'bold'): string {
-  const file = weight === 'bold' ? template.font.bold : template.font.regular;
-  return `/fonts/${template.font.dir}/${file}`;
+/**
+ * `/fonts/zain/zain-v4-arabic-regular.woff2` — the paths the shell preloads.
+ *
+ * `face` picks between the template's IDENTITY font (headings) and its BODY font (Phase 12.E). The
+ * body falls back to the identity face when a template pairs nothing, so the two-preload call in the
+ * shell is safe for all nine without branching there.
+ */
+export function fontUrl(
+  template: TemplateDefinition,
+  weight: 'regular' | 'bold',
+  face: 'text' | 'display' = 'text',
+): string {
+  const font = face === 'text' ? (template.textFont ?? template.font) : template.font;
+  const file = weight === 'bold' ? font.bold : font.regular;
+  return `/fonts/${font.dir}/${file}`;
 }

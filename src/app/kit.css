@@ -736,3 +736,115 @@
     max-width: 90rem;
   }
 }
+
+/* The merchant's read-only template card (2026-09-13): one card, no radio, no hover affordance. */
+.sbk-look-grid--single {
+  grid-template-columns: minmax(0, 22rem);
+}
+
+.sbk-look-pick--readonly {
+  cursor: default;
+}
+
+.sbk-look-pick--readonly:hover {
+  border-color: var(--sbx-rule);
+}
+
+/* ---------------------------------------------------------------- hint «!» -- */
+
+/*
+ * `src/app/_components/kit/hint.tsx`. A 20px ink-on-panel mark inline with its label; the open
+ * panel is absolutely positioned under the mark, on the inline-start side (RTL: it grows leftwards
+ * away from the label), capped at 22rem and never wider than the viewport.
+ */
+.sbk-hint {
+  display: inline-block;
+  position: relative;
+  vertical-align: middle;
+  margin-inline-start: 0.35rem;
+  line-height: 1;
+}
+
+.sbk-hint__mark {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 20px;
+  block-size: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--sbx-ink-soft);
+  color: var(--sbx-ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+  background: var(--sbx-panel);
+}
+
+.sbk-hint__mark::-webkit-details-marker {
+  display: none;
+}
+
+.sbk-hint__mark:hover,
+.sbk-hint[open] .sbk-hint__mark {
+  color: var(--sbx-ink);
+  border-color: var(--sbx-ink);
+}
+
+.sbk-hint__mark:focus-visible {
+  outline: 2px solid var(--sbx-accent);
+  outline-offset: 2px;
+}
+
+.sbk-hint__panel {
+  position: absolute;
+  inset-block-start: calc(100% + 6px);
+  inset-inline-end: 0;
+  z-index: 30;
+  inline-size: max-content;
+  max-inline-size: min(22rem, calc(100vw - 2rem));
+  padding: var(--sb-space-3) var(--sb-space-4);
+  border: 1px solid var(--sbx-rule);
+  border-radius: var(--sbx-radius);
+  background: var(--sbx-panel-alt);
+  color: var(--sbx-ink);
+  font-size: var(--sb-text-sm);
+  font-weight: 400;
+  line-height: 1.7;
+  text-align: start;
+  white-space: normal;
+  box-shadow: var(--sbx-shadow);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sbk-hint[open] .sbk-hint__panel {
+    animation: sbk-hint-in 150ms ease-out;
+  }
+
+  @keyframes sbk-hint-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
+
+/* A control and its hint on one line. */
+.sba-with-hint,
+.sbd-with-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sb-space-2);
+  inline-size: 100%;
+}
+
+.sba-with-hint > input,
+.sbd-with-hint > input,
+.sba-with-hint > select,
+.sbd-with-hint > select {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}

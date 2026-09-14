@@ -151,6 +151,13 @@ RUN mkdir -p /opt/standalone \
        --exclude='./tests/e2e' \
        --exclude='./docs/PHASE-9-*' \
        --exclude='./seed-assets' \
+       `# The two the comment above ASSUMED .dockerignore had already handled. It had not:` \
+       `# .pgdata-dev (77MB of a seeded cluster holding every local tenant's rows) was absent` \
+       `# from that list, so this tar — the bundle a MERCHANT receives — would have carried it.` \
+       `# Fixed in .dockerignore too; kept here because this stage is the one that ships to a` \
+       `# customer, and belt-and-braces is this block's whole stated philosophy. 2026-09-07 audit.` \
+       --exclude='./.pgdata*' \
+       --exclude='./*.log' \
        -C /src . \
   && rm -rf /src
 

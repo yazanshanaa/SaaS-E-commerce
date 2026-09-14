@@ -46,6 +46,7 @@ export default async function NewAccountPage() {
               <Field
                 label={t('admin', 'accounts.new.slug')}
                 name="slug"
+                help={t('admin', 'help.newSlug', { example: 'my-shop' })}
                 hint={t('admin', 'accounts.new.slugHint', { example: storefrontHost('my-shop') })}
               >
                 <TextInput name="slug" required />
@@ -95,14 +96,18 @@ export default async function NewAccountPage() {
             <legend className="sba-legend">{t('admin', 'accounts.new.planSection')}</legend>
 
             <div className="sba-row">
-              <Field label={t('admin', 'accounts.new.plan')} name="planKey">
+              <Field label={t('admin', 'accounts.new.plan')} name="planKey" help={t('admin', 'help.newPlan')}>
                 <Select
                   name="planKey"
                   options={plans.map((plan) => ({ value: plan.key, label: plan.name }))}
                 />
               </Field>
 
-              <Field label={t('admin', 'accounts.new.billingPeriod')} name="billingPeriod">
+              <Field
+                label={t('admin', 'accounts.new.billingPeriod')}
+                name="billingPeriod"
+                help={t('admin', 'help.newBillingPeriod')}
+              >
                 <Select
                   name="billingPeriod"
                   options={[
@@ -115,6 +120,7 @@ export default async function NewAccountPage() {
               <Field
                 label={t('admin', 'accounts.new.periodEnd')}
                 name="currentPeriodEnd"
+                help={t('admin', 'help.newPeriodEnd')}
                 hint={t('admin', 'accounts.new.periodEndHint')}
               >
                 <TextInput name="currentPeriodEnd" type="date" defaultValue={defaultPeriodEnd} />

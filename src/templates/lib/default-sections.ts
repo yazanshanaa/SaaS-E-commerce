@@ -54,7 +54,6 @@ export interface DefaultSectionInput {
    */
   hasContact: boolean;
   hasLocation: boolean;
-  gridColumns: 2 | 3 | 4;
 
   // --- Phase 12.A. Each is "content AND entitlement", resolved by the caller ------------------
   /** At least one banner inside its schedule window, on a plan that has the board. */
@@ -103,30 +102,38 @@ export const DEFAULT_ARRANGEMENT_WINDOWS = {
 } as const;
 
 export function buildDefaultSections(input: DefaultSectionInput): StorefrontSection[] {
+  /*
+   * COMMERCE FIRST (2026-09-13, owner-directed).
+   *
+   * The owner's report on the live platform: "the visitor lands on what looks like a blog". The
+   * arrangement was hero → announcements → banners → categories → three product rails → then five
+   * bands of prose. What a visitor to a store expects is the reverse: things to buy, then the
+   * reasons to trust the shop, then the shop's story, then how to reach it. Every large store
+   * orders its home page this way, and a visitor's hands already know it.
+   *
+   *   1. hero          — compact (storefront-commerce.css caps it): name, one line, one button
+   *   2. banner_slider — a promotion the merchant scheduled is the most time-sensitive thing here
+   *   3. categories    — round department tiles, the fastest way into the catalogue
+   *   3b. trust_badges — the features strip (شحن · دفع · إرجاع), under the departments
+   *   4. products_grid — the catalogue itself, 8 cards + «كل المنتجات»
+   *   5. new_arrivals / best_sellers — the two rails, AFTER the main grid rather than around it
+   *   7. announcements — the merchant's notices, now under the catalogue rather than above it
+   *   8. about · store_stats · testimonials — the shop's story and its proof
+   *   9. opening_hours · contact_whatsapp · map — how to reach it, last, as on every store
+   *
+   * `columns` stays UNSET on every product rail so each template's own `layout.gridColumns`
+   * survives — see `productsGridConfig.columns` in site-contract/sections.ts for the long version.
+   * NO `search_bar` section: the header carries the search box on every page.
+   */
   const planned: Array<{ type: SectionType; config: Record<string, unknown> }> = [
     { type: 'hero', config: { align: 'start' } },
   ];
 
-  if (input.hasAnnouncements) planned.push({ type: 'announcements', config: { limit: 3 } });
-  /*
-    ABOVE THE CATALOGUE, in this order, and the order is the whole point of the section.
-
-    A promotion the merchant scheduled is the most time-sensitive thing on the page, so it sits
-    directly under the announcements strip. Search follows it because a visitor who arrived knowing
-    what they want should not have to scroll a category rail to type it.
-  */
   if (input.hasBanners) planned.push({ type: 'banner_slider', config: { limit: 6 } });
-  if (input.hasSearch) planned.push({ type: 'search_bar', config: {} });
-  if (input.hasCategories) planned.push({ type: 'categories', config: { style: 'grid' } });
-  /*
-    `columns` IS DELIBERATELY UNSET on both product rails below.
-
-    `productsGridConfig.columns` in `site-contract/sections.ts` carries the long version of this:
-    the renderer reads `config.columns ?? template.layout.gridColumns`, so an absent count is how a
-    template's own grid survives. Writing `input.gridColumns` here — which is what the existing
-    `products_grid` entry does, and which is now the odd one out — would flatten نيون's two large
-    columns and ورشة's four dense ones into whichever number this file chose.
-  */
+  if (input.hasCategories) planned.push({ type: 'categories', config: { style: 'circles' } });
+  // The features strip (شحن · دفع · إرجاع) sits under the departments, as on every Salla store.
+  if (input.hasTrustBadges) planned.push({ type: 'trust_badges', config: { limit: 4 } });
+  if (input.hasProducts) planned.push({ type: 'products_grid', config: { limit: 8 } });
   if (input.hasNewArrivals) {
     planned.push({
       type: 'new_arrivals',
@@ -135,9 +142,6 @@ export function buildDefaultSections(input: DefaultSectionInput): StorefrontSect
         limit: DEFAULT_ARRANGEMENT_WINDOWS.new_arrivals.take,
       },
     });
-  }
-  if (input.hasProducts) {
-    planned.push({ type: 'products_grid', config: { limit: 12, columns: input.gridColumns } });
   }
   if (input.hasBestSellers) {
     planned.push({
@@ -148,27 +152,18 @@ export function buildDefaultSections(input: DefaultSectionInput): StorefrontSect
       },
     });
   }
-  /*
-    The trust row goes UNDER the catalogue, not over it.
-
-    It answers an objection ("will it arrive, can I return it"), and an objection only exists once
-    the visitor wants something. Above the products it is decoration; below them it is the last
-    thing read before a WhatsApp message gets sent.
-  */
-  if (input.hasTrustBadges) planned.push({ type: 'trust_badges', config: { limit: 3 } });
+  if (input.hasAnnouncements) planned.push({ type: 'announcements', config: { limit: 3 } });
   if (input.hasAbout) planned.push({ type: 'about', config: {} });
   if (input.hasStoreStats) planned.push({ type: 'store_stats', config: { limit: 3 } });
   if (input.hasTestimonials) planned.push({ type: 'testimonials', config: { limit: 3 } });
-  /*
-    Hours immediately before contact, because they are the same question.
-
-    `showOpenNow` stays at its schema default of false: the pill is only honest if the merchant
-    keeps the table current, and a wrong «مفتوح الآن» costs more than an absent one. A merchant who
-    wants it turns it on in the dashboard, which is a decision this file must not make for them.
-  */
   if (input.hasOpeningHours) planned.push({ type: 'opening_hours', config: {} });
   if (input.hasContact) planned.push({ type: 'contact_whatsapp', config: {} });
-  if (input.hasLocation) planned.push({ type: 'map', config: {} });
+  /*
+   * «موقعنا» is its own band only when there is no contact block to fold it into:
+   * `ContactWhatsappSection` renders the same address and the two map deep links itself.
+   * Stored arrangements are never migrated — a merchant who kept «موقعنا» chose it.
+   */
+  if (input.hasLocation && !input.hasContact) planned.push({ type: 'map', config: {} });
 
   return planned.map((section, index) => ({
     id: `default-${section.type}`,

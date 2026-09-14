@@ -1,8 +1,10 @@
 import type { SectionConfig } from '@/shared/site-contract';
-import { ClockIcon, PhoneIcon } from '../components/icons';
+import { isolateRanges } from '../lib/ltr-ranges';
+import { ClockIcon, MapPinIcon, NavigationIcon, PhoneIcon } from '../components/icons';
 import { WhatsappOrder } from '../components/whatsapp-order';
 import { st } from '../i18n';
 import { resolveHoursLine } from '../lib/hours-summary';
+import { resolveMapTarget } from '../lib/map-links';
 import { normaliseWhatsappNumber } from '../lib/whatsapp';
 import { SECTION_ANCHORS } from '../section-anchors';
 import type { StorefrontContext } from '../view-model';
@@ -43,6 +45,30 @@ export function ContactWhatsappSection({ context, config, anchor }: ContactSecti
   const hoursLine = resolveHoursLine(context.openingHours, site.hours);
 
   /**
+   * THE LOCATION LIVES HERE NOW (2026-09-09) — the same resolver «موقعنا» uses, on the block that
+   * already prints the address.
+   *
+   * The default arrangement used to put `map` directly after this section, and both draw
+   * `site.address` into a `.sf-facts` row. So a shop with an address ended its home page on two
+   * consecutive bands whose only difference was that the second one also had two buttons: the
+   * critic's read was that «موقعنا» is "its own band for an address the section above already
+   * printed", and it was right. Two deep links are not a section.
+   *
+   * `resolveMapTarget` is the SAME fallback chain (coordinates → the section's own query →
+   * `Site.mapQuery` → `Site.address`), so this renders exactly when the standalone section would
+   * have. `MapSection` is untouched and still available: a merchant who deliberately added «موقعنا»
+   * keeps it, and `buildDefaultSections` now only plans one when there is no contact block to fold
+   * it into. Stored arrangements are not migrated — see the note there.
+   */
+  const mapTarget = resolveMapTarget({
+    lat: site.mapLat,
+    lng: site.mapLng,
+    configQuery: null,
+    siteQuery: site.mapQuery,
+    address: site.address,
+  });
+
+  /**
    * A SHOP-level enquiry, not a product one.
    *
    * The product message template takes `{product}` and `{shop}`; feeding the shop name to both
@@ -79,7 +105,7 @@ export function ContactWhatsappSection({ context, config, anchor }: ContactSecti
                 <dt>
                   <ClockIcon className="sf-btn__icon" /> {st('contact.hours')}
                 </dt>
-                <dd>{hoursLine}</dd>
+                <dd>{isolateRanges(hoursLine)}</dd>
               </div>
             ) : null}
             {site.address ? (
@@ -97,6 +123,34 @@ export function ContactWhatsappSection({ context, config, anchor }: ContactSecti
               </div>
             ) : null}
           </dl>
+
+          {/*
+            Both links are GHOST buttons. The section's one filled button is «اطلب عبر واتساب» in
+            the column beside this one, and a page that fills three buttons in one band has told the
+            visitor nothing about which of them it wants pressed.
+          */}
+          {mapTarget ? (
+            <div className="sf-actions">
+              <a
+                className="sf-btn sf-btn--ghost"
+                href={mapTarget.googleUrl}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                <MapPinIcon className="sf-btn__icon" />
+                {st('map.google')}
+              </a>
+              <a
+                className="sf-btn sf-btn--ghost"
+                href={mapTarget.wazeUrl}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                <NavigationIcon className="sf-btn__icon" />
+                {st('map.waze')}
+              </a>
+            </div>
+          ) : null}
         </div>
 
         <div>

@@ -163,6 +163,16 @@ export async function saveTemplate(ctx: MerchantContext, raw: unknown): Promise<
   const parsed = templateSchema.safeParse(raw);
   if (!parsed.success) return invalid(parsed.error);
 
+  /**
+   * ADMIN-ONLY (2026-09-13, owner-directed). A template swap re-lays out every page of a live
+   * shop; the platform owner changes it from the account screen, where the plan boundary and
+   * the shop's content are both in view. A merchant session — owner or staff — is refused here
+   * regardless of what the dashboard renders — an impersonating admin uses the account screen.
+   */
+  if (ctx.role === 'owner' || ctx.role === 'staff') {
+    return failure('dashboard:errors.templateAdminOnly');
+  }
+
   const allowed = await allowedTemplateKeys(ctx);
   const next = parsed.data.templateKey;
 

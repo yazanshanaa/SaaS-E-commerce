@@ -24,11 +24,31 @@ import type { TemplateDefinition } from '../types';
  */
 export const neonSouq: TemplateDefinition = {
   key: 'neon-souq',
+  /*
+   * THE IDENTITY FACE — headings, and what `site-contract/templates.ts` records as this template's
+   * `fontKey`. It stays exactly what it always was; 12.E did not move it.
+   */
   font: {
     family: 'Alexandria',
     dir: 'alexandria',
     regular: 'alexandria-v6-arabic-regular.woff2',
     bold: 'alexandria-v6-arabic-700.woff2',
+  },
+  /*
+   * THE BODY FACE (Phase 12.E), new. Every template used to set ONE family for headings and copy
+   * alike, which a critic pass measured as 146 elements in one face against 1 in another and named
+   * as a large part of why the pages read flat. Arabic has no uppercase and no small-caps, so face
+   * is one of only three hierarchy levers it has.
+   *
+   * The (identity, body) tuple is unique across the nine, so the pairing SHARPENS the anti-reskin
+   * distance instead of collapsing it — giving all nine the same body face would have fixed the
+   * contrast and flattened the set.
+   */
+  textFont: {
+    family: 'IBM Plex Sans Arabic',
+    dir: 'ibm-plex-sans-arabic',
+    regular: 'ibm-plex-sans-arabic-v15-arabic-regular.woff2',
+    bold: 'ibm-plex-sans-arabic-v15-arabic-700.woff2',
   },
   layout: {
     hero: 'stage',
@@ -88,9 +108,9 @@ export const neonSouq: TemplateDefinition = {
       onPrimary: '#FFFFFF',
       onSecondary: '#000000',
       surfaceAlt: '#2C262D',
-      textMuted: '#968E93',
+      textMuted: '#AAA3A7',
       border: '#675E66',
-      link: '#EB6582',
+      link: '#F0899F',
       // Gold on near-black is ~12:1, so the SECONDARY accent lands on the design value unchanged.
       accent: '#F4C95D',
       /**
@@ -132,6 +152,7 @@ export const neonSouq: TemplateDefinition = {
     },
     type: {
       family: "'Alexandria', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif",
+      textFamily: "'IBM Plex Sans Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif",
       displayWeight: '700',
       bodyWeight: '400',
       xs: '0.75rem',
@@ -158,12 +179,37 @@ export const neonSouq: TemplateDefinition = {
        * the screen.
        */
       display: 'clamp(2.75rem, 9.5vw, 5.25rem)',
-      lineTight: '1.05',
+      /*
+       * 1.18, UP FROM 1.05 — and the reasoning above is still right, it was just being applied to
+       * the wrong element.
+       *
+       * `lineTight` is the leading for EVERY heading, and the note above justifies its tightness by
+       * what it does to a two-line PRODUCT NAME. At 5.25rem it does something else entirely: a critic
+       * pass measured 11px of clearance between the ة of «تشكيلة» and the ل of «الموسم», i.e. an
+       * effective line-height of about 1.0 on Arabic display type, where the ascenders and descenders
+       * reach further than the Latin metrics the number was chosen against.
+       *
+       * The card name now carries its own `line-height: 1.35` in `storefront.css`, so the gap this
+       * value was protecting is closed where it actually occurs, and the display leading is free to
+       * be what a 5rem Arabic headline needs.
+       */
+      lineTight: '1.18',
       lineBody: '1.75',
       // -0.03em, from -0.02em. Negative tracking closes the WORD gaps in an Arabic headline without
       // touching the joins inside a word — the letters are already connected, so the risk that
       // stops this being pushed further is the space around ا and و going to nothing.
-      trackingDisplay: '-0.03em',
+      /*
+       * ZERO, like seven of the nine. Arabic is CURSIVE — its letters join — and negative tracking
+       * drags the joins into each other rather than tightening a word the way it does in Latin. At
+       * this template's display size the QA gate measured -2.81px on the h1 and flagged 35 Arabic
+       * elements; the same capture scored the seven templates that already ship 0 at 9-9.5 and these
+       * two at 7-7.5, with tracking as the only difference between them.
+       *
+       * `design/design.json` already records the rule for body copy — "never — it breaks Arabic
+       * joins" — and the display exception it allows was reasoned about a Latin control surface, not
+       * about a shop's name set in Zain at 5rem. Hierarchy here comes from size and weight.
+       */
+      trackingDisplay: '0',
     },
     rule: { hair: '1px solid var(--t-border)', frame: '3px solid var(--t-primary)' },
     elevation: {

@@ -1,7 +1,9 @@
 import { formatAgorot } from '@/shared/i18n';
 import { st } from '../i18n';
 import type { TemplateDefinition } from '../types';
-import type { StorefrontProduct } from '../view-model';
+import type { StorefrontContext, StorefrontProduct } from '../view-model';
+import { buildOrderUrl, normaliseWhatsappNumber } from '../lib/whatsapp';
+import { WhatsappIcon } from './icons';
 import { AddToCart } from './add-to-cart';
 import { MediaImage } from './media-image';
 
@@ -33,6 +35,12 @@ export interface ProductCardProps {
   /** Phase 8. Absent or `enabled: false` renders the card exactly as it always has — byte for
    *  byte, no new markup at all. */
   cart?: { tenantId: string; enabled: boolean };
+  /**
+   * The storefront context, when the caller has it. With it, a card on a shop whose cart is OFF
+   * but whose WhatsApp line is on gets a per-product «اطلب عبر واتساب» button — the whole order
+   * flow of the أساسي plan, one tap from the grid instead of two pages away.
+   */
+  context?: StorefrontContext;
 }
 
 export function ProductCard({
@@ -41,9 +49,11 @@ export function ProductCard({
   priority = false,
   showPrice = true,
   cart,
+  context,
 }: ProductCardProps) {
   const variant = template.layout.productCard;
   const price = formatAgorot(product.priceAgorot);
+  const whatsappHref = !cart?.enabled && context ? productWhatsappHref(context, product, price) : null;
 
   return (
     <article className={`sf-card sf-card--${variant}`}>
@@ -77,7 +87,21 @@ export function ProductCard({
             <StandardBody
               product={product}
               price={showPrice ? price : null}
-              showDescription={variant === 'framed'}
+              /*
+                THE DESCRIPTION APPEARS WHEN THERE IS NO PHOTOGRAPH — on any card body, not just
+                `framed`.
+
+                `overlay` is defined as "name, price and badge only, no description: the name is what
+                the picture cannot say". That reasoning is exactly right and it assumes a picture. A
+                critic pass measured the consequence on a real shop with none: twelve cards carrying a
+                blank plate, a name and a number, where ورشة's `spec` body was carrying السعر /
+                التوفر / رقم الصنف for the same products — information where نيون had an empty plate.
+
+                So the rule keeps its intent and gains its missing clause: the description is shown
+                when the picture is not there to say it. A shop that uploads photography gets the
+                lookbook card back automatically, per product, with no setting to find.
+              */
+              showDescription={variant === 'framed' || product.image === null}
             />
           )}
         </div>
@@ -105,9 +129,38 @@ export function ProductCard({
             }}
           />
         </div>
+      ) : whatsappHref && product.available ? (
+        <div className="sf-card__cart">
+          <a
+            className="sf-btn sf-btn--order sf-btn--full"
+            href={whatsappHref}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <WhatsappIcon className="sf-btn__icon" />
+            {st('order.whatsapp')}
+          </a>
+        </div>
       ) : null}
     </article>
   );
+}
+
+function productWhatsappHref(
+  context: StorefrontContext,
+  product: StorefrontProduct,
+  price: string,
+): string | null {
+  if (!context.flags.whatsappOrders) return null;
+  const number = normaliseWhatsappNumber(context.site.whatsapp);
+  if (!number) return null;
+  const template = st('order.message', {
+    shop: context.site.name,
+    product: product.name,
+    price,
+    url: `${context.origin}/products/${product.slug}`,
+  });
+  return buildOrderUrl({ number, template }, 1);
 }
 
 function StandardBody({

@@ -58,7 +58,7 @@ test('the lifecycle surface exists and its three screens are reachable', async (
   await expect(page).toHaveURL(/\/lifecycle\/never-expiring$/);
 
   // The guard list is correct when it is empty, and says so rather than showing a bare table.
-  await expect(page.getByText('القائمة فاضية — وهذا هو الوضع الصحيح.')).toBeVisible();
+  await expect(page.getByText('القائمة فارغة — وهذا هو الوضع الصحيح.')).toBeVisible();
 });
 
 test('an account whose period is closing lands on the call list', async ({ page }) => {
@@ -84,7 +84,7 @@ test('an account whose period is closing lands on the call list', async ({ page 
   await expect(row).toBeVisible();
   // A call list, not a report: the number is there to be dialled.
   await expect(row.getByRole('link', { name: 'افتح واتساب' })).toBeVisible();
-  await expect(row.getByText('لسا ما انبعت أي تنبيه')).toBeVisible();
+  await expect(row.getByText('لم يُرسَل أي تنبيه حتى الآن')).toBeVisible();
 });
 
 test('suspending puts it on the purge list with a REAL date, not the words "thirty days"', async ({
@@ -109,7 +109,7 @@ test('suspending puts it on the purge list with a REAL date, not the words "thir
 
   // With no worker running, the artifact does not exist yet — and the screen says so plainly
   // rather than implying a copy that is not there.
-  await expect(row.getByText('ما تجهّزت بعد')).toBeVisible();
+  await expect(row.getByText('لم تُجهَّز بعد')).toBeVisible();
   await expect(row.getByRole('button', { name: 'أعد تجهيز النسخة' })).toBeVisible();
 });
 
@@ -170,7 +170,7 @@ test('deleting refuses a mistyped slug, and refuses cleanly when it cannot finis
    */
   await row.locator('input[name="confirmSlug"]').fill('wrong-slug');
   await row.getByRole('button', { name: 'احذف الآن نهائياً' }).click();
-  await expect(page.locator('.sba-notice--error')).toContainText('ما بطابق الحساب');
+  await expect(page.locator('.sba-notice--error')).toContainText('لا يطابق الحساب');
   await expect(page.locator('tr', { hasText: SLUG })).toBeVisible();
 
   const again = page.locator('tr', { hasText: SLUG });
@@ -186,7 +186,7 @@ test('deleting refuses a mistyped slug, and refuses cleanly when it cannot finis
    * catalogue under a key no row points at. The screen says "wait", not "try again": the button it
    * would invite you to press again is the one action on the platform that cannot be undone.
    */
-  await expect(page.locator('.sba-notice--error')).toContainText('لسا عم بنجهّز نسخة بيانات المتجر');
+  await expect(page.locator('.sba-notice--error')).toContainText('ما زلنا نجهّز نسخة بيانات المتجر');
 
   /**
    * And nothing was half-done. The guard runs before anything is written — and before that,

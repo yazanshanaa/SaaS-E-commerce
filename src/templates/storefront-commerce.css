@@ -1,0 +1,1249 @@
+/*
+ * The commerce chrome (2026-09-13, owner-directed).
+ *
+ * Loaded AFTER storefront.css and after every template sheet, so these rules win on equal
+ * specificity. It restates the parts of a storefront a visitor's hands already know from every
+ * large store — sticky header with search and cart, a scrollable department bar, a compact hero,
+ * a product card that leads with price and a buy button, and a bottom tab bar on the phone.
+ *
+ * Every colour, face, radius and spacing value still comes from the template's tokens, so the nine
+ * templates keep their identity; what they no longer get to decide is WHERE the cart is.
+ *
+ * Contrast: every text/background pair here is one of the pairs `deriveColorTokens` already
+ * guards (text on bg, on-primary on primary, text-muted on bg). No new pair is introduced.
+ */
+
+/* ----------------------------------------------------------------- header -- */
+
+.sf-root[data-template] .sf-header[data-commerce] {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 40;
+  background: var(--t-bg);
+  border-block-end: var(--t-rule-hair);
+  box-shadow: 0 1px 0 var(--t-border);
+}
+
+/* One grid, one posture: brand · search · actions. `data-header` postures no longer rearrange it. */
+.sf-root[data-template] .sf-header[data-commerce] .sf-header__inner,
+.sf-root[data-template] .sf-header[data-commerce] .sf-header__inner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'brand search actions';
+  align-items: center;
+  gap: var(--t-space-lg);
+  padding-block: var(--t-space-sm);
+  min-block-size: 64px;
+}
+
+.sf-root[data-template] .sf-header[data-commerce] .sf-brand {
+  grid-area: brand;
+  justify-self: start;
+}
+
+.sf-root[data-template] .sf-header[data-commerce] .sf-brand__logo {
+  block-size: 40px;
+}
+
+.sf-root[data-template] .sf-header[data-commerce] .sf-brand__tag {
+  max-inline-size: 26ch;
+}
+
+.sf-root[data-template] .sf-header__search {
+  grid-area: search;
+  min-inline-size: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.sf-root[data-template] .sf-header__search .sf-search {
+  inline-size: 100%;
+  max-inline-size: 38rem;
+}
+
+.sf-root[data-template] .sf-header__search .sf-search--compact .sf-search__input {
+  inline-size: 100%;
+  min-block-size: 42px;
+  border-radius: var(--t-radius-pill);
+  padding-inline: var(--t-space-lg);
+  background: var(--t-surface);
+}
+
+.sf-root[data-template] .sf-header__search .sf-search--compact .sf-search__submit {
+  border-radius: var(--t-radius-pill);
+  min-block-size: 42px;
+}
+
+.sf-root[data-template] .sf-header__actions {
+  grid-area: actions;
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-xs);
+  justify-self: end;
+}
+
+/* An icon button with an optional label: 44px tall, the label hides on narrow screens. */
+.sf-root[data-template] .sf-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--t-space-xs);
+  min-block-size: 44px;
+  min-inline-size: 44px;
+  padding-inline: var(--t-space-sm);
+  border-radius: var(--t-radius-md);
+  color: var(--t-text);
+  text-decoration: none;
+  font-size: var(--t-text-sm);
+  font-weight: var(--t-weight-display);
+  border: 2px solid transparent;
+}
+
+.sf-root[data-template] .sf-iconbtn:hover {
+  background: var(--t-surface);
+}
+
+.sf-root[data-template] .sf-iconbtn__icon {
+  position: relative;
+  display: inline-flex;
+  inline-size: 24px;
+  block-size: 24px;
+}
+
+.sf-root[data-template] .sf-iconbtn__icon svg {
+  inline-size: 24px;
+  block-size: 24px;
+}
+
+.sf-root[data-template] .sf-iconbtn--cart {
+  background: var(--t-primary);
+  color: var(--t-on-primary);
+  border-color: var(--t-primary);
+  padding-inline: var(--t-space-md);
+}
+
+.sf-root[data-template] .sf-iconbtn--cart:hover {
+  background: var(--t-primary);
+  filter: brightness(1.06);
+}
+
+.sf-root[data-template] .sf-iconbtn--wa {
+  color: var(--t-text);
+  border-color: var(--t-border);
+}
+
+/* The header has a home in the brand already; the icon is for the phone row. */
+.sf-root[data-template] .sf-iconbtn--home {
+  display: none;
+}
+
+/* The count bubble — shared by the header button and the tab bar. */
+.sf-root[data-template] .sf-count {
+  position: absolute;
+  inset-block-start: -8px;
+  inset-inline-end: -10px;
+  min-inline-size: 18px;
+  block-size: 18px;
+  padding-inline: 5px;
+  border-radius: var(--t-radius-pill);
+  background: var(--t-secondary);
+  color: var(--t-on-secondary);
+  font-size: 11px;
+  line-height: 18px;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--t-bg);
+}
+
+.sf-root[data-template] .sf-iconbtn--cart .sf-count {
+  box-shadow: 0 0 0 2px var(--t-primary);
+}
+
+/* ---------------------------------------------------------- department bar -- */
+
+.sf-root[data-template] .sf-header[data-commerce] .sf-header__cats {
+  border-block-start: var(--t-rule-hair);
+  background: var(--t-surface);
+  padding-block: 0;
+}
+
+.sf-root[data-template] .sf-catbar {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+}
+
+.sf-root[data-template] .sf-catbar::-webkit-scrollbar {
+  display: none;
+}
+
+.sf-root[data-template] .sf-catbar li {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+.sf-root[data-template] .sf-catbar a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 44px;
+  padding-inline: var(--t-space-md);
+  text-decoration: none;
+  color: var(--t-text);
+  font-size: var(--t-text-sm);
+  font-weight: var(--t-weight-display);
+  white-space: nowrap;
+  border-block-end: 3px solid transparent;
+}
+
+.sf-root[data-template] .sf-catbar a:hover {
+  color: var(--t-link);
+}
+
+.sf-root[data-template] .sf-catbar a[aria-current='page'] {
+  color: var(--t-link);
+  border-block-end-color: var(--t-primary);
+}
+
+.sf-root[data-template] .sf-catbar__end {
+  margin-inline-start: auto;
+}
+
+.sf-root[data-template] .sf-catbar__end a {
+  color: var(--t-text-muted);
+}
+
+/* ------------------------------------------------------------------- hero -- */
+
+/*
+ * A compact banner, not a poster. `--t-hero-min` used to pin the first screen to the shop's name;
+ * the catalogue now starts one scroll below the fold on a phone and above it on a desktop.
+ */
+.sf-root[data-template] .sf-hero,
+.sf-root[data-template] .sf-hero--split,
+.sf-root[data-template] .sf-hero--stage,
+.sf-root[data-template] .sf-hero--ledger {
+  min-block-size: 0;
+  padding-block: var(--t-space-xl);
+}
+
+.sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__inner,
+.sf-root[data-template] .sf-hero--split[data-figure='type'] .sf-hero__inner,
+.sf-root[data-template] .sf-hero--stage[data-figure='type'] .sf-hero__inner {
+  padding: var(--t-space-xl);
+  border-radius: var(--t-radius-lg);
+  background: var(--t-ground-tint);
+  border: var(--t-rule-hair);
+}
+
+.sf-root[data-template] .sf-hero--split[data-figure='type'] .sf-hero__title,
+.sf-root[data-template] .sf-hero--stage[data-figure='type'] .sf-hero__title,
+.sf-root[data-template] .sf-hero--ledger .sf-hero__title,
+.sf-root[data-template] .sf-hero__title {
+  font-size: clamp(1.6rem, 1.1rem + 2.2vw, 2.6rem);
+  line-height: 1.2;
+}
+
+.sf-root[data-template] .sf-hero__text {
+  font-size: var(--t-text-base);
+  margin-block-start: var(--t-space-sm);
+  max-inline-size: 60ch;
+}
+
+.sf-root[data-template] .sf-hero__actions {
+  margin-block-start: var(--t-space-lg);
+}
+
+/* The bled-off initial watermark — gone. A letter the size of the screen is what made it a poster. */
+.sf-root[data-template] .sf-hero[data-figure='type']::after,
+.sf-root[data-template] .sf-hero--stage[data-figure='type'] .sf-hero__inner::before {
+  content: none;
+}
+
+.sf-root[data-template] .sf-hero__proof {
+  margin-block-start: var(--t-space-md);
+}
+
+/* --------------------------------------------------------------- category -- */
+
+/* Department tiles are a compact row, not a second grid of posters. */
+.sf-root[data-template] .sf-cats {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9.5rem), 1fr));
+  gap: var(--t-space-sm);
+  grid-auto-rows: auto;
+}
+
+@media (min-width: 52rem) {
+  .sf-root[data-template] .sf-cats:has(> li:nth-child(5)) > li:first-child {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
+.sf-root[data-template] .sf-cat .sf-media {
+  --sf-ratio: 4 / 3;
+  aspect-ratio: 4 / 3;
+  flex: 0 0 auto;
+}
+
+.sf-root[data-template] .sf-cat .sf-ph__mark {
+  font-size: clamp(1.4rem, 2.5vw, 2.2rem);
+}
+
+.sf-root[data-template] .sf-cat__label {
+  padding: var(--t-space-sm) var(--t-space-md);
+  font-size: var(--t-text-sm);
+  font-weight: var(--t-weight-display);
+}
+
+/* ------------------------------------------------------------------- card -- */
+
+.sf-root[data-template] .sf-card__media .sf-media {
+  --sf-ratio: 1 / 1;
+  aspect-ratio: 1 / 1;
+}
+
+.sf-root[data-template] .sf-card__media .sf-ph__mark {
+  font-size: clamp(1.6rem, 3vw, 2.6rem);
+  opacity: 0.85;
+}
+
+.sf-root[data-template] .sf-card__name {
+  font-size: var(--t-text-base);
+  -webkit-line-clamp: 2;
+  min-block-size: calc(2 * 1.35em);
+}
+
+.sf-root[data-template] .sf-card__desc {
+  -webkit-line-clamp: 1;
+}
+
+.sf-root[data-template] .sf-card__foot .sf-price {
+  font-size: var(--t-text-xl);
+  color: var(--t-link);
+}
+
+.sf-root[data-template] .sf-card__cart {
+  padding: 0 var(--t-space-md) var(--t-space-md);
+}
+
+.sf-root[data-template] .sf-btn--full {
+  inline-size: 100%;
+}
+
+.sf-root[data-template] .sf-btn--order {
+  background: var(--t-whatsapp);
+  color: var(--t-whatsapp-ink);
+  border-color: var(--t-whatsapp);
+}
+
+/* ------------------------------------------------------- the block heads -- */
+
+.sf-root[data-template] .sf-block__head .sf-block__title {
+  font-size: clamp(1.25rem, 1rem + 1vw, 1.75rem);
+}
+
+/* --------------------------------------------------------------- tab bar -- */
+
+.sf-root[data-template] .sf-tabbar {
+  display: none;
+}
+
+@media (max-width: 45rem) {
+  .sf-root[data-template] .sf-header[data-commerce] .sf-header__inner,
+  .sf-root[data-template] .sf-header[data-commerce] .sf-header__inner {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'brand  actions'
+      'search search';
+    gap: var(--t-space-sm) var(--t-space-md);
+    padding-block: var(--t-space-sm);
+    min-block-size: 0;
+  }
+
+  .sf-root[data-template] .sf-header[data-commerce] .sf-brand__logo {
+    block-size: 34px;
+  }
+
+  .sf-root[data-template] .sf-header[data-commerce] .sf-brand__name {
+    font-size: var(--t-text-base);
+  }
+
+  .sf-root[data-template] .sf-header[data-commerce] .sf-brand__tag {
+    display: none;
+  }
+
+  .sf-root[data-template] .sf-header__search:empty {
+    display: none;
+  }
+
+  .sf-root[data-template] .sf-iconbtn__label {
+    display: none;
+  }
+
+  .sf-root[data-template] .sf-iconbtn--cart {
+    padding-inline: var(--t-space-sm);
+  }
+
+  /* On the phone the header carries the cart only; WhatsApp sits in the tab bar under the thumb. */
+  .sf-root[data-template] .sf-iconbtn--wa {
+    display: none;
+  }
+
+  .sf-root[data-template] .sf-tabbar {
+    position: fixed;
+    inset-inline: 0;
+    inset-block-end: 0;
+    z-index: 45;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    background: var(--t-bg);
+    border-block-start: var(--t-rule-hair);
+    box-shadow: 0 -1px 0 var(--t-border);
+    padding-block-end: env(safe-area-inset-bottom, 0);
+  }
+
+  .sf-root[data-template] .sf-tabbar__item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-block-size: 56px;
+    text-decoration: none;
+    color: var(--t-text-muted);
+    font-size: 11px;
+    font-weight: var(--t-weight-display);
+  }
+
+  .sf-root[data-template] .sf-tabbar__item[aria-current='page'] {
+    color: var(--t-link);
+  }
+
+  .sf-root[data-template] .sf-tabbar__icon {
+    position: relative;
+    display: inline-flex;
+    inline-size: 24px;
+    block-size: 24px;
+  }
+
+  .sf-root[data-template] .sf-tabbar__icon svg {
+    inline-size: 24px;
+    block-size: 24px;
+  }
+
+  .sf-root[data-template] .sf-tabbar__item--wa {
+    color: var(--t-whatsapp);
+  }
+
+  /* Room for the bar, and the floating buttons leave: the bar carries both destinations. */
+  .sf-root[data-template] {
+    padding-block-end: calc(56px + env(safe-area-inset-bottom, 0));
+  }
+
+  .sf-root[data-template] .sf-dock {
+    inset-block-end: calc(56px + env(safe-area-inset-bottom, 0));
+  }
+
+  .sf-root[data-template] .sf-dock__fabs {
+    display: none;
+  }
+
+  /* Cards on a phone: two across, a smaller face, and the buy button still 44px. */
+  .sf-root[data-template] .sf-grid:not(.sf-grid--rail) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--t-space-sm);
+  }
+
+  .sf-root[data-template] .sf-card__body {
+    padding: var(--t-space-sm);
+  }
+
+  .sf-root[data-template] .sf-card__cart {
+    padding: 0 var(--t-space-sm) var(--t-space-sm);
+  }
+
+  .sf-root[data-template] .sf-card__foot .sf-price {
+    font-size: var(--t-text-lg);
+  }
+
+  .sf-root[data-template] .sf-card__desc {
+    display: none;
+  }
+
+  .sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__inner,
+  .sf-root[data-template] .sf-hero--split[data-figure='type'] .sf-hero__inner,
+  .sf-root[data-template] .sf-hero--stage[data-figure='type'] .sf-hero__inner {
+    padding: var(--t-space-lg);
+  }
+
+  .sf-root[data-template] .sf-cats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .sf-root[data-template] .sf-cat .sf-media {
+    --sf-ratio: 1 / 1;
+    aspect-ratio: 1 / 1;
+  }
+
+  .sf-root[data-template] .sf-cat__label {
+    padding: var(--t-space-xs) var(--t-space-sm);
+    font-size: var(--t-text-xs);
+    justify-content: center;
+  }
+
+  .sf-root[data-template] .sf-cat__count {
+    display: none;
+  }
+}
+
+/* The dock's cart FAB is redundant everywhere now: the header carries the cart. */
+.sf-root[data-template] .sf-dock__fabs .sf-cart-fab {
+  display: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sf-root[data-template] .sf-iconbtn,
+  .sf-root[data-template] .sf-catbar a,
+  .sf-root[data-template] .sf-tabbar__item {
+    transition:
+      color 150ms ease-out,
+      background-color 150ms ease-out,
+      border-color 150ms ease-out;
+  }
+}
+
+/* ------------------------------------------------------- band rhythm -- */
+
+/*
+ * Tighter bands. `--t-block` was sized for a magazine page with one band per screen; a store
+ * page shows two or three bands per screen, so every band's own padding comes down and the
+ * band-to-band step stays visible through the ground change alone.
+ */
+.sf-root[data-template] .sf-band > .sf-block,
+.sf-root[data-template] .sf-band[data-density='airy'] > .sf-block {
+  padding-block: clamp(1.5rem, 1rem + 2vw, 3rem);
+}
+
+.sf-root[data-template] .sf-band[data-density='tight'] > .sf-block {
+  padding-block: clamp(1rem, 0.75rem + 1.5vw, 2rem);
+}
+
+/* The hero band is one card: copy inline-start, actions inline-end, one row on a desktop. */
+.sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'title actions'
+    'text  actions'
+    'proof proof';
+  align-items: center;
+  column-gap: var(--t-space-xl);
+}
+
+.sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__title {
+  grid-area: title;
+}
+
+.sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__text {
+  grid-area: text;
+  margin-block-start: var(--t-space-xs);
+}
+
+.sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__actions {
+  grid-area: actions;
+  margin-block-start: 0;
+  flex-wrap: nowrap;
+}
+
+.sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__proof {
+  grid-area: proof;
+}
+
+.sf-root[data-template] .sf-hero--ledger .sf-hero__inner {
+  display: block;
+}
+
+.sf-root[data-template] .sf-hero--ledger .sf-hero__facts {
+  margin-block-start: var(--t-space-md);
+}
+
+@media (max-width: 45rem) {
+  .sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__copy {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'title'
+      'text'
+      'actions'
+      'proof';
+  }
+
+  .sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__actions {
+    margin-block-start: var(--t-space-md);
+    flex-wrap: wrap;
+  }
+}
+
+/* ---------------------------------------------------------- grid density -- */
+
+/*
+ * A store grid, not a gallery. Above the phone breakpoint the card count per row follows the
+ * width — a 1366px screen shows five or six cards, not three posters — and the template's own
+ * `--sf-cols` becomes a floor for the card size rather than a fixed count.
+ */
+@media (min-width: 45rem) {
+  .sf-root[data-template] .sf-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 13.5rem), 1fr));
+    gap: var(--t-space-md);
+  }
+
+  .sf-root[data-template] .sf-grid:has(> :only-child),
+  .sf-root[data-template] .sf-grid:has(> :nth-child(2):last-child),
+  .sf-root[data-template] .sf-grid:has(> :nth-child(3):last-child) {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 13.5rem), 1fr));
+  }
+
+  .sf-root[data-template] .sf-grid > .sf-card {
+    max-inline-size: 22rem;
+  }
+}
+
+/* Department tile labels: two lines at most, never clipped mid-word on a phone. */
+.sf-root[data-template] .sf-cat__label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--t-space-xs) var(--t-space-sm);
+}
+
+.sf-root[data-template] .sf-cat__name,
+.sf-root[data-template] .sf-cat__label > :first-child {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.35;
+}
+
+/* ============================================================== 2026-09-13 — Shopify / Salla anatomy */
+
+/* ------------------------------------------------------------ cart drawer -- */
+
+.sf-root[data-template] .sf-drawer,
+dialog.sf-drawer {
+  position: fixed;
+  inset: 0;
+  inline-size: 100vw;
+  block-size: 100dvh;
+  max-inline-size: none;
+  max-block-size: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--t-text);
+  font-family: var(--t-font);
+}
+
+dialog.sf-drawer::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}
+
+dialog.sf-drawer .sf-drawer__panel {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: min(26rem, 100vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--t-bg);
+  color: var(--t-text);
+  box-shadow: 0 0 40px rgb(0 0 0 / 0.25);
+  border-inline-end: var(--t-rule-hair);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  dialog.sf-drawer[open] .sf-drawer__panel {
+    animation: sf-drawer-in 220ms ease-out;
+  }
+
+  @keyframes sf-drawer-in {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: none;
+    }
+  }
+}
+
+dialog.sf-drawer .sf-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--t-space-md);
+  padding: var(--t-space-md) var(--t-space-lg);
+  border-block-end: var(--t-rule-hair);
+}
+
+dialog.sf-drawer .sf-drawer__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--t-space-sm);
+  margin: 0;
+  font-family: var(--t-font-display);
+  font-size: var(--t-text-lg);
+  font-weight: var(--t-weight-display);
+}
+
+dialog.sf-drawer .sf-drawer__count {
+  font-size: var(--t-text-xs);
+  background: var(--t-primary);
+  color: var(--t-on-primary);
+  border-radius: var(--t-radius-pill);
+  padding-inline: 8px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+dialog.sf-drawer .sf-drawer__close {
+  inline-size: 44px;
+  block-size: 44px;
+  border: 0;
+  border-radius: var(--t-radius-md);
+  background: transparent;
+  color: var(--t-text);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+dialog.sf-drawer .sf-drawer__close:hover {
+  background: var(--t-surface);
+}
+
+dialog.sf-drawer .sf-drawer__empty {
+  padding: var(--t-space-2xl) var(--t-space-lg);
+  display: grid;
+  gap: var(--t-space-lg);
+  justify-items: center;
+  text-align: center;
+  color: var(--t-text-muted);
+}
+
+dialog.sf-drawer .sf-drawer__lines {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--t-space-lg);
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+dialog.sf-drawer .sf-drawer__line {
+  display: grid;
+  gap: var(--t-space-sm);
+  padding-block: var(--t-space-md);
+  border-block-end: var(--t-rule-hair);
+}
+
+dialog.sf-drawer .sf-drawer__line-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--t-space-md);
+}
+
+dialog.sf-drawer .sf-drawer__name {
+  color: inherit;
+  text-decoration: none;
+  font-weight: var(--t-weight-display);
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+dialog.sf-drawer .sf-drawer__price {
+  color: var(--t-link);
+  font-weight: var(--t-weight-display);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+dialog.sf-drawer .sf-drawer__line-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--t-space-md);
+}
+
+dialog.sf-drawer .sf-drawer__remove {
+  font-size: var(--t-text-sm);
+  color: var(--t-text-muted);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+
+dialog.sf-drawer .sf-drawer__foot {
+  padding: var(--t-space-md) var(--t-space-lg) calc(var(--t-space-lg) + env(safe-area-inset-bottom, 0));
+  border-block-start: var(--t-rule-hair);
+  display: grid;
+  gap: var(--t-space-sm);
+  background: var(--t-surface);
+}
+
+dialog.sf-drawer .sf-drawer__subtotal {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: var(--t-text-lg);
+  margin-block-end: var(--t-space-xs);
+}
+
+dialog.sf-drawer .sf-drawer__subtotal strong {
+  font-variant-numeric: tabular-nums;
+  color: var(--t-link);
+}
+
+/* The stepper inside the drawer shares the storefront's own control styling. */
+dialog.sf-drawer .sf-stepper {
+  display: inline-flex;
+  align-items: center;
+  border: var(--t-rule-frame);
+  border-radius: var(--t-radius-md);
+  overflow: hidden;
+}
+
+dialog.sf-drawer .sf-stepper__btn {
+  inline-size: 40px;
+  block-size: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--t-text);
+  font-size: var(--t-text-lg);
+  cursor: pointer;
+}
+
+dialog.sf-drawer .sf-stepper__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+dialog.sf-drawer .sf-stepper__value {
+  min-inline-size: 2.5ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------- product rails -- */
+
+.sf-root[data-template] .sf-rail-wrap {
+  position: relative;
+}
+
+.sf-root[data-template] .sf-grid--rail,
+.sf-root[data-template] .sf-grid--rail:has(> :only-child),
+.sf-root[data-template] .sf-grid--rail:has(> :nth-child(2):last-child),
+.sf-root[data-template] .sf-grid--rail:has(> :nth-child(3):last-child) {
+  display: flex;
+  gap: var(--t-space-md);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  padding-block-end: var(--t-space-xs);
+  max-inline-size: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sf-root[data-template] .sf-grid--rail::-webkit-scrollbar {
+  display: none;
+}
+
+.sf-root[data-template] .sf-grid--rail > .sf-card {
+  flex: 0 0 clamp(11rem, 22vw, 15rem);
+  scroll-snap-align: start;
+  max-inline-size: none;
+}
+
+.sf-root[data-template] .sf-rail-arrow {
+  position: absolute;
+  inset-block-start: 38%;
+  z-index: 2;
+  inline-size: 40px;
+  block-size: 40px;
+  border-radius: 50%;
+  border: var(--t-rule-frame);
+  background: var(--t-bg);
+  color: var(--t-text);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: var(--t-elev-raised);
+}
+
+.sf-root[data-template] .sf-rail-arrow:disabled {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* "previous" sits at the reading start (right in RTL), "next" at the reading end. */
+.sf-root[data-template] .sf-rail-arrow--prev {
+  inset-inline-start: -12px;
+}
+
+.sf-root[data-template] .sf-rail-arrow--next {
+  inset-inline-end: -12px;
+}
+
+.sf-root[data-template] .sf-rail-arrow--prev svg {
+  transform: scaleX(-1);
+}
+
+.sf-root[data-template] .sf-rail-arrow--next svg {
+  transform: scaleX(-1);
+}
+
+@media (max-width: 45rem) {
+  .sf-root[data-template] .sf-rail-arrow {
+    display: none;
+  }
+
+  .sf-root[data-template] .sf-grid--rail > .sf-card {
+    flex-basis: 44vw;
+  }
+}
+
+/* ------------------------------------------------------- department circles -- */
+
+.sf-root[data-template] .sf-circles {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 var(--t-space-xs);
+  display: flex;
+  gap: var(--t-space-lg);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.sf-root[data-template] .sf-circles::-webkit-scrollbar {
+  display: none;
+}
+
+.sf-root[data-template] .sf-circles li {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+.sf-root[data-template] .sf-circle {
+  display: grid;
+  justify-items: center;
+  gap: var(--t-space-xs);
+  inline-size: clamp(5.5rem, 10vw, 7.5rem);
+  text-decoration: none;
+  color: var(--t-text);
+  text-align: center;
+}
+
+.sf-root[data-template] .sf-circle .sf-media {
+  inline-size: clamp(4.5rem, 9vw, 6.5rem);
+  block-size: clamp(4.5rem, 9vw, 6.5rem);
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid var(--t-border);
+  background: var(--t-surface);
+  clip-path: none;
+}
+
+.sf-root[data-template] .sf-circle .sf-media img,
+.sf-root[data-template] .sf-circle .sf-ph {
+  border-radius: 50%;
+}
+
+.sf-root[data-template] .sf-circle .sf-ph__mark {
+  font-size: clamp(1.4rem, 2.5vw, 2rem);
+}
+
+.sf-root[data-template] .sf-circle:hover .sf-media {
+  border-color: var(--t-primary);
+}
+
+.sf-root[data-template] .sf-circle__name {
+  font-size: var(--t-text-sm);
+  font-weight: var(--t-weight-display);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.sf-root[data-template] .sf-circle .sf-cat__count {
+  font-size: var(--t-text-xs);
+}
+
+/* ----------------------------------------------------------- features strip -- */
+
+.sf-root[data-template] .sf-trust {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--t-space-md);
+}
+
+.sf-root[data-template] .sf-trust__item {
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-md);
+  padding: var(--t-space-md);
+  border: var(--t-rule-hair);
+  border-radius: var(--t-radius-md);
+  background: var(--t-surface);
+}
+
+.sf-root[data-template] .sf-trust__icon {
+  flex: 0 0 auto;
+  inline-size: 36px;
+  block-size: 36px;
+  padding: 7px;
+  border-radius: 50%;
+  background: var(--t-ground-tint);
+  color: var(--t-link);
+}
+
+.sf-root[data-template] .sf-block--trust .sf-block__head {
+  display: none;
+}
+
+/* ------------------------------------------------------------- card polish -- */
+
+.sf-root[data-template] .sf-card__media {
+  overflow: hidden;
+}
+
+.sf-root[data-template] .sf-card__media img {
+  transition: transform 300ms ease-out;
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .sf-root[data-template] .sf-card {
+    transition:
+      transform 180ms ease-out,
+      box-shadow 180ms ease-out;
+  }
+
+  .sf-root[data-template] .sf-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--t-elev-raised);
+  }
+
+  .sf-root[data-template] .sf-card:hover .sf-card__media img {
+    transform: scale(1.04);
+  }
+}
+
+/* --------------------------------------------------------- sticky buy bar -- */
+
+@media (max-width: 45rem) {
+  .sf-root[data-template] .sf-buy {
+    position: sticky;
+    inset-block-end: calc(56px + env(safe-area-inset-bottom, 0));
+    z-index: 20;
+    background: var(--t-bg);
+    padding-block: var(--t-space-sm);
+    border-block-start: var(--t-rule-hair);
+    margin-block-start: var(--t-space-lg) !important;
+  }
+
+  .sf-root[data-template] .sf-buy .sf-order {
+    display: flex;
+    gap: var(--t-space-sm);
+    align-items: center;
+  }
+
+  .sf-root[data-template] .sf-buy .sf-order > .sf-btn {
+    flex: 1 1 auto;
+  }
+}
+
+/* ---------------------------------------------------------- footer bottom -- */
+
+.sf-root[data-template] .sf-footer {
+  border-block-start: var(--t-rule-hair);
+  background: var(--t-surface);
+}
+
+.sf-root[data-template] .sf-footer__inner {
+  padding-block: var(--t-space-2xl) var(--t-space-lg);
+}
+
+.sf-root[data-template] .sf-footer h2 {
+  font-size: var(--t-text-base);
+  margin-block-end: var(--t-space-sm);
+}
+
+.sf-root[data-template] .sf-legal {
+  padding-block: var(--t-space-md);
+  border-block-start: var(--t-rule-hair);
+  font-size: var(--t-text-xs);
+  color: var(--t-text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--t-space-xs) var(--t-space-md);
+  justify-content: space-between;
+}
+
+/* ------------------------------------------------- phone: header + consent -- */
+
+@media (max-width: 45rem) {
+  /* The tab bar carries navigation on the phone; a sticky three-row header would eat a quarter
+     of the screen. Static here, sticky on wider screens. */
+  .sf-root[data-template] .sf-header[data-commerce] {
+    position: static;
+  }
+
+  /* The consent banner as one compact row, the way every store shows it on a phone. */
+  .sf-root[data-template] .sf-consent__inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--t-space-sm) var(--t-space-md);
+    padding-block: var(--t-space-sm);
+  }
+
+  .sf-root[data-template] .sf-consent__title {
+    font-size: var(--t-text-sm);
+    margin: 0;
+  }
+
+  .sf-root[data-template] .sf-consent__body {
+    font-size: var(--t-text-xs);
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .sf-root[data-template] .sf-consent .sf-actions {
+    flex-direction: column;
+    gap: var(--t-space-xs);
+  }
+
+  .sf-root[data-template] .sf-consent .sf-btn {
+    min-block-size: 40px;
+    padding-inline: var(--t-space-md);
+    font-size: var(--t-text-xs);
+  }
+}
+
+@media (max-width: 45rem) {
+  .sf-root[data-template] .sf-consent {
+    padding: var(--t-space-sm) var(--t-space-md);
+  }
+
+  .sf-root[data-template] .sf-consent__copy {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+}
+
+/* --------------------------------------------------------- footer social row -- */
+
+.sf-root[data-template] .sf-footer__social .sf-social,
+.sf-root[data-template] .sf-footer__social ul {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--t-space-sm);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* ---------------------------------------------------------- filter chip rows -- */
+
+.sf-root[data-template] .sf-chips .sf-btn--ghost {
+  min-block-size: 36px;
+  padding-inline: var(--t-space-md);
+  border-radius: var(--t-radius-pill);
+  font-size: var(--t-text-xs);
+  font-weight: var(--t-weight-body);
+}
+
+.sf-root[data-template] .sf-chips .sf-btn--ghost[aria-current='page'] {
+  background: var(--t-primary);
+  color: var(--t-on-primary);
+  border-color: var(--t-primary);
+  font-weight: var(--t-weight-display);
+}
+
+/* ----------------------------------------------------- footer: always columns -- */
+
+/*
+ * The `minimal` posture stacked the whole footer into one centred column — brand, links, contact,
+ * eight social circles one under the other — a ladder half a screen tall (owner: «ما هذا المنظر
+ * البشع»). Every store footer is columns; the posture keeps its quieter type but not its stack.
+ */
+.sf-root[data-template][data-footer='minimal'] .sf-footer__inner {
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  justify-items: stretch;
+  text-align: start;
+  max-inline-size: none;
+  gap: var(--t-space-xl);
+}
+
+.sf-root[data-template] .sf-footer__social {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--t-space-lg);
+  text-align: start;
+}
+
+.sf-root[data-template] .sf-footer__social h2 {
+  margin: 0;
+}
+
+.sf-root[data-template] .sf-footer__social .sf-social,
+.sf-root[data-template] .sf-footer .sf-social {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: var(--t-space-sm);
+}
+
+.sf-root[data-template] .sf-social li {
+  display: block;
+  inline-size: auto;
+}
+
+.sf-root[data-template] .sf-footer ul:not(.sf-social) {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--t-space-xs);
+}
+
+@media (max-width: 45rem) {
+  .sf-root[data-template] .sf-footer__inner {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--t-space-lg);
+  }
+
+  .sf-root[data-template] .sf-footer__social {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

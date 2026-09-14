@@ -442,21 +442,20 @@ describe('axis (b) — an admin-locked field is locked, and asking costs a slot'
 });
 
 describe('appearance', () => {
-  it('refuses a template the entitlement does not name', async () => {
+  // 2026-09-13 (owner-directed): the template is the platform owner's to change, from the admin
+  // account screen. A merchant post is refused BEFORE the entitlement is even consulted, on every
+  // plan — so a أساسي shop and an احترافي shop get the same answer and the same unchanged row.
+  it('refuses a merchant template change on every plan — the admin owns the template', async () => {
     const state = await saveTemplate(context(basic), { templateKey: 'neon-souq' });
-
-    expect(state?.messageKey).toBe('dashboard:errors.templateNotAllowed');
+    expect(state?.messageKey).toBe('dashboard:errors.templateAdminOnly');
     const site = await context(basic).db.site.findUnique({
       where: { tenantId: basic.tenantId },
       select: { templateKey: true },
     });
     expect(site?.templateKey).toBe('diwan');
-  });
 
-  it('accepts one it does', async () => {
-    const ctx = context(pro);
-    expect((await saveTemplate(ctx, { templateKey: 'warsheh' }))).toBeNull();
-    await saveTemplate(ctx, { templateKey: 'diwan' });
+    const proState = await saveTemplate(context(pro), { templateKey: 'warsheh' });
+    expect(proState?.messageKey).toBe('dashboard:errors.templateAdminOnly');
   });
 
   it('refuses free hex values from a plan that only has presets', async () => {

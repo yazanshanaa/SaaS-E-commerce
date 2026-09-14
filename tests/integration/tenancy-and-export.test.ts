@@ -54,7 +54,9 @@ describe('hostname parsing', () => {
   it('refuses reserved subdomains as slugs', () => {
     expect(parseHostname('n8n.souqbartaa.test').surface).toBe('unknown');
     expect(parseHostname('umami.souqbartaa.test').surface).toBe('unknown');
-    expect(parseHostname('www.souqbartaa.test').surface).toBe('unknown');
+    // 2026-09-13: the bare domain and `www.` are the platform's own pages (proxy redirects www).
+    expect(parseHostname('www.souqbartaa.test').surface).toBe('platform');
+    expect(parseHostname('souqbartaa.test').surface).toBe('platform');
   });
 
   it('treats anything off-domain as a candidate custom domain', () => {

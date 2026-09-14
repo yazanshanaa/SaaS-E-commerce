@@ -1,74 +1,71 @@
 import { translator } from '@/shared/i18n';
 import { st } from '../i18n';
 import { hasContactSection } from '../lib/arrangement';
+import { buildOrderUrl, normaliseWhatsappNumber } from '../lib/whatsapp';
 import type { StorefrontContext } from '../view-model';
 import { SECTION_ANCHORS } from '../section-anchors';
-import { CategoryNav, hasCategoryNav } from './category-nav';
+import { CartBadge } from './cart-badge';
+import { HomeIcon, WhatsappIcon } from './icons';
 import { SearchBox } from './search-box';
 
 /**
- * The storefront header — two rows, and the second one only when the shop has departments.
+ * The storefront header — the commerce chrome (2026-09-13, owner-directed).
  *
- *   row 1   brand (inline-start) · nav CENTRED · search (inline-end)
- *   row 2   the department chips, centred, on their own full-width band
+ * The previous header was a masthead: shop name, three text links, and the search box off to one
+ * side. It read as a magazine, and the owner's report said exactly that ("كأنه فايت على مدونة").
+ * Every large store puts the same four things in the same places, and a visitor's hands already
+ * know where they are, so this header stops being template-specific composition and becomes a
+ * fixed instrument:
  *
- * WHAT CHANGED AND WHY (2026-09-06, owner-directed). The header used to be a brand plus a nav
- * shoved to the far edge by `margin-inline-start: auto`, with the category chips appended into the
- * same flex row as a third item. On a wide screen that left a canyon of empty space between the
- * shop name and its own links, and the departments — the single most useful control on a shop with
- * more than one — landed wherever there happened to be room. A three-column grid pins the nav to
- * the OPTICAL CENTRE of the page regardless of how long the shop's name is, and the chips get a
- * band of their own so they read as a second level of navigation rather than as more header links.
+ *   row 1   brand (inline-start) · search (centre, wide) · actions (inline-end: WhatsApp, cart)
+ *   row 2   the department bar — «كل المنتجات» first, every stocked department, «تواصل معنا» last —
+ *           a single horizontally-scrollable line that never wraps and never hides a department
+ *           behind a "more" link.
  *
- * THE SEARCH BOX MOVED INTO THE CHROME. It was a section (`sections/search-bar.tsx`) a merchant
- * could place anywhere, which meant most shops never placed it and the ones that did put it on the
- * home page only — so a customer on a product page had no way to look for anything. The section
- * still exists and still works; this is the always-available one, and it draws only when
- * `flags.search` is true, because `/search` itself `notFound()`s when the feature is off and a
- * permanently-visible box leading to a 404 is worse than no box.
+ * The header is sticky. On a phone, row 1 collapses to brand + icon actions and the search box
+ * takes a full row of its own; the department bar stays. The bottom tab bar (`mobile-tabbar.tsx`)
+ * carries the same destinations under the thumb.
  *
- * The logo is optional and usually absent on day one, so the brand degrades to the shop's name set
- * in the template's display face — which is the point of choosing distinct Arabic faces at all.
+ * The template still owns every colour, face and radius through the tokens; `data-header` still
+ * reaches the element for a template that wants to adjust density. What no template may do any
+ * more is move the cart or the search somewhere a visitor has to look for them.
  */
 
-/**
- * The search copy comes from `insights`, not `storefront`, because that is where
- * `sections/search-bar.tsx` already reads it from — both halves of the same feature (the box a
- * customer types into and the report the merchant reads) live in one namespace. Two copies of
- * «دوّر» in two files is how the placeholder in the header and the placeholder in the section end
- * up saying different things.
- */
 const nt = translator('insights');
+const ct = translator('content');
 
 export interface SiteHeaderProps {
   context: StorefrontContext;
   /** Which nav entry is the current page, for `aria-current`. */
   current?: 'home' | 'products';
+  /** Active department key on `/products?category=`, for `aria-current` on the chip. */
+  currentCategory?: string | null;
 }
 
-export function SiteHeader({ context, current }: SiteHeaderProps) {
+export function whatsappEnquiryHref(context: StorefrontContext): string | null {
+  if (!context.flags.whatsappOrders) return null;
+  const number = normaliseWhatsappNumber(context.site.whatsapp);
+  if (!number) return null;
+  const template = st('order.messageShop', { shop: context.site.name, url: context.origin });
+  return buildOrderUrl({ number, template }, 1);
+}
+
+export function SiteHeader({ context, current, currentCategory }: SiteHeaderProps) {
   const { site } = context;
 
   /**
-   * `flags.search` read defensively, the same way `sections/search-bar.tsx` reads it: the field is
-   * present on `StorefrontFlags` today, but B2's live preview builds its own view model by hand and
-   * an older one missing the key must read as OFF rather than as a box pointing at a dead route.
+   * `flags.search` read defensively, the same way `sections/search-bar.tsx` reads it: an older
+   * view model missing the key must read as OFF rather than as a box pointing at a dead route.
    */
   const searchOn = (context.flags as { search?: boolean }).search === true;
-
-  /**
-   * The BAND is asked for separately from its contents, because the band carries a rule and its own
-   * vertical padding: wrapping a component that returns null would give every one-category boutique
-   * an empty bordered strip under its header, and `:empty` cannot see it through the layout shell.
-   * `hasCategoryNav` is exported from the component whose own condition it states, so the two
-   * cannot drift.
-   */
-  const showCategories = hasCategoryNav(context.categories);
+  const whatsappHref = whatsappEnquiryHref(context);
+  const stocked = context.categories.filter((category) => category.productCount > 0);
+  const contact = hasContactSection(context);
 
   return (
-    <header className="sf-header">
+    <header className="sf-header" data-commerce="true">
       <div className="sf-shell sf-header__inner">
-        <a className="sf-brand" href="/">
+        <a className="sf-brand" href="/" aria-current={current === 'home' ? 'page' : undefined}>
           {site.logo ? (
             /* A CDN variant, not an upload — see media-image.tsx for why next/image is refused. */
             // eslint-disable-next-line @next/next/no-img-element
@@ -86,29 +83,7 @@ export function SiteHeader({ context, current }: SiteHeaderProps) {
           </span>
         </a>
 
-        <nav className="sf-nav" aria-label={st('nav.label')}>
-          <a href="/" aria-current={current === 'home' ? 'page' : undefined}>
-            {st('nav.home')}
-          </a>
-          <a href="/products" aria-current={current === 'products' ? 'page' : undefined}>
-            {st('nav.products')}
-          </a>
-          {/* Only when the home arrangement actually contains the section this points at.
-              Rendered unconditionally, it was a dead anchor on every page of any shop whose
-              arrangement has no contact block — the browser jumps nowhere and the visitor
-              concludes the site is broken. */}
-          {hasContactSection(context) ? (
-            <a href={`/#${SECTION_ANCHORS.contact_whatsapp}`}>{st('nav.contact')}</a>
-          ) : null}
-        </nav>
-
-        {/*
-          The tools column always exists, even empty, and that is what holds the nav in the centre:
-          in a three-column grid whose outer tracks are `1fr`, removing one collapses the middle
-          column off-centre by half the brand's width. An empty div costs nothing and keeps the
-          layout honest on the shops that have no search.
-        */}
-        <div className="sf-header__tools">
+        <div className="sf-header__search">
           {searchOn ? (
             <SearchBox
               id="sf-header-search"
@@ -122,20 +97,66 @@ export function SiteHeader({ context, current }: SiteHeaderProps) {
             />
           ) : null}
         </div>
+
+        <div className="sf-header__actions">
+          <a className="sf-iconbtn sf-iconbtn--home" href="/" aria-label={st('nav.home')}>
+            <span className="sf-iconbtn__icon">
+              <HomeIcon />
+            </span>
+          </a>
+          {whatsappHref ? (
+            <a
+              className="sf-iconbtn sf-iconbtn--wa"
+              href={whatsappHref}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span className="sf-iconbtn__icon">
+                <WhatsappIcon />
+              </span>
+              <span className="sf-iconbtn__label">{st('nav.whatsapp')}</span>
+            </a>
+          ) : null}
+          {context.flags.cart ? (
+            <CartBadge
+              tenantId={context.tenantId}
+              variant="inline"
+              showLabel
+              labels={{ label: st('cart.fabLabel'), labelWithCount: st('cart.fabLabelWithCount') }}
+            />
+          ) : null}
+        </div>
       </div>
 
-      {/*
-        Departments, flat, on their own centred band. See `category-nav.tsx`: this is a link list,
-        not a mega-menu — capped at six with the tail collapsed into one catalogue link, no dropdown,
-        no JavaScript, and nothing at all for a shop with fewer than two stocked departments.
-      */}
-      {showCategories ? (
-        <div className="sf-header__cats">
-          <div className="sf-shell">
-            <CategoryNav categories={context.categories} />
-          </div>
+      <nav className="sf-header__cats" aria-label={ct('nav.categories')}>
+        <div className="sf-shell">
+          <ul className="sf-catbar">
+            <li>
+              <a
+                href="/products"
+                aria-current={current === 'products' && !currentCategory ? 'page' : undefined}
+              >
+                {st('products.all')}
+              </a>
+            </li>
+            {stocked.map((category) => (
+              <li key={category.key}>
+                <a
+                  href={`/products?category=${encodeURIComponent(category.key)}`}
+                  aria-current={currentCategory === category.key ? 'page' : undefined}
+                >
+                  {category.name}
+                </a>
+              </li>
+            ))}
+            {contact ? (
+              <li className="sf-catbar__end">
+                <a href={`/#${SECTION_ANCHORS.contact_whatsapp}`}>{st('nav.contact')}</a>
+              </li>
+            ) : null}
+          </ul>
         </div>
-      ) : null}
+      </nav>
     </header>
   );
 }

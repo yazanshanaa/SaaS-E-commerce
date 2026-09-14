@@ -1,42 +1,100 @@
 'use client';
 
 import { useCart } from '../lib/cart';
+import { cartDrawer } from '../lib/cart-drawer-bus';
 
 /**
- * The floating cart button (Phase 8, item 2) — present on every page of the storefront while
- * `flags.cart` is true, rendered once from `StorefrontShell` so no page has to remember it.
+ * The cart entry point, in two postures:
  *
- * Renders even at count 0 (as a plain link to an empty cart) rather than disappearing: a
- * vanishing button that reappears the moment something is added is a worse affordance than one
- * that is always exactly where a customer expects it, matching the "أضف للسلة" confirmation link
- * (`add-to-cart.tsx`) which points at the same place.
+ *   - `fab`    — the floating round button in `.sf-dock` (the pre-2026-09-13 behaviour).
+ *   - `inline` — an icon button that sits in the commerce header and the mobile tab bar, with an
+ *                optional visible text label.
+ *
+ * Both read the same `useCart` store so the count is one number wherever it is shown. Rendered on
+ * the client only because the count lives in localStorage; the server renders zero items and the
+ * badge appears after hydration, which is the same behaviour every large store has.
  */
 
 export interface CartBadgeLabels {
-  /** Used at count 0. */
   label: string;
-  /** Carries `{count}` — used once there is at least one item, so a screen reader announces the
-   *  quantity as part of the link's own accessible name, not only as a visual badge. */
   labelWithCount: string;
 }
 
-export function CartBadge({ tenantId, labels }: { tenantId: string; labels: CartBadgeLabels }) {
+export interface CartBadgeProps {
+  tenantId: string;
+  labels: CartBadgeLabels;
+  variant?: 'fab' | 'inline' | 'tab';
+  /** `inline` only: show the label text beside the icon. */
+  showLabel?: boolean;
+}
+
+export function CartBadge({ tenantId, labels, variant = 'fab', showLabel = false }: CartBadgeProps) {
   const { count } = useCart(tenantId);
-  const accessibleLabel = count > 0 ? labels.labelWithCount.replace('{count}', String(count)) : labels.label;
+  const accessibleLabel =
+    count > 0 ? labels.labelWithCount.replace('{count}', String(count)) : labels.label;
+  const shown = count > 99 ? '99+' : String(count);
+
+  if (variant === 'tab') {
+    return (
+      <a
+        className="sf-tabbar__item"
+        href="/cart"
+        aria-label={accessibleLabel}
+        onClick={(event) => {
+          event.preventDefault();
+          cartDrawer('open');
+        }}
+      >
+        <span className="sf-tabbar__icon">
+          <CartIcon />
+          {count > 0 ? (
+            <span className="sf-count" aria-hidden="true">
+              {shown}
+            </span>
+          ) : null}
+        </span>
+        <span className="sf-tabbar__label">{labels.label}</span>
+      </a>
+    );
+  }
+
+  if (variant === 'inline') {
+    return (
+      <a
+        className="sf-iconbtn sf-iconbtn--cart"
+        href="/cart"
+        aria-label={accessibleLabel}
+        onClick={(event) => {
+          event.preventDefault();
+          cartDrawer('open');
+        }}
+      >
+        <span className="sf-iconbtn__icon">
+          <CartIcon />
+          {count > 0 ? (
+            <span className="sf-count" aria-hidden="true">
+              {shown}
+            </span>
+          ) : null}
+        </span>
+        {showLabel ? <span className="sf-iconbtn__label">{labels.label}</span> : null}
+      </a>
+    );
+  }
 
   return (
     <a className="sf-cart-fab" href="/cart" aria-label={accessibleLabel}>
       <CartIcon />
       {count > 0 ? (
         <span className="sf-cart-fab__count" aria-hidden="true">
-          {count > 99 ? '99+' : count}
+          {shown}
         </span>
       ) : null}
     </a>
   );
 }
 
-function CartIcon() {
+export function CartIcon() {
   return (
     <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false">
       <path

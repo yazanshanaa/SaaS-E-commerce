@@ -2,6 +2,7 @@
 
 import { COLOR_PRESETS, type ColorMode } from '@/shared/site-contract';
 import { t } from '@/shared/i18n';
+import { Hint } from '@/app/_components/kit/hint';
 
 /**
  * The colour editor, in the mode this plan actually allows.
@@ -83,6 +84,9 @@ export function ColorEditor({
               <div className="sbd-field" key={field}>
                 <label className="sbd-label" htmlFor={`color-${field}`}>
                   {t('dashboard', `appearance.${field}`)}
+                  {field === 'primary' || field === 'secondary' || field === 'background' ? (
+                    <Hint text={t('dashboard', `help.colors${field[0]!.toUpperCase()}${field.slice(1)}`)} />
+                  ) : null}
                 </label>
                 <div className="sbd-color-row">
                   <input

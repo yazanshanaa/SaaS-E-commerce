@@ -22,11 +22,31 @@ import type { TemplateDefinition } from '../types';
  */
 export const mawid: TemplateDefinition = {
   key: 'mawid',
+  /*
+   * THE IDENTITY FACE — headings, and what `site-contract/templates.ts` records as this template's
+   * `fontKey`. It stays exactly what it always was; 12.E did not move it.
+   */
   font: {
     family: 'IBM Plex Sans Arabic',
     dir: 'ibm-plex-sans-arabic',
     regular: 'ibm-plex-sans-arabic-v15-arabic-regular.woff2',
     bold: 'ibm-plex-sans-arabic-v15-arabic-700.woff2',
+  },
+  /*
+   * THE BODY FACE (Phase 12.E), new. Every template used to set ONE family for headings and copy
+   * alike, which a critic pass measured as 146 elements in one face against 1 in another and named
+   * as a large part of why the pages read flat. Arabic has no uppercase and no small-caps, so face
+   * is one of only three hierarchy levers it has.
+   *
+   * The (identity, body) tuple is unique across the nine, so the pairing SHARPENS the anti-reskin
+   * distance instead of collapsing it — giving all nine the same body face would have fixed the
+   * contrast and flattened the set.
+   */
+  textFont: {
+    family: 'Zain',
+    dir: 'zain',
+    regular: 'zain-v4-arabic-regular.woff2',
+    bold: 'zain-v4-arabic-700.woff2',
   },
   /**
    * `ledger` · `overlay` · `index` · `arch` — distance 2 from ورشة (card, mask), 2 from بيت
@@ -80,10 +100,10 @@ export const mawid: TemplateDefinition = {
       onPrimary: '#FFFFFF',
       onSecondary: '#FFFFFF',
       surfaceAlt: '#F3F4F4',
-      textMuted: '#656F6D',
+      textMuted: '#4D5453',
       border: '#7F8E8C',
-      link: '#0E6B5B',
-      accent: '#8A4A67',
+      link: '#0C594C',
+      accent: '#763F58',
       /** Misted white — light by design. */
       scheme: 'light',
       /**
@@ -106,6 +126,7 @@ export const mawid: TemplateDefinition = {
     },
     type: {
       family: "'IBM Plex Sans Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif",
+      textFamily: "'Zain', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif",
       displayWeight: '700',
       bodyWeight: '400',
       xs: '0.8125rem',

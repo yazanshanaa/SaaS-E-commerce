@@ -155,8 +155,8 @@ async function latestOrder(tenantId: string): Promise<{ id: string; trackingCode
 async function addToCartAndOpenCart(page: Page): Promise<void> {
   await page.goto(`${storefront(SHOP.slug)}/products/${SHOP.productSlug}`);
   await page.getByRole('button', { name: 'أضف للسلة' }).click();
-  await expect(page.getByRole('link', { name: 'شوف السلة' })).toBeVisible();
-  await page.getByRole('link', { name: 'شوف السلة' }).click();
+  await expect(page.getByRole('link', { name: 'عرض السلة' })).toBeVisible();
+  await page.getByRole('link', { name: 'عرض السلة' }).click();
   await expect(page.getByRole('heading', { name: 'سلة الشراء' })).toBeVisible();
 }
 
@@ -186,13 +186,17 @@ test.beforeAll(async () => {
 
 // =============================================================================
 
-test.describe('cart and coupons are off by default, and are instant per-account toggles', () => {
-  test('the admin turns cart and coupons on for one shop only', async ({ page }) => {
+test.describe('cart and coupons come with a paid plan, and stay instant per-account toggles', () => {
+  test('the admin can flip cart off and back on for one shop', async ({ page }) => {
+    // 2026-09-13: متجر/احترافي carry cart and coupons by plan default. The toggle is still the
+    // owner's: one press turns it OFF for this shop, a second turns it back ON — each saved.
     await signInAsAdmin(page);
     await page.goto(`${ADMIN}/accounts/${SHOP.tenantId}`);
 
     for (const label of ['سلة الشراء', 'كوبونات الخصم']) {
       const row = page.locator('.sba-matrix-row', { hasText: label });
+      await row.getByRole('button').first().click();
+      await expect(page.getByText('تم الحفظ.')).toBeVisible();
       await row.getByRole('button').first().click();
       await expect(page.getByText('تم الحفظ.')).toBeVisible();
     }
@@ -203,7 +207,15 @@ test.describe('add to cart → checkout → tracking → edit → cancel', () =>
   test('the product page offers "أضف للسلة" instead of the WhatsApp link, once cart is on', async ({ page }) => {
     await page.goto(`${storefront(SHOP.slug)}/products/${SHOP.productSlug}`);
     await expect(page.getByRole('button', { name: 'أضف للسلة' })).toBeVisible();
-    await expect(page.getByRole('link', { name: /اطلب عبر واتساب/ })).toHaveCount(0);
+    /*
+     * Scoped to <main>, and here the scope is the ASSERTION rather than a detail.
+     * What cart replaces is the product's own order BUTTON. The shell's WhatsApp FAB stays on
+     * every page and should — a shop that takes cart orders still wants to be messaged. Unscoped,
+     * this expected zero and counted the FAB, so it read as "cart did not replace the button".
+     */
+    await expect(
+      page.getByRole('main').getByRole('link', { name: /اطلب عبر واتساب/ }),
+    ).toHaveCount(0);
   });
 
   /**
@@ -242,7 +254,7 @@ test.describe('add to cart → checkout → tracking → edit → cancel', () =>
 
     await page.getByLabel('آخر 4 أرقام من رقم الجوال').fill('9999');
     await page.getByRole('button', { name: 'اعرض الطلب' }).click();
-    await expect(page.getByText('ما لقينا طلب بهاد الرمز والرقم')).toBeVisible();
+    await expect(page.getByText('لم نجد طلباً بهذا الرمز والرقم')).toBeVisible();
 
     await page.getByLabel('آخر 4 أرقام من رقم الجوال').fill(CUSTOMER.last4);
     await page.getByRole('button', { name: 'اعرض الطلب' }).click();
@@ -284,7 +296,7 @@ test.describe('add to cart → checkout → tracking → edit → cancel', () =>
     await page.getByRole('button', { name: 'ألغِ الطلب' }).click();
     await expect(page.getByRole('heading', { name: 'إلغاء الطلب' })).toBeVisible();
 
-    await page.getByLabel('ليش عم تلغي الطلب؟').fill('ما بدي الطلب هلق');
+    await page.getByLabel('لماذا تلغي الطلب؟').fill('ما بدي الطلب هلق');
     await page.getByRole('button', { name: 'أكّد الإلغاء' }).click();
 
     await expect(page.getByText('سبب الإلغاء: ما بدي الطلب هلق')).toBeVisible();
@@ -353,7 +365,7 @@ test.describe('a tracking code belongs to its own tenant, and only its own tenan
 
     // Same generic failure as a wrong code or a wrong phone would produce — never a
     // distinguishable "exists on a different site" message, which would be an oracle.
-    await expect(page.getByText('ما لقينا طلب بهاد الرمز والرقم')).toBeVisible();
+    await expect(page.getByText('لم نجد طلباً بهذا الرمز والرقم')).toBeVisible();
 
     // The SAME code, on its OWN tenant's host, still resolves — proving the miss above is
     // isolation, not a broken or expired code.
@@ -368,10 +380,14 @@ test.describe('Q5 still holds for every tenant that has not opted into cart', ()
   test('a shop without the feature keeps the plain WhatsApp flow, with no form at all', async ({ page }) => {
     await page.goto(`${storefront(PLAIN.slug)}/products/${PLAIN.productSlug}`);
 
-    await expect(page.getByRole('link', { name: /اطلب عبر واتساب/ })).toBeVisible();
+    // Scoped to <main> — the shell's WhatsApp FAB shares this accessible name.
+    await expect(
+      page.getByRole('main').getByRole('link', { name: /اطلب عبر واتساب/ }),
+    ).toBeVisible();
     await expect(page.getByRole('button', { name: 'أضف للسلة' })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'إتمام الطلب' })).toHaveCount(0);
-    expect(await page.locator('input, textarea, select').count()).toBe(0);
+    // Scoped to <main>: the header carries a product search box on every page (2026-09-13).
+    expect(await page.getByRole('main').locator('input, textarea, select').count()).toBe(0);
     // No floating cart button either — the whole surface is absent, not merely empty.
     await expect(page.locator('.sf-cart-fab')).toHaveCount(0);
   });

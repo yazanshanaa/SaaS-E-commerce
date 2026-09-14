@@ -357,9 +357,16 @@ export async function deleteZone(
   tenantId: string,
   zoneId: string,
 ): Promise<boolean> {
-  // Scoped by tenantId as well as id even though RLS would refuse a foreign row anyway: a
-  // `deleteMany` that matched nothing is the honest way to learn the row was not ours, where
-  // `delete` would throw a Prisma error the caller would have to decode.
+  /**
+   * Scoped by tenantId as well as id. A `deleteMany` that matched nothing is also the honest way
+   * to learn the row was not ours, where `delete` would throw a Prisma error the caller decodes.
+   *
+   * The clause "even though RLS would refuse a foreign row anyway" used to sit here and was
+   * removed in the 2026-09-07 audit, because it is not true on every caller. From the MERCHANT
+   * dashboard it holds. From the super admin's change-request applier it does not: that path runs
+   * `withTenantTxn` with a super_admin actor, and the generic policy passes every row of every
+   * tenant for the length of that transaction. This `where` is load-bearing, not documentation.
+   */
   const result = await tx.deliveryZone.deleteMany({ where: { id: zoneId, tenantId } });
   return result.count > 0;
 }

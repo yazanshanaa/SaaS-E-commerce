@@ -83,12 +83,41 @@ export interface TemplateTokens {
      * `bayt/definition.ts` on why a palette nobody computed cannot ship.
      */
     altGround?: { background: string; surface: string; text: string };
+    /**
+     * THE TWO BAND GROUNDS (Phase 12.E) — derived, never authored, and here rather than computed in
+     * `templateCssVars` for one reason: THE CONTRAST GUARD HAS TO SEE THEM.
+     *
+     * `textMuted`, `link` and `accent` are each guarded at 4.5:1 against every surface they can land
+     * on, and that list was `[background, surface, surfaceAlt]`. The band system then introduced two
+     * more grounds that body text sits on, and the first QA capture caught the consequence
+     * immediately: a section lead on the tinted band measured 4.06:1 against the 4.5 this platform
+     * commits to. A ground the guard has not seen is a ground text can fail on.
+     *
+     * Optional so no `definition.ts` has to author them — they are computed for every template by
+     * `deriveColorTokens`, in both schemes, like the rest of the derived set.
+     */
+    groundDeep?: string;
+    groundTint?: string;
   };
   radius: { sm: string; md: string; lg: string; pill: string };
   space: { xs: string; sm: string; md: string; lg: string; xl: string; xxl: string; xxxl: string };
   type: {
     /** The full stack, ending in a system Arabic fallback for the swap window. */
     family: string;
+    /**
+     * THE BODY STACK, when the template pairs two faces (Phase 12.E).
+     *
+     * Absent means "body copy uses `family` too", which is what all nine did until a critic pass
+     * measured the consequence: on the QA render, ONE face set 146 elements and the other set 1.
+     * Weight 400 against weight 700 of a single wide Arabic face is not type contrast, and it is a
+     * large part of why the pages read flat at every size — Arabic has no uppercase and no
+     * small-caps, so size, weight and FACE are the only hierarchy available.
+     *
+     * The pairs are chosen so the (display, text) tuple is unique across the nine, which makes this
+     * a distinctness axis rather than a uniformity one: giving every template the same body face
+     * would have flattened them further while fixing the contrast.
+     */
+    textFamily?: string;
     displayWeight: string;
     bodyWeight: string;
     /** Type scale. Arabic needs more leading than Latin — see `lineBody`. */
@@ -310,7 +339,18 @@ export interface TemplateSignature {
 
 export interface TemplateDefinition {
   key: TemplateKey;
+  /** The IDENTITY face — headings, and the `fontKey` the site contract records. */
   font: TemplateFont;
+  /**
+   * The BODY face, when the template pairs two (Phase 12.E). Absent means body copy uses `font`.
+   *
+   * It exists separately from `tokens.type.textFamily` because the two answer different
+   * questions: the token is the CSS stack a rule reads, and this is the FILE the shell preloads.
+   * Both are preloaded: the identity face's BOLD carries every heading (and the hero `h1`, which is
+   * the LCP element on the typographic hero), and this face's REGULAR carries all the copy. That is
+   * the same two files a single-family template already fetched.
+   */
+  textFont?: TemplateFont;
   tokens: TemplateTokens;
   layout: TemplateLayout;
   signature: TemplateSignature;

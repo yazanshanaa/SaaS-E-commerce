@@ -41,7 +41,7 @@ test.describe('the admin front door', () => {
     await signIn(page);
 
     // The revenue rule is stated to the reader, not only recorded in docs/DECISIONS.md.
-    await expect(page.getByText('الاشتراك السنوي بينقسم على اثني عشر شهراً')).toBeVisible();
+    await expect(page.getByText('الاشتراك السنوي يُقسَم على اثني عشر شهراً')).toBeVisible();
 
     const cookies = await page.context().cookies();
     const session = cookies.find((cookie) => cookie.name.includes('session'));

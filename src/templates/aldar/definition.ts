@@ -27,11 +27,31 @@ import type { TemplateDefinition } from '../types';
  */
 export const aldar: TemplateDefinition = {
   key: 'aldar',
+  /*
+   * THE IDENTITY FACE — headings, and what `site-contract/templates.ts` records as this template's
+   * `fontKey`. It stays exactly what it always was; 12.E did not move it.
+   */
   font: {
     family: 'Rubik',
     dir: 'rubik',
     regular: 'rubik-v31-arabic-regular.woff2',
     bold: 'rubik-v31-arabic-700.woff2',
+  },
+  /*
+   * THE BODY FACE (Phase 12.E), new. Every template used to set ONE family for headings and copy
+   * alike, which a critic pass measured as 146 elements in one face against 1 in another and named
+   * as a large part of why the pages read flat. Arabic has no uppercase and no small-caps, so face
+   * is one of only three hierarchy levers it has.
+   *
+   * The (identity, body) tuple is unique across the nine, so the pairing SHARPENS the anti-reskin
+   * distance instead of collapsing it — giving all nine the same body face would have fixed the
+   * contrast and flattened the set.
+   */
+  textFont: {
+    family: 'Zain',
+    dir: 'zain',
+    regular: 'zain-v4-arabic-regular.woff2',
+    bold: 'zain-v4-arabic-700.woff2',
   },
   /**
    * `split` · `overlay` · `rail` · `arch` — distance 2 from ديوان (card, categories), 2 from
@@ -90,10 +110,10 @@ export const aldar: TemplateDefinition = {
       onPrimary: '#FFFFFF',
       onSecondary: '#FFFFFF',
       surfaceAlt: '#F5F2F0',
-      textMuted: '#766B63',
+      textMuted: '#554D47',
       border: '#9D8973',
-      link: '#AD532C',
-      accent: '#637357',
+      link: '#843F22',
+      accent: '#4A5641',
       /** Sand page — light by design. */
       scheme: 'light',
       /**
@@ -121,6 +141,7 @@ export const aldar: TemplateDefinition = {
     },
     type: {
       family: "'Rubik', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif",
+      textFamily: "'Zain', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif",
       displayWeight: '700',
       bodyWeight: '400',
       xs: '0.8125rem',

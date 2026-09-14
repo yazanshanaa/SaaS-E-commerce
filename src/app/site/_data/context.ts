@@ -925,7 +925,6 @@ function composeTenantData(source: TenantSource, access: StorefrontAccess): Cach
           // them, and the nav links to it from every page.
           hasContact: source.hasContact || socialLinks.length > 0,
           hasLocation: source.hasLocation,
-          gridColumns: template.layout.gridColumns,
 
           /*
             PHASE 12.A. Every one of these is read from the ALREADY-GATED local, never from
@@ -975,7 +974,12 @@ function composeTenantData(source: TenantSource, access: StorefrontAccess): Cach
       cart: access.cart,
       // Phase 9. Same two-questions-one-boolean shape as `pwa`: the plan has to include search and
       // the merchant has to have switched it on.
-      search: access.searchInsights && source.searchEnabled,
+      /**
+       * ALWAYS ON (2026-09-13, owner-directed: "like Shopify and Salla"). A search box is part of
+       * every store's chrome, not a plan feature. `search_insights` still gates the merchant's
+       * search REPORT and the recording behind it; `Site.searchEnabled` no longer hides the box.
+       */
+      search: true,
       visitorAnalytics: access.visitorAnalytics,
     },
     checkout,

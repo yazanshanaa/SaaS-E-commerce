@@ -8,6 +8,10 @@
 #   git fetch --all --prune && git checkout phase-8-11 && git pull --ff-only
 #   bash scripts/server-update.sh
 #
+# SINCE 2026-09-13 THIS IS NORMALLY RUN BY scripts/auto-deploy.sh from cron, which fetches the
+# `production` branch and calls this script only when the tip changed. Pushing to `production` is
+# the release. The manual path below still works and is the rollback path.
+#
 # WHY IT IS NOT THE GITHUB WORKFLOW. `.github/workflows/deploy.yml` deploys on a green CI run of
 # `main`, and this box is checked out to `phase-8-11` — every phase from 8 to 11 lives only on that
 # branch and was never merged. Until that merge happens, the workflow watches a branch this server

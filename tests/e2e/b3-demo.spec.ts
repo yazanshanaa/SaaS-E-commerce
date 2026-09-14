@@ -83,7 +83,7 @@ test('the public form is reachable with no session at all', async ({ page }) => 
    * becomes a demo — which is the majority case for a form anyone can submit. The second half is
    * what `DemoRequest.purgeAfter` and B1's nightly sweep actually enforce.
    */
-  const notice = page.getByText('بنحذفها لما تنسكّر النسخة التجريبية');
+  const notice = page.getByText('نحذفها عند إغلاق النسخة التجريبية');
   await expect(notice).toBeVisible();
   await expect(notice).toContainText('30');
 });
@@ -96,7 +96,9 @@ test('the form refuses bad input in Arabic, without losing what was typed', asyn
   await page.locator('#requestedPrefix').fill(PREFIX);
   await page.getByRole('button', { name: 'أرسل الطلب' }).click();
 
-  const alert = page.getByRole('alert');
+  // Scoped to the form's own notice: Next's route announcer is also role="alert" since 16.3.x,
+  // and a bare getByRole('alert') is a strict-mode violation against two elements.
+  const alert = page.locator('.sbp-notice[role="alert"]');
   await expect(alert).toBeVisible();
   await expect(alert.locator('[data-field="whatsapp"]')).toContainText('صيغة دولية');
 
@@ -152,7 +154,7 @@ test('rejecting keeps the row and its deletion date, and says so', async ({ page
 
   const row = page.getByRole('row').filter({ hasText: REJECTED_BUSINESS });
   await row.getByRole('button', { name: 'ارفض الطلب' }).click();
-  await expect(page.getByText('تم رفض الطلب. بينحذف لحاله بتاريخ الحذف المذكور.')).toBeVisible();
+  await expect(page.getByText('تم رفض الطلب. يُحذف تلقائياً بتاريخ الحذف المذكور.')).toBeVisible();
 
   /**
    * The row SURVIVES the rejection, and that is the design rather than an oversight: it keeps its
@@ -197,7 +199,7 @@ test.describe('the approve → link → storefront → close chain', () => {
      * shareable link in under 30 seconds" (docs/PHASES.md) — so the assertion now fails when the
      * PRODUCT misses its budget rather than when a loaded CI box is slower than a default.
      */
-    await expect(page.getByText('تمت الموافقة وتجهّزت النسخة التجريبية.')).toBeVisible({
+    await expect(page.getByText('تمت الموافقة وجُهّزت النسخة التجريبية.')).toBeVisible({
       timeout: 30_000,
     });
 
@@ -262,14 +264,14 @@ test.describe('the approve → link → storefront → close chain', () => {
 
     // A wrong confirmation changes nothing — the list above it is a page of similar-looking rows.
     await page.locator('#confirmSlug').fill('not-the-slug');
-    await page.getByRole('button', { name: 'سكّر واحذف نهائياً' }).click();
-    await expect(page.getByText('المعرّف اللي كتبته مش مطابق. ما صار إشي.')).toBeVisible();
+    await page.getByRole('button', { name: 'أغلق واحذف نهائياً' }).click();
+    await expect(page.getByText('المعرّف الذي كتبته غير مطابق. لم يتغيّر شيء.')).toBeVisible();
 
     // The slug is the input's own placeholder, which is the one place on the screen it is rendered
     // verbatim — reading it back out is more honest than reconstructing it from the heading.
     const realSlug = await page.locator('#confirmSlug').getAttribute('placeholder');
     await page.locator('#confirmSlug').fill(realSlug ?? '');
-    await page.getByRole('button', { name: 'سكّر واحذف نهائياً' }).click();
+    await page.getByRole('button', { name: 'أغلق واحذف نهائياً' }).click();
 
     /**
      * Same reason as the build above, from the other end of the demo's life.

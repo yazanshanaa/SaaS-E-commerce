@@ -1,4 +1,5 @@
 import type { ScopedDb, TenantTx } from '@/server/db';
+import { normalisePhone } from '@/server/customers/identity';
 import type { CouponInput } from './schema';
 
 /**
@@ -92,8 +93,28 @@ export async function validateCoupon(
   // either way, and closing it needs the same INSERT-guarded-by-EXISTS shape `maxUses` uses,
   // which is real complexity for a narrow, low-stakes window. Documented rather than hidden.
   if (context.customerPhone && coupon.perPhoneLimit !== null) {
+    /**
+     * MATCHED ON THE NORMALISED NUMBER, not on the string the customer happened to type.
+     *
+     * This compared `customerPhone` verbatim, so «مرة واحدة لكل زبون» was one use per SPELLING:
+     * `0521234567`, `052-123 4567`, `+972521234567`, `972521234567` and the Arabic-Indic forms are
+     * all the same person and were four-plus separate rows. The platform already has exactly one
+     * answer to "is this the same number" — `normalisePhone`, which the customers module has used
+     * since Phase 9 — and this call site simply never asked it. 2026-09-07 audit.
+     *
+     * Both spellings are matched rather than just the normalised one: redemptions written before
+     * this fix hold the raw string, and a count that looked only at the normalised form would stop
+     * seeing them — handing every past redeemer their one-per-customer coupon back. New rows are
+     * written normalised (`redeemCouponInTx`), so the raw arm only ever covers history.
+     */
+    const normalised = normalisePhone(context.customerPhone);
+    const spellings =
+      normalised && normalised !== context.customerPhone
+        ? [context.customerPhone, normalised]
+        : [context.customerPhone];
+
     const used = await db.couponRedemption.count({
-      where: { tenantId, couponId: coupon.id, customerPhone: context.customerPhone },
+      where: { tenantId, couponId: coupon.id, customerPhone: { in: spellings } },
     });
     if (used >= coupon.perPhoneLimit) return { ok: false, error: 'already_used' };
   }
@@ -185,7 +206,13 @@ export async function redeemCouponInTx(
       tenantId: input.tenantId,
       couponId: input.couponId,
       orderId: input.orderId,
-      customerPhone: input.customerPhone,
+      /**
+       * Stored NORMALISED so the per-phone ceiling in `validateCoupon` counts a customer once
+       * however they spell their own number. Falls back to the raw string only when
+       * `normalisePhone` refuses it outright — an unusable value is still better recorded than
+       * dropped, and the redemption row is evidence as well as a counter. 2026-09-07 audit.
+       */
+      customerPhone: normalisePhone(input.customerPhone) ?? input.customerPhone,
       discountAgorot: input.discountAgorot,
     },
     select: { id: true },

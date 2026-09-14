@@ -196,6 +196,7 @@ export default async function ProductsPage({ searchParams }: PageProps) {
         path: '/products',
       }}
       current="products"
+      currentCategory={activeCategory ?? null}
     >
       <section className="sf-block">
         <div className="sf-shell">
@@ -319,6 +320,7 @@ export default async function ProductsPage({ searchParams }: PageProps) {
                   template={context.template}
                   priority={index < columns}
                   cart={{ tenantId: context.tenantId, enabled: context.flags.cart }}
+                  context={context}
                 />
               ))}
             </div>

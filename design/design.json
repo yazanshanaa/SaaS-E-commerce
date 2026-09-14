@@ -1,0 +1,130 @@
+{
+  "$schema_note": "Design Engine contract for Souq Bartaa. This file DOCUMENTS an existing, owner-approved system (DESIGN_BRIEF.md, approved 2026-08-30 from Direction C of docs/design-directions.html). It is not a new identity. Amend DESIGN_BRIEF.md first, then this file — never the other way round.",
+  "project": "سوق برطعة — منصة مواقع التجار (chrome: «مرصد» / Marsad)",
+  "business_type": "multi-tenant-saas-dashboard",
+  "language": "ar",
+  "dir": "rtl",
+  "audience": "صاحب محل في برطعة والضفة والداخل — جوال أولاً؛ ومشغّل المنصة الوحيد على شاشة كبيرة لساعات",
+  "feeling": ["أداة دقيقة", "هدوء كثيف", "ثقة بلا زخرفة"],
+  "sentence": "feels like an instrument a shopkeeper reads their business off — not a marketing site with tables bolted on",
+  "physical_world": "لوحة عدادات، ورق دفتر حسابات، خط مسطرة رفيع، إضاءة محل مضبوطة",
+  "kit": "forge",
+  "kit_note": "Nearest kit by category (SaaS/dashboard). The implementation predates the kit and is governed by DESIGN_BRIEF.md; forge is a reference for craft details only, never a source of tokens.",
+  "archetype": "dark techno / terminal (de-cyberpunked) × swiss international grid",
+  "scope": {
+    "in": ["admin.{DOMAIN} — Super Admin «سجلّ»", "app.{DOMAIN} — Merchant Dashboard «ورشة»"],
+    "out": ["the nine storefront templates — each ships its own frozen token set; see storefront_templates below"]
+  },
+  "fonts": {
+    "display": { "family": "Alexandria", "weights": [700], "role": "headings, panel titles" },
+    "text": { "family": "IBM Plex Sans Arabic", "weights": [400, 700], "role": "body, labels, tables, KPI values" },
+    "latin_accent": null,
+    "mono": { "family": "ui-monospace stack", "weights": [400], "role": "digests, IDs, hashes" }
+  },
+  "font_rules": {
+    "self_hosted": true,
+    "arabic_subset": true,
+    "declared_in": "src/app/fonts.css (root layout)",
+    "excluded": ["Zain — a storefront face; reads soft rather than precise on a control surface"],
+    "scale": { "sm": "0.9375rem", "base": "1.0625rem", "lg": "1.25rem", "xl": "1.6rem", "2xl": "2.1rem" },
+    "line_height": { "body": 1.75, "heading": 1.3 },
+    "letter_spacing": { "heading": "-0.01em", "body": "never — it breaks Arabic joins" },
+    "kpi_face": "IBM Plex Sans Arabic — dependable tabular figures; a column of money must align digit-for-digit"
+  },
+  "palette": {
+    "mode": "dark",
+    "light_is_peer": true,
+    "bg": "#0F1513",
+    "surface": "#171F1C",
+    "surface-2": "#1C2622",
+    "rule": "#2B3733",
+    "text": "#E6EFEA",
+    "text-2": "#8FA098",
+    "accent": "#5FD3A8",
+    "accent-ink": "#08130E",
+    "warn": "#E8A33D",
+    "danger": "#E8757F",
+    "derived_from": "a ledger read in a lit shop: near-black green ground, one mint accent reserved for data and state",
+    "light": {
+      "bg": "#F1F5F3",
+      "surface": "#FFFFFF",
+      "surface-2": "#F5F9F7",
+      "rule": "#D5DFDA",
+      "text": "#101815",
+      "text-2": "#5B6A64",
+      "accent": "#0E6B5B",
+      "accent-ink": "#FFFFFF",
+      "warn": "#8A5A08",
+      "danger": "#9C1C2C"
+    },
+    "accent_is_not_one_value": "#5FD3A8 is 9.4:1 on #0F1513 and 1.7:1 on white. Light mode resolves the same hue family for its own ground.",
+    "user_accents": ["clay", "olive", "sea", "night", "berry"],
+    "user_accent_default": "sea",
+    "accent_split": [
+      "--sbx-accent (text-level)",
+      "--sbx-accent-strong (solid fills)",
+      "--sbx-accent-hover",
+      "--sbx-accent-soft (tints)"
+    ],
+    "contrast_enforced_by": "tests/unit/chrome-contrast.test.ts — 2 modes x 5 accents x 2 surfaces; body and button labels 4.5:1, ink-faint 3:1"
+  },
+  "depth": "flat-rules",
+  "hero": "none — every page opens on PageHead (title, one-line context, one primary action) then straight to data. There is no marketing furniture on a control surface.",
+  "layout": {
+    "spacing_scale": [4, 8, 12, 16, 24, 32, 48],
+    "admin": { "radius": "4px", "rail": "15rem", "content": "full width", "gap_base": "--sb-space-3", "rows": "dense" },
+    "dashboard": { "radius": "7px", "rail": "15.5rem", "content": "62rem centred column", "gap_base": "--sb-space-4", "rows": "+2px, calmer" }
+  },
+  "imagery": {
+    "sources": ["merchant-uploaded product photography via the media library (R2/CDN)", "template preview images for the appearance picker"],
+    "treatment": "merchant photos rendered as-is; placeholders are typographic, never a gray box",
+    "never": ["stock people collaborating", "gray boxes", "emoji as icons", "invented photo URLs"]
+  },
+  "icons": { "set": "KIT_ICONS", "grid": "20px", "stroke": "1.75px", "color": "currentColor", "emoji": "forbidden, always" },
+  "signature": [
+    "the inline sparkline — every KPI card carries a 26px trend line of its own metric, inline SVG, currentColor, no library, no client JS",
+    "the corner bloom — one radial accent wash at 13% opacity, on the ACTIVE or PRIMARY card only; its whole job is to say 'this one'",
+    "the state hairline — status carried by a 2px rule on the card's inline-start edge in the state's hue, PLUS a text label; never hue alone"
+  ],
+  "motion": "budget 150ms ease-out, opacity and transform only; nothing changes layout on hover. Sparkline draws once per mount (600ms), KPI counts up on first paint only (400ms). Never animates page transitions, card entry, or anything on scroll. prefers-reduced-motion nulls all of it.",
+  "sections": ["PageHead", "stat strip (with sparklines)", "primary panel", "dense table", "side panels", "empty state (icon + one line + one action)"],
+  "cta": { "verb": "الإجراء الأساسي الوحيد في PageHead", "link": null, "secondary": "روابط نصية داخل الجداول" },
+  "differentiate_from": "generic AI SaaS dashboards: Inter + purple gradient + glass cards + hero and three feature cards. Also the local cliché of black+gold 'luxury' and sky-blue 'tech'.",
+  "references": ["Linear — information density and restraint", "Vercel — dark-surface ladder", "the existing admin.css ledger discipline"],
+  "never": [
+    "Inter / Poppins / Roboto",
+    "purple-blue gradients",
+    "glassmorphism",
+    "emoji as icons",
+    "unthemed default shadcn look",
+    "the hero + 3 feature cards cliché",
+    "accent-coloured page furniture — the accent is for data and state only",
+    "neon or glowing 'hacker' aesthetic",
+    "hardcoded hex in a component — every colour comes from a token",
+    "Latin placeholder text — always real Arabic strings of varying length"
+  ],
+  "locale_rules": {
+    "numerals": "Western Arabic digits 0-9",
+    "currency": "₪ / شيكل, tabular numerals",
+    "dates": "Gregorian with Arabic month names",
+    "phone": "dir=ltr",
+    "copy": "Arabic only, routed through the i18n layer — no hardcoded strings in components"
+  },
+  "a11y": {
+    "target": "axe-core 0 serious/critical, WCAG 2.0 AA (IS 5568)",
+    "known_gap": "form-control borders draw from --sb*-rule* (~1.6:1) — WCAG 1.4.11 wants 3:1 for component boundaries. Inherited from Phase 1, measurable only on a rendered element, tracked for the axe-core e2e pass."
+  },
+  "storefront_templates": {
+    "governed_separately": true,
+    "count": 9,
+    "keys": ["diwan", "neon-souq", "warsheh", "bayt", "raff", "aldar", "matbakh", "mawid", "jihaz"],
+    "fallback": "diwan",
+    "rule": "each ships a full token set in one file; tenant colour customisation writes tokens ONLY, guarded by an automatic WCAG AA contrast check that auto-adjusts lightness and reports it",
+    "fonts_allowed": ["Alexandria", "IBM Plex Sans Arabic", "Zain", "Rubik"],
+    "anti_reskin": "nine palettes x nine type scales x three header postures x three footer forms — the chrome is a template axis, not a constant",
+    "perf_budget": { "lcp": "< 2.5s on Fast 3G", "cls": "< 0.1", "fonts": "preloaded + Arabic-subset, never full font files" }
+  },
+  "stack": "Next.js 16 App Router + TypeScript strict, plain CSS with a token layer (no Tailwind, no component library)",
+  "environment": "claude-code",
+  "brand_registry": null
+}

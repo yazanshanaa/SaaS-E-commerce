@@ -460,3 +460,60 @@ describe('the storage contract', () => {
     expect(types).toMatch(/signedUrl\(key: string, ttlSeconds: number\)/);
   });
 });
+
+/**
+ * THE PLATFORM OWNER'S CREDENTIAL (2026-09-07 audit).
+ *
+ * Two defects, one account — the single Actor whose RLS context reads and writes every tenant:
+ *
+ *   1. `prisma/seed.ts` fell back to `admin@souqbartaa.test` / `ChangeMe!2026` when the operator
+ *      had not set the variables, and `.env.example` shipped both literals. This repository is
+ *      pushed, so on any deployment that copied the file unedited the platform owner's login was
+ *      published. `docker-compose.prod.yml` already carried a comment describing this exact
+ *      hazard — which is the point of testing it rather than commenting it again.
+ *
+ *   2. The credential upsert did `update: { password }`, so `pnpm db:seed` — also the documented
+ *      way to reseed plans, carriers and legal pages — silently reset a rotated production
+ *      password back to whatever sat in `.env`, undoing step 4 of `docs/DEPLOY.md` with no output
+ *      saying so.
+ *
+ * Asserted from source because neither failure is visible in a green suite: the seed test supplies
+ * its own credentials, so it exercised the branch that was never the dangerous one.
+ */
+describe('the seeded super admin', () => {
+  const seed = readFileSync(path.join(repoRoot, 'prisma/seed.ts'), 'utf8');
+  const envExample = readFileSync(path.join(repoRoot, '.env.example'), 'utf8');
+
+  it('ships no usable super-admin credential in .env.example', () => {
+    const value = (key: string) =>
+      new RegExp(`^${key}=(.*)$`, 'm').exec(envExample)?.[1]?.trim() ?? null;
+
+    // Present (so the operator knows the key exists) and EMPTY (so it is never a credential).
+    expect(value('SEED_SUPER_ADMIN_EMAIL')).toBe('');
+    expect(value('SEED_SUPER_ADMIN_PASSWORD')).toBe('');
+  });
+
+  it('refuses its development fallbacks in production instead of silently using them', () => {
+    const code = seed.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+
+    // The fallbacks exist exactly once each, as named constants the guard compares against —
+    // not as `??` defaults scattered through the reader.
+    expect(code).toContain('DEV_SEED_PASSWORD');
+    expect(code).not.toMatch(/process\.env\.SEED_SUPER_ADMIN_PASSWORD\s*\?\?/);
+    expect(code).not.toMatch(/process\.env\.SEED_SUPER_ADMIN_EMAIL\s*\?\?/);
+
+    // And the guard is keyed on production, throwing rather than returning a published value.
+    expect(code).toMatch(/NODE_ENV === 'production'/);
+    expect(code).toMatch(/throw new Error\(/);
+  });
+
+  it('never resets an existing password on a reseed unless explicitly told to', () => {
+    const code = seed.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+
+    // The unconditional overwrite is gone…
+    expect(code).not.toMatch(/update:\s*\{\s*password:\s*passwordHash\s*\}/);
+    // …and the only path that still writes a password over an existing row names itself.
+    expect(code).toContain('SEED_SUPER_ADMIN_FORCE_PASSWORD');
+    expect(code).toMatch(/update:\s*force\s*\?/);
+  });
+});

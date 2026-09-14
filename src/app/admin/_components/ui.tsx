@@ -1,3 +1,4 @@
+import { Hint } from '@/app/_components/kit/hint';
 import Link from 'next/link';
 import { formatAgorot } from '@/shared/i18n';
 import { resolveMessage } from './messages';
@@ -132,17 +133,21 @@ export function Field({
   label,
   name,
   hint,
+  help,
   children,
 }: {
   label: string;
   name: string;
   hint?: string;
+  /** The «!» explanation beside the label — opens on tap. For anything a first-time user might not understand. */
+  help?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="sba-field">
       <label className="sba-label" htmlFor={name}>
         {label}
+        {help ? <Hint text={help} /> : null}
       </label>
       {children}
       {hint ? <span className="sba-hint">{hint}</span> : null}

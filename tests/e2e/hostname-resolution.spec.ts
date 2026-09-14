@@ -48,7 +48,7 @@ test.describe('surfaces are told apart by hostname alone', () => {
     await page.goto(`${origin('app')}/`);
     await expect(page.locator('[data-surface="app"]')).toBeAttached();
     // Q1, stated to the user rather than merely enforced in code.
-    await expect(page.getByText('الحسابات بتنفتح من إدارة المنصة فقط')).toBeVisible();
+    await expect(page.getByText('الحسابات تُفتح من إدارة المنصة فقط')).toBeVisible();
   });
 
   test('the internal surface prefix never reaches the URL bar', async ({ page }) => {

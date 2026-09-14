@@ -18,7 +18,7 @@ import { CapabilityTag, LockedNotice, isExhausted } from '../_components/locked-
 import { Panel, Tag } from '../_components/ui';
 import type { CapabilityView, ChangeRequestQuota } from '../_lib/change-requests';
 import type { AppearanceView } from '../_lib/appearance';
-import { saveColorsAction, saveTemplateAction } from './actions';
+import { saveColorsAction } from './actions';
 
 const at = translator('appearance');
 
@@ -82,7 +82,7 @@ export function AppearanceStudio({
   const exhausted = isExhausted(quota);
 
   // --- the one draft ---------------------------------------------------------------------
-  const [templateKey, setTemplateKey] = useState(appearance.templateKey);
+  const templateKey = appearance.templateKey;
   const [presetKey, setPresetKey] = useState(appearance.presetKey ?? 'sahra');
   const [custom, setCustom] = useState<CustomColors>({
     primary: appearance.colors.primary,
@@ -178,87 +178,31 @@ export function AppearanceStudio({
   return (
     <>
       {/* ------------------------------------------------ the template ---- */}
-      <Panel
-        title={t('dashboard', 'appearance.template')}
-        note={appearance.singleTemplate ? t('dashboard', 'appearance.templateSingle') : undefined}
-      >
-        <ActionForm
-          action={saveTemplateAction}
-          submitLabel={t('common', 'actions.save')}
-          disabled={appearance.singleTemplate}
-        >
-          {/*
-            NOT a disabled fieldset any more.
-
-            A أساسي merchant's `templates_allowed` carries exactly one key, and this whole block
-            used to be `disabled` — producing a greyed-out box with a single option in it. That is
-            indistinguishable from a broken screen: nothing to compare against, no reason given,
-            and no idea that eight other designs exist. The plan boundary was enforced and never
-            communicated.
-
-            Now the full catalogue renders. Permitted templates are radios; the rest are locked
-            cards carrying the same preview and description plus an upgrade tag. The submit button
-            stays disabled when there is only one real choice, because there is still nothing to
-            save — but the merchant can now see exactly what the next plan buys them.
-
-            The server is unchanged and remains the authority: `saveTemplateAction` re-checks the
-            entitlement, so a locked key forced past the markup is refused there (invariant 2 —
-            never let a route trust the client about either access axis).
-          */}
-          <fieldset className="sbd-field">
-            <legend className="sbd-label">{at('picker.legend')}</legend>
-            <div className="sbk-look-grid">
-              {appearance.templates.map((template) => {
-                const locked = !template.available;
-
-                const body = (
-                  <>
-                    <span className="sbk-look-pick__shot">
-                      <TemplatePreview templateKey={template.key} />
-                    </span>
-                    <span className="sbk-look-pick__name">
-                      {template.name}
-                      {template.current ? <Tag label={at('picker.current')} tone="ok" /> : null}
-                      {locked ? <Tag label={at('picker.locked')} tone="locked" /> : null}
-                    </span>
-                    <span className="sbk-look-pick__desc">{template.description}</span>
-                  </>
-                );
-
-                /*
-                 * A locked card is not a disabled radio — it is not a control at all. A disabled
-                 * input is skipped by the tab order and announces nothing, so a keyboard or screen
-                 * reader user would meet a silent gap where the upsell is. A plain element with the
-                 * tag read out loud says the same thing to everyone.
-                 */
-                if (locked) {
-                  return (
-                    <span
-                      className="sbk-look-pick sbk-look-pick--locked"
-                      key={template.key}
-                      data-locked="true"
-                    >
-                      {body}
-                    </span>
-                  );
-                }
-
-                return (
-                  <label className="sbk-look-pick" key={template.key}>
-                    <input
-                      type="radio"
-                      name="templateKey"
-                      value={template.key}
-                      checked={templateKey === template.key}
-                      onChange={() => setTemplateKey(template.key)}
-                    />
-                    {body}
-                  </label>
-                );
-              })}
+      {/*
+        READ-ONLY (2026-09-13, owner-directed). The template is chosen and changed by the platform
+        owner in the admin — a template swap re-lays out every page of a live shop, and the owner
+        wants that to happen under their eye, with the account. The merchant still sees which one
+        they are on and can ask for another; the colours below remain theirs.
+        `saveTemplate` in `_lib/appearance.ts` refuses a merchant post regardless of this markup.
+      */}
+      <Panel title={t('dashboard', 'appearance.template')} note={at('picker.adminOnly')}>
+        {appearance.templates
+          .filter((template) => template.current)
+          .map((template) => (
+            <div className="sbk-look-grid sbk-look-grid--single" key={template.key}>
+              <span className="sbk-look-pick sbk-look-pick--readonly">
+                <span className="sbk-look-pick__shot">
+                  <TemplatePreview templateKey={template.key} />
+                </span>
+                <span className="sbk-look-pick__name">
+                  {template.name}
+                  <Tag label={at('picker.current')} tone="ok" />
+                </span>
+                <span className="sbk-look-pick__desc">{template.description}</span>
+              </span>
             </div>
-          </fieldset>
-        </ActionForm>
+          ))}
+        <p className="sbd-hint">{at('picker.requestHint')}</p>
       </Panel>
 
       {/* ------------------------------------------------ the colours ----- */}

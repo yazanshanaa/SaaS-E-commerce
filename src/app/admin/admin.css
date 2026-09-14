@@ -1182,3 +1182,23 @@ html:has([data-surface='admin'][data-theme='dark']),
   --sba-accent-hover: #a92546;
   --sba-accent-soft: #291a20;
 }
+
+/* Informational notice (2026-09-13): the record to create, the thing to know — not a result. */
+.sba-notice--info {
+  border-color: var(--sba-rule-strong);
+  background: var(--sba-panel-alt);
+  color: var(--sba-ink);
+}
+
+.sba-notice--info .sba-facts {
+  margin-block: var(--sb-space-3);
+}
+
+.sba-notice--info p {
+  margin: 0;
+  color: var(--sba-ink-soft);
+}
+
+.sba-hint--danger {
+  color: var(--sba-danger);
+}

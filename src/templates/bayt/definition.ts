@@ -26,11 +26,31 @@ import type { TemplateDefinition } from '../types';
  */
 export const bayt: TemplateDefinition = {
   key: 'bayt',
+  /*
+   * THE IDENTITY FACE — headings, and what `site-contract/templates.ts` records as this template's
+   * `fontKey`. It stays exactly what it always was; 12.E did not move it.
+   */
   font: {
     family: 'Alexandria',
     dir: 'alexandria',
     regular: 'alexandria-v6-arabic-regular.woff2',
     bold: 'alexandria-v6-arabic-700.woff2',
+  },
+  /*
+   * THE BODY FACE (Phase 12.E), new. Every template used to set ONE family for headings and copy
+   * alike, which a critic pass measured as 146 elements in one face against 1 in another and named
+   * as a large part of why the pages read flat. Arabic has no uppercase and no small-caps, so face
+   * is one of only three hierarchy levers it has.
+   *
+   * The (identity, body) tuple is unique across the nine, so the pairing SHARPENS the anti-reskin
+   * distance instead of collapsing it — giving all nine the same body face would have fixed the
+   * contrast and flattened the set.
+   */
+  textFont: {
+    family: 'Rubik',
+    dir: 'rubik',
+    regular: 'rubik-v31-arabic-regular.woff2',
+    bold: 'rubik-v31-arabic-700.woff2',
   },
   /**
    * `split` + `overlay` + `index`.
@@ -107,9 +127,9 @@ export const bayt: TemplateDefinition = {
       onPrimary: '#000000',
       onSecondary: '#000000',
       surfaceAlt: '#40342B',
-      textMuted: '#A69E95',
+      textMuted: '#BEB8B1',
       border: '#71655B',
-      link: '#E08A5F',
+      link: '#E8A98A',
       accent: '#CDBBA0',
       /** A room lit by one lamp — dark by design, so a dark-preference visitor sees no change. */
       scheme: 'dark',
@@ -148,6 +168,7 @@ export const bayt: TemplateDefinition = {
     },
     type: {
       family: "'Alexandria', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif",
+      textFamily: "'Rubik', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif",
       displayWeight: '700',
       bodyWeight: '400',
       xs: '0.8125rem',
@@ -179,7 +200,18 @@ export const bayt: TemplateDefinition = {
       lineBody: '1.9',
       // Alexandria's Arabic at display size sits slightly loose; -0.015em closes the word gaps
       // without touching the joins inside a word, which is what negative tracking must never do.
-      trackingDisplay: '-0.015em',
+      /*
+       * ZERO, like seven of the nine. Arabic is CURSIVE — its letters join — and negative tracking
+       * drags the joins into each other rather than tightening a word the way it does in Latin. At
+       * this template's display size the QA gate measured -2.81px on the h1 and flagged 35 Arabic
+       * elements; the same capture scored the seven templates that already ship 0 at 9-9.5 and these
+       * two at 7-7.5, with tracking as the only difference between them.
+       *
+       * `design/design.json` already records the rule for body copy — "never — it breaks Arabic
+       * joins" — and the display exception it allows was reasoned about a Latin control surface, not
+       * about a shop's name set in Zain at 5rem. Hierarchy here comes from size and weight.
+       */
+      trackingDisplay: '0',
     },
     /** One hairline, in the stone secondary, doing every separation in the template. */
     rule: { hair: '1px solid var(--t-border)', frame: '1px solid var(--t-secondary)' },

@@ -170,6 +170,14 @@ test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
   await seedShop({ ...SHOP, planKey: 'pro', withGateway: true });
+  // 2026-09-13: paid plans carry `cart` by default, and cart takes priority over the checkout
+  // form on the product page. This spec is about the buy-now form, so the fixture opts out.
+  await sql(
+    `INSERT INTO entitlements (id, tenant_id, feature_key, value, created_at, updated_at)
+     VALUES ($1, $2, 'cart', 'false'::jsonb, NOW(), NOW())
+     ON CONFLICT (tenant_id, feature_key) DO UPDATE SET value = 'false'::jsonb`,
+    [`${SHOP.tenantId}-ent-cart-off`, SHOP.tenantId],
+  );
   await seedShop({ ...PLAIN, planKey: 'basic', withGateway: false });
 
   /**
@@ -207,7 +215,7 @@ test.describe('checkout follows the payment_gateway toggle, immediately', () => 
     await expect(page.getByLabel('الاسم')).toBeVisible();
     await expect(page.getByLabel('رقم الجوال')).toBeVisible();
     // The privacy sentence is at the point of collection, not buried in a policy page.
-    await expect(page.getByText('بنسجّل اسمك ورقمك')).toBeVisible();
+    await expect(page.getByText('نسجّل اسمك ورقمك')).toBeVisible();
   });
 
   test('a visitor can place an order and is told its number', async ({ page }) => {
@@ -255,7 +263,7 @@ test.describe('checkout follows the payment_gateway toggle, immediately', () => 
     await expect(page.getByRole('heading', { name: /طلب رقم\s*1/ })).toBeVisible();
     await expect(page.getByText('أحمد عودة')).toBeVisible();
 
-    await page.getByRole('button', { name: 'سجّل إنه مدفوع' }).click();
+    await page.getByRole('button', { name: 'سجّله مدفوعاً' }).click();
     await expect(page.getByText('تم تحديث حالة الطلب.')).toBeVisible();
     await expect(page.getByText('مدفوع').first()).toBeVisible();
 
@@ -274,7 +282,7 @@ test.describe('checkout follows the payment_gateway toggle, immediately', () => 
 
     await expect(page.getByRole('heading', { name: 'بوابة الدفع' })).toBeVisible();
     await expect(page.getByText('البوابة جاهزة')).toBeVisible();
-    await expect(page.getByText('التاجر مشغّل الطلب من الموقع.')).toBeVisible();
+    await expect(page.getByText('التاجر فعّل الطلب من الموقع.')).toBeVisible();
     await expect(page.locator('.sba-chip', { hasText: 'بوابة دفع' })).toBeVisible();
 
     // The usage card counts what the storefront actually took.
@@ -298,8 +306,13 @@ test.describe('checkout follows the payment_gateway toggle, immediately', () => 
     await page.goto(`${storefront(SHOP.slug)}/products/${SHOP.productSlug}`);
     await expect(page.getByRole('heading', { name: 'إتمام الطلب' })).toHaveCount(0);
     // And the Q5 path is back, unchanged.
-    await expect(page.getByRole('link', { name: /اطلب عبر واتساب/ })).toBeVisible();
-    expect(await page.locator('input, textarea, select').count()).toBe(0);
+    // Scoped to <main>: the shell's WhatsApp FAB carries the same accessible name on every page,
+    // so an unscoped locator matches two links and strict mode refuses. 2026-09-07 audit.
+    await expect(
+      page.getByRole('main').getByRole('link', { name: /اطلب عبر واتساب/ }),
+    ).toBeVisible();
+    // Scoped to <main>: the header carries a product search box on every page (2026-09-13).
+    expect(await page.getByRole('main').locator('input, textarea, select').count()).toBe(0);
 
     // The ROUTE refuses too, not only the render — a form left open across the toggle writes
     // nothing.
@@ -329,9 +342,13 @@ test.describe('Q5 still holds for every tenant that has not opted in', () => {
   test('a shop without the feature has no field to type a name into', async ({ page }) => {
     await page.goto(`${storefront(PLAIN.slug)}/products/${PLAIN.productSlug}`);
 
-    await expect(page.getByRole('link', { name: /اطلب عبر واتساب/ })).toBeVisible();
+    // Scoped to <main> — the shell's WhatsApp FAB shares this accessible name.
+    await expect(
+      page.getByRole('main').getByRole('link', { name: /اطلب عبر واتساب/ }),
+    ).toBeVisible();
     await expect(page.getByRole('heading', { name: 'إتمام الطلب' })).toHaveCount(0);
-    expect(await page.locator('input, textarea, select').count()).toBe(0);
+    // Scoped to <main>: the header carries a product search box on every page (2026-09-13).
+    expect(await page.getByRole('main').locator('input, textarea, select').count()).toBe(0);
   });
 
   test('and its checkout endpoint 404s rather than 403s', async ({ page }) => {

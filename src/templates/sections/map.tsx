@@ -50,8 +50,19 @@ export function MapSection({ context, config, anchor }: MapSectionProps) {
               <dd>{site.address ?? target.value}</dd>
             </div>
           </dl>
+          {/*
+            Both links are GHOST buttons — the same rule `contact-whatsapp.tsx` documents for its
+            own copy of this pair. Neither Google Maps nor Waze is "the" action this section wants
+            pressed, and a filled button here competed with the page's real primary action
+            («اطلب عبر واتساب») for attention it did not need.
+          */}
           <div className="sf-actions">
-            <a className="sf-btn" href={target.googleUrl} rel="noopener noreferrer" target="_blank">
+            <a
+              className="sf-btn sf-btn--ghost"
+              href={target.googleUrl}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
               <MapPinIcon className="sf-btn__icon" />
               {st('map.google')}
             </a>

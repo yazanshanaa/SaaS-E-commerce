@@ -220,41 +220,23 @@ test.describe('the merchant surface (11.D / 11.F / 11.H)', () => {
     await expect(page.locator('main form')).toHaveCount(0);
   });
 
-  test('the appearance studio previews a draft without saving it', async ({ page }) => {
+  test('the appearance studio shows the current template read-only and previews colours', async ({
+    page,
+  }) => {
     await signInAs(page, MERCHANT.ownerEmail, MERCHANT.password);
     await page.goto(`${APP}/appearance`);
 
-    // The picker is cards now, one per allowed template (pro = all nine), radios underneath.
-    await expect(page.locator('.sbk-look-pick')).toHaveCount(9);
+    // 2026-09-13 (owner-directed): the template is the platform owner's to change. The studio
+    // shows ONE card — the current template — with no radio underneath, and says who changes it.
+    await expect(page.locator('.sbk-look-pick')).toHaveCount(1);
+    await expect(page.locator('.sbk-look-pick input[type="radio"]')).toHaveCount(0);
+    await expect(page.getByText('القالب تحدده إدارة المنصة لمتجرك.')).toBeVisible();
 
-    // Selecting «دار» re-points the iframe at the draft — nothing saved.
-    await page.locator('.sbk-look-pick', { hasText: 'دار' }).first().click();
-    await expect(page.locator('.sbd-preview-frame iframe')).toHaveAttribute(
-      'src',
-      /template=aldar/,
-      { timeout: 5_000 },
-    );
-
-    // The live contrast panel speaks before the save.
+    // The live contrast panel still speaks before the save — colours remain the merchant's.
     await expect(page.getByText('فحص وضوح الألوان')).toBeVisible();
-
-    // The saved template is untouched: the storefront still renders its own template, not the
-    // draft the studio is showing.
-    //
-    // THROUGH THE BROWSER, not `page.request`. `playwright.config.ts` maps these hostnames with
-    // Chromium's `--host-resolver-rules`, and its comment says why: so the tests exercise
-    // `admin.*`, `app.*` and `{slug}.*` exactly as production does, with no /etc/hosts editing on
-    // a developer machine. That flag is a BROWSER flag. Playwright's `APIRequestContext` is a
-    // Node-side HTTP client that never sees it, so `page.request.get()` did a real DNS lookup and
-    // died with `getaddrinfo ENOTFOUND app.souqbartaa.test` — on a developer machine with a hosts
-    // entry it passes, and on every CI runner it cannot.
-    //
-    // The old assertion also fetched `/appearance`, the studio page it had just been driving, and
-    // checked for a 200. That proves the studio still renders; it says nothing about what was
-    // saved, which is the sentence above it. This asks the storefront instead.
-    const shop = await page.goto(origin(MERCHANT.slug));
-    expect(shop?.ok()).toBe(true);
-    await expect(page.locator('.sf-root[data-template="aldar"]')).toHaveCount(0);
+    await expect(page.locator('.sbd-preview-frame iframe')).toHaveAttribute('src', /\/preview\?/, {
+      timeout: 5_000,
+    });
   });
 
   test('the full-page preview renders the draft bare, framable on exactly one path', async ({
@@ -319,6 +301,8 @@ test.describe('the merchant surface (11.D / 11.F / 11.H)', () => {
     await page.getByRole('button', { name: 'تعيين كلمة المرور الجديدة' }).click();
     await expect(page.getByText('تم تغيير كلمة المرور')).toBeVisible();
 
+    // The owner's session cookie is still in this context; `signInAs` expects the sign-in card.
+    await page.context().clearCookies();
     await signInAs(page, STAFF.email, STAFF.password);
     await expect(page.getByRole('link', { name: 'الاشتراك' })).toHaveCount(0);
 

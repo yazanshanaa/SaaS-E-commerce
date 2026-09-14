@@ -685,9 +685,10 @@ test.describe('the storefront itself', () => {
       nodes.map((node) => node.getAttribute('href') ?? ''),
     );
 
-    expect(preloads).toHaveLength(1);
-    expect(preloads[0]).toContain('/fonts/alexandria/');
-    expect(preloads[0]).toMatch(/\.woff2$/);
+    // 12.E: a display face (bold) and a text face (regular) — two files, both Arabic subsets.
+    expect(preloads).toHaveLength(2);
+    expect(preloads.every((href) => href.startsWith('/fonts/') && href.endsWith('.woff2'))).toBe(true);
+    expect(preloads.some((href) => href.includes('/fonts/alexandria/'))).toBe(true);
   });
 
   /**
@@ -712,7 +713,22 @@ test.describe('the storefront itself', () => {
   }) => {
     await page.goto(`${origin(HOST_DIWAN)}/products/product-0`);
 
-    const order = page.getByRole('link', { name: /اطلب عبر واتساب/ });
+    /**
+     * Scoped to `<main>`, and that is the whole fix (2026-09-07 audit).
+     *
+     * This assertion was ambiguous rather than wrong: the page carries TWO links whose accessible
+     * name is «اطلب عبر واتساب» — the product's own order button, and the floating action button
+     * `WhatsappFab` that the shell renders on every page. Playwright's strict mode refused to guess
+     * and the test failed with a strict-mode violation, which reads like a missing element and is
+     * the opposite: the CTA was there twice.
+     *
+     * `<main id="main">` is rendered EXACTLY ONCE (shell.tsx) and the FAB sits outside it, so this
+     * names the product's button by where it is rather than by a class, and stays correct if the
+     * FAB's markup changes. The FAB is covered on its own terms elsewhere.
+     */
+    // `.first()`: since 2026-09-13 every product card in the related rail carries its own WhatsApp
+    // button, so the page legitimately has several; the product's own block comes first.
+    const order = page.getByRole('main').getByRole('link', { name: /اطلب عبر واتساب/ }).first();
     const href = await order.getAttribute('href');
     expect(href).toContain('https://wa.me/972500000000');
 
@@ -720,15 +736,23 @@ test.describe('the storefront itself', () => {
     expect(message).toContain(SHORT_PRODUCT);
     expect(message).toContain('₪');
 
-    // The V1 storefront collects no customer PII: there is no field to type one into.
-    expect(await page.locator('input, textarea, select').count()).toBe(0);
+    // The ordering flow collects no customer PII: there is no field to type one into. Scoped to
+    // <main> — the header carries a product SEARCH box on every page (2026-09-13), which collects
+    // nothing about the visitor.
+    expect(await page.getByRole('main').locator('input, textarea, select').count()).toBe(0);
   });
 
   test('the quantity stepper changes the message and nothing else', async ({ page }) => {
     await page.goto(`${origin(HOST_DIWAN)}/products/product-0`);
     await page.getByRole('button', { name: 'زيادة الكمية' }).click();
 
-    const href = await page.getByRole('link', { name: /اطلب عبر واتساب/ }).getAttribute('href');
+    // Scoped to `<main>` for the same reason as the test above: the shell's WhatsApp FAB shares
+    // this accessible name, and only the product's own button carries the stepper's quantity.
+    const href = await page
+      .getByRole('main')
+      .getByRole('link', { name: /اطلب عبر واتساب/ })
+      .first()
+      .getAttribute('href');
     expect(decodeURIComponent(href!)).toContain('الكمية: 2');
   });
 
@@ -1016,7 +1040,8 @@ test.describe('the documented performance proxies, on a 30-product catalogue', (
       applies. The PAGE-level bound the test actually exists to defend — "the home page does not
       ship the whole catalogue" — is asserted separately below, and more strictly than before.
     */
-    await expect(page.locator('#products .sf-grid .sf-card')).toHaveCount(12);
+    // 2026-09-13: the default grid shows 8 and points at «كل المنتجات» — the rails carry the rest.
+    await expect(page.locator('#products .sf-grid .sf-card')).toHaveCount(8);
 
     /*
       THE PERFORMANCE PROXY, restated so it still bites. The point was never "exactly twelve": it
@@ -1026,11 +1051,11 @@ test.describe('the documented performance proxies, on a 30-product catalogue', (
       Lighthouse budget depends on.
     */
     const homeCards = await page.locator('.sf-card').count();
-    expect(homeCards).toBeGreaterThanOrEqual(12);
-    expect(homeCards).toBeLessThanOrEqual(24);
+    expect(homeCards).toBeGreaterThanOrEqual(8);
+    expect(homeCards).toBeLessThanOrEqual(20);
 
     // 30 > 12, so the rest is one link away rather than thirty cards deep.
-    await expect(page.getByRole('link', { name: 'شوف كل المنتجات' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'عرض كل المنتجات' })).toBeVisible();
 
     await page.goto(`${origin(HOST_WARSHEH)}/products`);
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
@@ -1047,8 +1072,9 @@ test.describe('the documented performance proxies, on a 30-product catalogue', (
     const preloads = await page
       .locator('link[rel="preload"][as="font"]')
       .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('href') ?? ''));
-    expect(preloads).toHaveLength(1);
-    expect(preloads[0]).toContain('/fonts/');
+    // 12.E: two preloads (display bold + text regular), still zero cross-origin requests.
+    expect(preloads).toHaveLength(2);
+    expect(preloads.every((href) => href.startsWith('/fonts/'))).toBe(true);
   });
 
   test('30 Arabic product names do not push the page sideways on a phone', async ({ page }) => {
