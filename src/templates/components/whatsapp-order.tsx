@@ -78,7 +78,7 @@ export function WhatsappOrder({
       ) : null}
 
       <a
-        className="sf-btn"
+        className="sf-btn sf-btn--order"
         href={disabled ? undefined : href}
         rel="noopener noreferrer"
         target="_blank"

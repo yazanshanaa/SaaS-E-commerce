@@ -1,4 +1,5 @@
 import type { SVGProps } from 'react';
+import { BrandIcon, hasBrandMark } from './brand-icons';
 
 /**
  * Inline SVG icons.
@@ -30,13 +31,12 @@ function Svg({ children, ...props }: IconProps) {
   );
 }
 
+/**
+ * The real WhatsApp mark (2026-09-15). A stroked bubble-with-handset stood here before; the owner
+ * asked for the logo people recognise. Filled, so it inherits `currentColor` exactly like the rest.
+ */
 export function WhatsappIcon(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M20 11.5a8 8 0 0 1-11.9 7L4 20l1.6-3.9A8 8 0 1 1 20 11.5Z" />
-      <path d="M8.8 9.2c0 3 2.2 5.2 5.2 5.2l1-1.1-1.7-1-.8.8a4.2 4.2 0 0 1-2.3-2.3l.8-.8-1-1.7-1.2 1Z" />
-    </Svg>
-  );
+  return <BrandIcon brand="whatsapp" {...props} />;
 }
 
 export function HomeIcon(props: IconProps) {
@@ -186,57 +186,26 @@ export function WalletIcon(props: IconProps) {
 }
 
 /**
- * Social glyphs.
- *
- * Deliberately simplified marks rather than reproductions of each company's logo: a storefront
- * footer is not a place to embed eight trademarked vector files, and every one of them sits
- * beside an Arabic label naming the platform anyway.
+ * Social marks — the real logos from `brand-icons.tsx` for every named platform (2026-09-15,
+ * owner-directed); the generic «الموقع الإلكتروني» keeps its globe, drawn here on the same grid.
  */
-const SOCIAL_GLYPHS: Record<string, React.ReactNode> = {
-  facebook: <path d="M14.5 8H16V5h-2.2C11.7 5 11 6.4 11 8v1.6H9V13h2v6h3v-6h2.2l.4-3.4H14V8.4c0-.3.1-.4.5-.4Z" />,
-  instagram: (
-    <>
-      <rect x="4.5" y="4.5" width="15" height="15" rx="4.5" />
-      <circle cx="12" cy="12" r="3.6" />
-      <circle cx="16.6" cy="7.4" r="0.9" fill="currentColor" />
-    </>
-  ),
-  tiktok: (
-    <>
-      <path d="M14 4.5v9.8a3.3 3.3 0 1 1-2.6-3.2" />
-      <path d="M14 6.4c.7 1.6 2 2.5 3.8 2.6" />
-    </>
-  ),
-  youtube: (
-    <>
-      <rect x="3.5" y="6.5" width="17" height="11" rx="3.2" />
-      <path d="m10.6 9.8 4.2 2.2-4.2 2.2V9.8Z" fill="currentColor" stroke="none" />
-    </>
-  ),
-  x: <path d="m5 5 14 14M19 5 5 19" />,
-  telegram: (
-    <>
-      <path d="M20 5 3.8 11.3l4.5 1.5L19 6.6l-8.2 8v4l2.6-3.1 4 3 2.6-13.5Z" />
-    </>
-  ),
-  snapchat: (
-    <>
-      <path d="M12 4.5c2.4 0 3.9 1.7 3.9 4v2.2c.7.4 1.5.2 2 0 .3 1-.6 1.6-1.6 2 .5 1.6 1.9 2.6 3.2 2.9-.6.9-2 1.2-3 1.3-.2.5-.3 1-.6 1.2-.7.3-1.6-.3-2.6-.3-1.4 0-2 1.3-3.3 1.3s-1.9-1.3-3.3-1.3c-1 0-1.9.6-2.6.3-.3-.2-.4-.7-.6-1.2-1-.1-2.4-.4-3-1.3 1.3-.3 2.7-1.3 3.2-2.9-1-.4-1.9-1-1.6-2 .5.2 1.3.4 2 0V8.5c0-2.3 1.5-4 3.9-4Z" />
-    </>
-  ),
-  website: (
-    <>
+function GlobeIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
       <circle cx="12" cy="12" r="8.5" />
       <path d="M3.5 12h17M12 3.5c2.4 2.4 3.6 5.3 3.6 8.5S14.4 18.1 12 20.5c-2.4-2.4-3.6-5.3-3.6-8.5S9.6 5.9 12 3.5Z" />
-    </>
-  ),
-};
+    </Svg>
+  );
+}
 
 export function SocialIcon({ platform, ...props }: IconProps & { platform: string }) {
-  const glyph = SOCIAL_GLYPHS[platform] ?? SOCIAL_GLYPHS.website;
-  return <Svg {...props}>{glyph}</Svg>;
+  return hasBrandMark(platform) ? (
+    <BrandIcon brand={platform} {...props} />
+  ) : (
+    <GlobeIcon {...props} />
+  );
 }
 
 export function hasSocialGlyph(platform: string): boolean {
-  return platform in SOCIAL_GLYPHS;
+  return platform === 'website' || hasBrandMark(platform);
 }

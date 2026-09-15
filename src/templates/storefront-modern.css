@@ -1,0 +1,897 @@
+/*
+ * The modern polish layer (2026-09-15, owner-directed).
+ *
+ * Loaded LAST — after storefront.css, every template sheet and storefront-commerce.css — so it
+ * wins at equal specificity, and scoped to `.sf-root[data-template]` so it out-scores a template's
+ * own `[data-template='x'] .sf-*` rules without `!important`.
+ *
+ * The brief, in the owner's words: «حسّن جمالية القوالب والأزرار، وسّط الأقسام وكل شيء، وأظهر كل
+ * شيء بصورته الحقيقية (شعار واتساب ومواقع التواصل) بحيث يبرز الحداثة». Concretely:
+ *
+ *   1. CENTRED SECTIONS. Every block head — eyebrow, title, mark, lead — sits on the page's centre
+ *      line with the section's action underneath. Department circles, product rails, trust items,
+ *      testimonials and the footer columns centre themselves when they fit and scroll when they
+ *      do not.
+ *   2. LARGER, FRAMED DEPARTMENT CIRCLES with a coloured ring, and a product card that reads
+ *      picture → name → price → a full-width solid button, the shape every large store uses.
+ *   3. BUTTONS that look pressable: a lift on hover, a soft drop in the shop's own primary, the
+ *      WhatsApp actions in WhatsApp's own green and its real mark.
+ *   4. A DEPARTMENT BAR painted in the primary colour under the white header row.
+ *   5. REAL BRAND MARKS in the social row and the accepted-payment strip (`brand-icons.tsx`).
+ *
+ * Contrast: every text/background pair here is one `deriveColorTokens` already guards (text on bg,
+ * text on surface, on-primary on primary, text-muted on bg). Brand colours are used only as the
+ * ground under a white mark that is a graphic object (3:1 — WCAG 1.4.11); Snapchat's yellow takes
+ * a near-black mark for that reason.
+ */
+
+/* ------------------------------------------------------------- centred heads -- */
+
+.sf-root[data-template] .sf-block__head {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--t-space-md);
+  margin-block-end: var(--t-space-xl);
+}
+
+/* The full-width rules three templates drew under a start-aligned head read as a leftover once the
+   title sits in the middle; the accent is carried by the centred eyebrow and mark instead. */
+.sf-root[data-template] .sf-block__head {
+  border-block-end: 0;
+  border-inline-start: 0;
+  padding-block: 0;
+  padding-inline: 0;
+}
+
+.sf-root[data-template='neon-souq'] .sf-block__head::before {
+  inset-inline-start: 50%;
+  transform: translateX(50%);
+  inset-block-start: auto;
+  inset-block-end: 0;
+  inline-size: 3rem;
+  border-radius: 3px;
+}
+
+.sf-root[data-template='neon-souq'] .sf-block__head {
+  padding-block-end: var(--t-space-md);
+}
+
+.sf-root[data-template] .sf-block__titles {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-inline-size: 0;
+  inline-size: 100%;
+  flex: 0 0 auto;
+}
+
+.sf-root[data-template] .sf-block__eyebrow {
+  justify-content: center;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.sf-root[data-template] .sf-block__eyebrow::before,
+.sf-root[data-template] .sf-block__eyebrow::after {
+  content: '';
+  flex: none;
+  inline-size: 1.5rem;
+  block-size: 2px;
+  background: currentColor;
+  opacity: 0.7;
+}
+
+.sf-root[data-template] .sf-block__title {
+  font-size: clamp(1.45rem, 1.1rem + 1.4vw, 2rem);
+  line-height: 1.25;
+  text-align: center;
+  margin-inline: auto;
+}
+
+/* A short accent bar under the title for the templates that draw no heading mark. */
+.sf-root[data-template][data-mark='none'] .sf-block__title::after {
+  content: '';
+  display: block;
+  inline-size: 3rem;
+  block-size: 3px;
+  margin: var(--t-space-sm) auto 0;
+  border-radius: 3px;
+  background: var(--t-primary);
+}
+
+/* The marked templates keep their mark, centred under the title. */
+.sf-root[data-template] .sf-block__titles .sf-mark {
+  margin-inline: auto;
+  align-self: center;
+}
+
+.sf-root[data-template] .sf-block__lead {
+  text-align: center;
+  margin-inline: auto;
+  max-inline-size: min(36rem, 100%);
+}
+
+.sf-root[data-template] .sf-block__action {
+  margin-inline: auto;
+}
+
+/* ---------------------------------------------------------------- header -- */
+
+.sf-root[data-template] .sf-header[data-commerce] {
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.06);
+  border-block-end: 0;
+}
+
+.sf-root[data-template] .sf-header[data-commerce] .sf-header__inner {
+  min-block-size: 72px;
+}
+
+.sf-root[data-template] .sf-header[data-commerce] .sf-brand__name {
+  font-size: var(--t-text-xl);
+  letter-spacing: -0.01em;
+}
+
+.sf-root[data-template] .sf-header__search .sf-search--compact .sf-search__input {
+  min-block-size: 46px;
+  border: 2px solid var(--t-border);
+  background: var(--t-surface);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.04);
+}
+
+.sf-root[data-template] .sf-header__search .sf-search--compact .sf-search__input:focus-visible {
+  border-color: var(--t-primary);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--t-primary) 22%, transparent);
+}
+
+.sf-root[data-template] .sf-header__search .sf-search--compact .sf-search__submit {
+  min-block-size: 46px;
+  min-inline-size: 46px;
+  background: var(--t-primary);
+  color: var(--t-on-primary);
+  border-color: var(--t-primary);
+}
+
+/* Header actions: round icon buttons, the WhatsApp one in its own green. */
+.sf-root[data-template] .sf-header__actions {
+  gap: var(--t-space-sm);
+}
+
+.sf-root[data-template] .sf-iconbtn {
+  border-radius: var(--t-radius-pill);
+  min-block-size: 46px;
+  min-inline-size: 46px;
+  padding-inline: var(--t-space-md);
+  border: 2px solid var(--t-border);
+  background: var(--t-surface);
+}
+
+.sf-root[data-template] .sf-iconbtn--cart {
+  background: var(--t-primary);
+  border-color: var(--t-primary);
+  color: var(--t-on-primary);
+}
+
+.sf-root[data-template] .sf-iconbtn--wa {
+  background: #25d366;
+  border-color: #25d366;
+  color: #fff;
+}
+
+.sf-root[data-template] .sf-iconbtn--wa:hover {
+  background: #1ebe5b;
+  border-color: #1ebe5b;
+}
+
+.sf-root[data-template] .sf-iconbtn--cart {
+  box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--t-primary) 60%, transparent);
+}
+
+.sf-root[data-template] .sf-iconbtn__icon svg {
+  inline-size: 22px;
+  block-size: 22px;
+}
+
+/* The department bar — the primary colour, white type, the current department underlined. */
+.sf-root[data-template] .sf-header[data-commerce] .sf-header__cats {
+  background: var(--t-primary);
+  border-block-start: 0;
+}
+
+.sf-root[data-template] .sf-catbar {
+  justify-content: safe center;
+  gap: var(--t-space-xs);
+}
+
+.sf-root[data-template] .sf-catbar a {
+  color: var(--t-on-primary);
+  min-block-size: 48px;
+  padding-inline: var(--t-space-lg);
+  font-size: var(--t-text-base);
+  border-block-end: 3px solid transparent;
+  opacity: 0.92;
+}
+
+.sf-root[data-template] .sf-catbar a:hover {
+  color: var(--t-on-primary);
+  opacity: 1;
+  background: color-mix(in srgb, var(--t-on-primary) 10%, transparent);
+}
+
+.sf-root[data-template] .sf-catbar a[aria-current='page'] {
+  color: var(--t-on-primary);
+  opacity: 1;
+  border-block-end-color: var(--t-on-primary);
+}
+
+.sf-root[data-template] .sf-catbar__end a {
+  color: var(--t-on-primary);
+}
+
+/* The announcement bar above it takes the deeper ground so the two do not merge. */
+.sf-root[data-template] .sf-bar {
+  background: var(--t-text);
+  color: var(--t-bg);
+  text-align: center;
+}
+
+.sf-root[data-template] .sf-bar__inner {
+  justify-content: center;
+}
+
+/* ------------------------------------------------------------------ hero -- */
+
+.sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__inner,
+.sf-root[data-template] .sf-hero--split[data-figure='type'] .sf-hero__inner,
+.sf-root[data-template] .sf-hero--stage[data-figure='type'] .sf-hero__inner {
+  border-radius: var(--t-radius-lg);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--t-primary) 12%, var(--t-bg)),
+    color-mix(in srgb, var(--t-secondary) 10%, var(--t-bg))
+  );
+  border: 1px solid color-mix(in srgb, var(--t-primary) 18%, transparent);
+  box-shadow: 0 12px 40px -24px color-mix(in srgb, var(--t-primary) 45%, transparent);
+}
+
+.sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__copy {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'title'
+    'text'
+    'actions'
+    'proof';
+  justify-items: center;
+  text-align: center;
+}
+
+.sf-root[data-template] .sf-hero[data-figure='type'] .sf-hero__actions {
+  margin-block-start: var(--t-space-lg);
+  justify-content: center;
+}
+
+.sf-root[data-template] .sf-hero__text {
+  margin-inline: auto;
+}
+
+.sf-root[data-template] .sf-hero__proof {
+  justify-content: center;
+}
+
+/* --------------------------------------------------------------- buttons -- */
+
+.sf-root[data-template] .sf-btn {
+  border-radius: max(var(--t-radius-md), 10px);
+  min-block-size: 46px;
+  padding-inline: var(--t-space-xl);
+  font-size: var(--t-text-base);
+  letter-spacing: 0.01em;
+}
+
+.sf-root[data-template] .sf-btn:where(:not(.sf-btn--ghost, .sf-btn--quiet)) {
+  box-shadow: 0 8px 20px -10px color-mix(in srgb, var(--t-primary) 70%, transparent);
+}
+
+.sf-root[data-template] .sf-btn--ghost {
+  border-width: 2px;
+  border-color: var(--t-primary);
+  color: var(--t-link);
+}
+
+.sf-root[data-template] .sf-btn--ghost:hover {
+  background: color-mix(in srgb, var(--t-primary) 10%, transparent);
+}
+
+/* The buy buttons: always the solid primary, whatever the template's default button posture. */
+.sf-root[data-template] .sf-card__cart .sf-btn:where(:not(.sf-btn--order)),
+.sf-root[data-template]
+  .sf-buy
+  .sf-btn:where(:not(.sf-btn--order, .sf-btn--ghost, .sf-btn--quiet)) {
+  background: var(--t-primary);
+  color: var(--t-on-primary);
+  border-color: var(--t-primary);
+  inline-size: 100%;
+}
+
+/* WhatsApp actions: the brand green, the real mark, white type. */
+.sf-root[data-template] .sf-btn--order,
+.sf-root[data-template] .sf-contact .sf-btn--order,
+.sf-root[data-template] .sf-order .sf-btn--order {
+  background: #25d366;
+  color: #fff;
+  border-color: #25d366;
+  box-shadow: 0 8px 20px -10px rgb(37 211 102 / 0.8);
+}
+
+.sf-root[data-template] .sf-btn--order:hover {
+  background: #1ebe5b;
+  border-color: #1ebe5b;
+}
+
+.sf-root[data-template] .sf-btn__icon {
+  inline-size: 1.25em;
+  block-size: 1.25em;
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .sf-root[data-template] .sf-btn,
+  .sf-root[data-template] .sf-iconbtn {
+    transition:
+      transform 140ms ease-out,
+      box-shadow 140ms ease-out,
+      background-color 140ms ease-out,
+      border-color 140ms ease-out,
+      color 140ms ease-out;
+  }
+
+  .sf-root[data-template] .sf-btn:hover:not(:disabled, [aria-disabled='true']),
+  .sf-root[data-template] .sf-iconbtn:hover {
+    transform: translateY(-1px);
+  }
+
+  .sf-root[data-template] .sf-btn:where(:not(.sf-btn--ghost, .sf-btn--quiet)):hover:not(:disabled) {
+    box-shadow: 0 12px 24px -10px color-mix(in srgb, var(--t-primary) 75%, transparent);
+    filter: brightness(1.05);
+  }
+}
+
+/* Floating WhatsApp: the real mark, the real green, a soft halo. */
+.sf-root[data-template] .sf-wa-fab {
+  inline-size: 3.5rem;
+  block-size: 3.5rem;
+  background: #25d366;
+  color: #fff;
+  border: 0;
+  box-shadow:
+    0 10px 24px -8px rgb(37 211 102 / 0.75),
+    0 0 0 4px rgb(37 211 102 / 0.18);
+}
+
+.sf-root[data-template] .sf-wa-fab__icon,
+.sf-root[data-template] .sf-wa-fab svg {
+  inline-size: 30px;
+  block-size: 30px;
+}
+
+/* ----------------------------------------------------- department circles -- */
+
+.sf-root[data-template] .sf-circles {
+  justify-content: safe center;
+  gap: clamp(var(--t-space-lg), 3vw, var(--t-space-2xl));
+  padding-block: var(--t-space-xs) var(--t-space-sm);
+}
+
+.sf-root[data-template] .sf-circle {
+  inline-size: clamp(6.5rem, 12vw, 9.5rem);
+  gap: var(--t-space-sm);
+}
+
+.sf-root[data-template] .sf-circle .sf-media {
+  inline-size: clamp(5.75rem, 11vw, 8.5rem);
+  block-size: clamp(5.75rem, 11vw, 8.5rem);
+  border: 3px solid var(--t-bg);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--t-primary) 55%, transparent),
+    0 12px 28px -14px color-mix(in srgb, var(--t-primary) 60%, transparent);
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--t-primary) 10%, var(--t-surface)),
+    var(--t-surface)
+  );
+}
+
+.sf-root[data-template] .sf-circle .sf-ph__mark {
+  font-size: clamp(1.8rem, 3.2vw, 2.6rem);
+  color: var(--t-link);
+}
+
+.sf-root[data-template] .sf-circle__name {
+  font-size: var(--t-text-base);
+  font-weight: var(--t-weight-display);
+}
+
+.sf-root[data-template] .sf-circle .sf-cat__count {
+  color: var(--t-text-muted);
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .sf-root[data-template] .sf-circle .sf-media {
+    transition:
+      transform 180ms ease-out,
+      box-shadow 180ms ease-out;
+  }
+
+  .sf-root[data-template] .sf-circle:hover .sf-media {
+    transform: translateY(-3px) scale(1.03);
+    box-shadow:
+      0 0 0 3px var(--t-primary),
+      0 18px 32px -14px color-mix(in srgb, var(--t-primary) 70%, transparent);
+  }
+}
+
+/* The tile variants centre too when they fit. */
+.sf-root[data-template] .sf-cats,
+.sf-root[data-template] .sf-chips {
+  justify-content: center;
+}
+
+.sf-root[data-template] .sf-cat {
+  border-radius: var(--t-radius-lg);
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------- product cards -- */
+
+.sf-root[data-template] .sf-card {
+  border-radius: max(var(--t-radius-lg), 8px);
+  border: 1px solid color-mix(in srgb, var(--t-border) 70%, transparent);
+  box-shadow: 0 10px 30px -18px rgb(0 0 0 / 0.25);
+  text-align: center;
+}
+
+.sf-root[data-template] .sf-card__media .sf-media {
+  border-radius: 0;
+  clip-path: none;
+}
+
+.sf-root[data-template] .sf-card__body {
+  align-items: center;
+  padding: var(--t-space-md) var(--t-space-md) var(--t-space-xs);
+  gap: var(--t-space-xs);
+}
+
+.sf-root[data-template] .sf-card__name {
+  text-align: center;
+  font-size: var(--t-text-base);
+  line-height: 1.4;
+}
+
+.sf-root[data-template] .sf-card__desc {
+  text-align: center;
+}
+
+.sf-root[data-template] .sf-card__foot {
+  justify-content: center;
+  gap: var(--t-space-sm);
+}
+
+.sf-root[data-template] .sf-card__foot .sf-price {
+  font-size: var(--t-text-xl);
+  color: var(--t-link);
+}
+
+.sf-root[data-template] .sf-card__spec {
+  text-align: start;
+  inline-size: 100%;
+}
+
+.sf-root[data-template] .sf-card__cart {
+  padding: var(--t-space-sm) var(--t-space-md) var(--t-space-md);
+}
+
+.sf-root[data-template] .sf-card__cart .sf-btn {
+  min-block-size: 44px;
+  font-size: var(--t-text-sm);
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .sf-root[data-template] .sf-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 22px 40px -20px rgb(0 0 0 / 0.35);
+    border-color: color-mix(in srgb, var(--t-primary) 35%, transparent);
+  }
+}
+
+/* Grids and rails centre their cards when the row is not full. */
+@media (min-width: 45rem) {
+  .sf-root[data-template] .sf-grid:not(.sf-grid--rail) {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13.5rem), 1fr));
+    justify-items: center;
+  }
+
+  .sf-root[data-template] .sf-grid:not(.sf-grid--rail) > .sf-card {
+    inline-size: 100%;
+    max-inline-size: 20rem;
+  }
+}
+
+.sf-root[data-template] .sf-grid--rail {
+  justify-content: safe center;
+  padding-block: var(--t-space-xs) var(--t-space-sm);
+}
+
+/* Rail cards match the grid card's width, so the two rows read as one system. */
+.sf-root[data-template] .sf-grid--rail > .sf-card {
+  flex-basis: clamp(13.5rem, 19vw, 16rem);
+}
+
+.sf-root[data-template] .sf-card__cart .sf-btn {
+  white-space: nowrap;
+  padding-inline: var(--t-space-md);
+}
+
+/* --------------------------------------------------------- trust · stats -- */
+
+.sf-root[data-template] .sf-trust {
+  justify-content: center;
+}
+
+.sf-root[data-template] .sf-trust__item {
+  flex-direction: column;
+  text-align: center;
+  gap: var(--t-space-sm);
+  padding: var(--t-space-lg) var(--t-space-md);
+  border-radius: var(--t-radius-lg);
+  box-shadow: 0 10px 24px -18px rgb(0 0 0 / 0.25);
+}
+
+.sf-root[data-template] .sf-trust__icon {
+  inline-size: 48px;
+  block-size: 48px;
+  padding: 11px;
+  background: color-mix(in srgb, var(--t-primary) 12%, var(--t-surface));
+}
+
+.sf-root[data-template] .sf-stats {
+  justify-content: center;
+  text-align: center;
+}
+
+/* ------------------------------------------------------- about · quotes -- */
+
+.sf-root[data-template] .sf-prose {
+  margin-inline: auto;
+}
+
+.sf-root[data-template] .sf-contact:not(:has(> * + *)) .sf-prose {
+  text-align: center;
+}
+
+.sf-root[data-template] .sf-contact:has(> * + *) {
+  align-items: center;
+}
+
+.sf-root[data-template] .sf-contact .sf-media {
+  border-radius: var(--t-radius-lg);
+  box-shadow: 0 16px 36px -20px rgb(0 0 0 / 0.35);
+}
+
+.sf-root[data-template] .sf-quote {
+  border-radius: var(--t-radius-lg);
+  text-align: center;
+  align-items: center;
+  box-shadow: 0 10px 24px -18px rgb(0 0 0 / 0.25);
+}
+
+.sf-root[data-template] .sf-quotes {
+  justify-content: center;
+}
+
+/* --------------------------------------------------------- contact band -- */
+
+.sf-root[data-template] .sf-facts {
+  border-radius: var(--t-radius-lg);
+  box-shadow: 0 10px 24px -18px rgb(0 0 0 / 0.25);
+}
+
+.sf-root[data-template] .sf-contact .sf-actions,
+.sf-root[data-template] .sf-contact > div > .sf-actions {
+  justify-content: center;
+  margin-inline: auto;
+}
+
+/* The contact block: the facts card and the WhatsApp order side by side, the order column a centred
+   stack so the button sits on the card's midline rather than floating in a corner. */
+.sf-root[data-template] .sf-contact > div:has(> .sf-order),
+.sf-root[data-template] .sf-contact > div:has(> .sf-note) {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  text-align: center;
+  gap: var(--t-space-md);
+}
+
+.sf-root[data-template] .sf-order {
+  display: grid;
+  justify-items: center;
+  gap: var(--t-space-sm);
+}
+
+.sf-root[data-template] .sf-order .sf-btn--order {
+  min-inline-size: min(100%, 18rem);
+}
+
+.sf-root[data-template] .sf-input,
+.sf-root[data-template] .sf-textarea {
+  border-radius: max(var(--t-radius-md), 10px);
+  border-width: 2px;
+  background: var(--t-surface);
+}
+
+.sf-root[data-template] .sf-input:focus-visible,
+.sf-root[data-template] .sf-textarea:focus-visible {
+  border-color: var(--t-primary);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--t-primary) 22%, transparent);
+}
+
+/* ------------------------------------------------------------- footer -- */
+
+.sf-root[data-template] .sf-footer {
+  background: var(--t-surface);
+  border-block-start: 4px solid var(--t-primary);
+}
+
+.sf-root[data-template] .sf-footer__inner {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  padding-block: var(--t-space-2xl) var(--t-space-xl);
+  gap: var(--t-space-xl) var(--t-space-2xl);
+  text-align: start;
+}
+
+.sf-root[data-template][data-footer] .sf-footer__inner:has(> :nth-child(3):last-child),
+.sf-root[data-template][data-footer] .sf-footer__inner:has(> :nth-child(4):last-child),
+.sf-root[data-template][data-footer] .sf-footer__inner:has(> :nth-child(5):last-child) {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+}
+
+/* Footer columns are plain columns — no template panel (tape, frame) around them. */
+.sf-root[data-template][data-footer] .sf-footer__inner > :first-child,
+.sf-root[data-template] .sf-footer__inner > div {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  border-radius: 0;
+  text-align: start;
+}
+
+.sf-root[data-template] .sf-footer h2 {
+  font-size: var(--t-text-lg);
+  margin-block-end: var(--t-space-sm);
+  position: relative;
+  padding-block-end: var(--t-space-xs);
+}
+
+.sf-root[data-template] .sf-footer h2::after {
+  content: '';
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-start: 0;
+  inline-size: 2rem;
+  block-size: 2px;
+  border-radius: 2px;
+  background: var(--t-primary);
+}
+
+.sf-root[data-template] .sf-footer ul:not(.sf-social, .sf-paymarks) {
+  gap: var(--t-space-sm);
+}
+
+.sf-root[data-template] .sf-footer ul:not(.sf-social, .sf-paymarks) a {
+  text-decoration: none;
+  color: var(--t-text);
+}
+
+.sf-root[data-template] .sf-footer ul:not(.sf-social, .sf-paymarks) a:hover {
+  color: var(--t-link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The social row and the payment strip share one full-width band. */
+.sf-root[data-template] .sf-footer__social,
+.sf-root[data-template] .sf-footer__payments {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--t-space-md) var(--t-space-lg);
+  padding-block-start: var(--t-space-lg);
+  border-block-start: var(--t-rule-hair);
+}
+
+.sf-root[data-template] .sf-footer__social .sf-social,
+.sf-root[data-template] .sf-footer .sf-social {
+  justify-content: center;
+}
+
+.sf-root[data-template] .sf-footer__social h2,
+.sf-root[data-template] .sf-footer__payments h2 {
+  margin: 0;
+  padding: 0;
+}
+
+.sf-root[data-template] .sf-footer__social h2::after,
+.sf-root[data-template] .sf-footer__payments h2::after {
+  content: none;
+}
+
+/* Real brand marks in their real colours. */
+.sf-root[data-template] .sf-social a {
+  inline-size: 46px;
+  block-size: 46px;
+  border: 0;
+  box-shadow: 0 8px 18px -10px var(--brand);
+}
+
+.sf-root[data-template] .sf-social a svg {
+  inline-size: 22px;
+  block-size: 22px;
+}
+
+.sf-root[data-template] .sf-social a[data-platform='facebook'] {
+  --brand: #0866ff;
+  --brand-ink: #fff;
+}
+
+.sf-root[data-template] .sf-social a[data-platform='instagram'] {
+  --brand: #ff0069;
+  --brand-ink: #fff;
+  background: linear-gradient(45deg, #f9ce34 0%, #ee2a7b 50%, #6228d7 100%);
+}
+
+.sf-root[data-template] .sf-social a[data-platform='tiktok'] {
+  --brand: #000;
+  --brand-ink: #fff;
+}
+
+.sf-root[data-template] .sf-social a[data-platform='youtube'] {
+  --brand: #ff0000;
+  --brand-ink: #fff;
+}
+
+.sf-root[data-template] .sf-social a[data-platform='x'] {
+  --brand: #000;
+  --brand-ink: #fff;
+}
+
+.sf-root[data-template] .sf-social a[data-platform='telegram'] {
+  --brand: #26a5e4;
+  --brand-ink: #fff;
+}
+
+.sf-root[data-template] .sf-social a[data-platform='snapchat'] {
+  --brand: #fffc00;
+  --brand-ink: #111;
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .sf-root[data-template] .sf-social a:hover {
+    transform: translateY(-3px) scale(1.05);
+  }
+}
+
+.sf-root[data-template] .sf-paymarks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--t-space-sm);
+}
+
+.sf-root[data-template] .sf-paymark {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 60px;
+  block-size: 38px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid rgb(0 0 0 / 0.12);
+  box-shadow: 0 4px 10px -6px rgb(0 0 0 / 0.3);
+}
+
+.sf-root[data-template] .sf-paymark svg {
+  inline-size: 38px;
+  block-size: 24px;
+}
+
+.sf-root[data-template] .sf-paymark[data-brand='visa'] {
+  color: #1a1f71;
+}
+
+.sf-root[data-template] .sf-paymark[data-brand='mastercard'] {
+  color: #eb001b;
+}
+
+.sf-root[data-template] .sf-footer .sf-legal {
+  justify-content: center;
+  text-align: center;
+  padding-block: var(--t-space-lg);
+}
+
+/* The breadcrumb trail shares `.sf-legal`'s type but is a path, not a strip: no rule above it. */
+.sf-root[data-template] .sf-main .sf-legal {
+  border-block-start: 0;
+  padding-block: 0 var(--t-space-sm);
+  justify-content: flex-start;
+}
+
+.sf-root[data-template] .sf-credit {
+  text-align: center;
+}
+
+/* ------------------------------------------------------------- tab bar -- */
+
+@media (max-width: 45rem) {
+  .sf-root[data-template] .sf-tabbar {
+    box-shadow: 0 -6px 20px -12px rgb(0 0 0 / 0.35);
+  }
+
+  .sf-root[data-template] .sf-tabbar__item[aria-current='page'] .sf-tabbar__icon {
+    color: var(--t-link);
+  }
+
+  .sf-root[data-template] .sf-tabbar__item--wa .sf-tabbar__icon {
+    display: inline-grid;
+    place-items: center;
+    inline-size: 36px;
+    block-size: 36px;
+    margin-block-start: -12px;
+    border-radius: 50%;
+    background: #25d366;
+    color: #fff;
+    box-shadow: 0 6px 14px -6px rgb(37 211 102 / 0.9);
+  }
+
+  .sf-root[data-template] .sf-tabbar__item--wa .sf-tabbar__icon svg {
+    inline-size: 20px;
+    block-size: 20px;
+  }
+
+  .sf-root[data-template] .sf-tabbar__item--wa {
+    color: var(--t-text-muted);
+  }
+
+  /* Phones: the department bar and the circles scroll from the reading start, not the centre. */
+  .sf-root[data-template] .sf-catbar,
+  .sf-root[data-template] .sf-circles,
+  .sf-root[data-template] .sf-grid--rail {
+    justify-content: flex-start;
+  }
+
+  .sf-root[data-template] .sf-grid--rail > .sf-card {
+    flex-basis: 44vw;
+  }
+
+  .sf-root[data-template] .sf-catbar a {
+    min-block-size: 44px;
+    padding-inline: var(--t-space-md);
+    font-size: var(--t-text-sm);
+  }
+
+  .sf-root[data-template] .sf-footer h2::after {
+    inset-inline-start: 0;
+  }
+
+  .sf-root[data-template] .sf-footer__social,
+  .sf-root[data-template] .sf-footer__payments {
+    flex-direction: column;
+    align-items: center;
+  }
+}

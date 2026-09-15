@@ -22,6 +22,8 @@ import '@/templates/aldar/aldar.css';
 import '@/templates/matbakh/matbakh.css';
 import '@/templates/mawid/mawid.css';
 import '@/templates/jihaz/jihaz.css';
+import '@/templates/storefront-commerce.css';
+import '@/templates/storefront-modern.css';
 
 export default function PreviewLayout({ children }: { children: React.ReactNode }) {
   return children;

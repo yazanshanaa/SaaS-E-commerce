@@ -7,6 +7,7 @@ import { SECTION_ANCHORS } from '../section-anchors';
 import type { StorefrontContext } from '../view-model';
 import { PushToggle } from './push-toggle';
 import { SocialLinks } from './social-links';
+import { BrandIcon, PAYMENT_BRANDS } from './brand-icons';
 
 /**
  * The footer, including the PERMANENT legal strip.
@@ -114,6 +115,24 @@ export function SiteFooter({
           <div className="sf-footer__social">
             <h2>{st('social.title')}</h2>
             <SocialLinks links={socialLinks} />
+          </div>
+        ) : null}
+
+        {/*
+          Accepted-payment strip (2026-09-15, owner-directed). Rendered ONLY when `flags.payments`
+          holds — the four-way gate resolved in the view model — so a WhatsApp-only shop never
+          shows card marks it cannot honour. Every supported gateway settles Visa and Mastercard.
+        */}
+        {context.flags.payments ? (
+          <div className="sf-footer__payments">
+            <h2>{st('footer.payments')}</h2>
+            <ul className="sf-paymarks" aria-label={st('footer.paymentsHint')}>
+              {PAYMENT_BRANDS.map((brand) => (
+                <li key={brand} className="sf-paymark" data-brand={brand}>
+                  <BrandIcon brand={brand} />
+                </li>
+              ))}
+            </ul>
           </div>
         ) : null}
 

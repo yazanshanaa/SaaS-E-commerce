@@ -4276,3 +4276,31 @@ manual console session. Decisions, all shipped together and gated (typecheck · 
   owner's off-switch; the buy-now checkout fixture in e2e opts out explicitly.
 - Phone: static header (the tab bar navigates), one-row consent banner, sticky `.sf-buy` row.
 - Gate after this batch: typecheck · lint · 1538 unit+integration · 150 e2e — all green.
+
+## 2026-09-15 — Modern polish layer (owner-directed)
+
+Owner brief against a reference mock-up: «حسّن جمالية القوالب والأزرار، وسّط الأقسام وكل شيء، وأظهر
+كل شيء بصورته الحقيقية مثل شعار واتساب ومواقع التواصل، بحيث يبرز الحداثة». Shipped as ONE more
+sheet on top of the commerce chrome rather than nine template edits:
+
+- **`src/templates/storefront-modern.css`**, imported last in both the storefront and the dashboard
+  preview layouts, scoped to `.sf-root[data-template]`. Every block head is centred (eyebrow with
+  flanking rules, title, mark, lead, action); the three templates that drew a full-width rule or a
+  side bar under a start-aligned head lose it. Department circles are larger with a primary ring and
+  centre when they fit; product cards are centred (picture → name → price → full-width solid button)
+  in grid and rail alike, rail cards at the grid card's width; buttons lift on hover with a soft
+  primary shadow; the department bar is painted in the primary colour; hero copy is centred; footer
+  is always auto-fit columns with the social row and a new accepted-payment strip centred under
+  them. Template tokens still decide every colour, face and radius (a floor of 8px on cards so the
+  square templates read as modern without losing their posture).
+- **Real brand marks** — `components/brand-icons.tsx` carries the Simple Icons paths (CC0) for
+  WhatsApp, Facebook, Instagram, TikTok, YouTube, X, Telegram, Snapchat, Visa and Mastercard with the
+  brands' published colours. `WhatsappIcon` and `SocialIcon` now resolve to them; the generic
+  «الموقع الإلكتروني» keeps its globe. Every WhatsApp control (header pill, FAB, tab bar, per-product
+  and contact-section order buttons — `whatsapp-order.tsx` gained `sf-btn--order`) is WhatsApp green
+  with white type.
+- **Accepted-payment strip** in the footer, rendered only when `flags.payments` holds (the four-way
+  gate), Visa + Mastercard — the schemes every supported gateway settles. Copy: `footer.payments`,
+  `footer.paymentsHint`.
+- Gate: typecheck · lint · 1063 unit · axe (wcag2a/aa) 0 serious/critical on three templates at
+  desktop and phone widths.
