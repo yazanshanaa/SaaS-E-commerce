@@ -153,7 +153,7 @@ jobs:
       # fit in forty-five minutes alongside a production build.
       - run: pnpm e2e --grep-invert @lighthouse
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report
@@ -188,7 +188,7 @@ jobs:
         env:
           PLAYWRIGHT_RETRIES: '0'
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: lighthouse-report
