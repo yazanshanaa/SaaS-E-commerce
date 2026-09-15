@@ -786,6 +786,7 @@
   }
 }
 
+.sf-root[data-template] .sf-footer ul.sf-paymarks,
 .sf-root[data-template] .sf-paymarks {
   list-style: none;
   margin: 0;
